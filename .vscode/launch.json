@@ -1,0 +1,83 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [        
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                
+                "ENVRIONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True"
+                
+               
+            }
+        },
+        {
+            "name": "CDK Synth with Python Args",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cdk_factory/app.py",
+            "console": "integratedTerminal",
+            "args": ["-c", "config=path/to/config.json"],
+            "env": {
+                
+                "ENVRIONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True"                           
+            }
+        },
+        {
+            "name": "CDK Synth with CDK Args",
+            "type": "node",
+            "request": "launch",
+            "program": "/Users/eric.wilson/.nvm/versions/node/v20.9.0/bin/cdk",
+            "console": "integratedTerminal",
+            "args": [
+                "synth",
+                "-a",
+                "python",
+                "${workspaceFolder}/src/cdk_factory/app.py",
+                "-c", "config=path/to/config.json"],
+            "env": {
+                
+                "ENVRIONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True"
+                
+               
+            }
+        },
+        {
+            "name": "CDK Synth: Static WebSite",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/website/static_website/devops/app.py",
+            "console": "integratedTerminal",           
+            "env": {                
+                "ENVRIONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True"                   
+            }
+        },
+        {
+            "name": "Build & Deploy Artifacts",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/devops/build.py",
+            "console": "integratedTerminal"
+        },
+        
+    ]
+}

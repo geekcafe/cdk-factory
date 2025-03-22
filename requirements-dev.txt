@@ -1,0 +1,23 @@
+boto3-stubs[dynamodb]
+boto3-stubs[cognito]
+
+mypy
+mypy_boto3_dynamodb
+mypy_boto3_ec2
+mypy_boto3_cloudwatch
+mypy_boto3_s3
+mypy_boto3_cognito_idp
+mypy_boto3_securityhub
+
+moto [dynamodb2] # mocks for unit tests
+# setuptools
+types-python-dateutil
+build
+toml
+twine
+wheel
+pkginfo # occasionally we need to upgrade this or we can get upload errors when it's out of sync
+# the error may look like the following
+# ERROR    InvalidDistribution: Metadata is missing required fields: Name, Version.                                                
+#          Make sure the distribution includes the files where those fields are specified, and is using a supported                
+#          Metadata-Version: 1.0, 1.1, 1.2, 2.0, 2.1, 2.2, 2.3. 
