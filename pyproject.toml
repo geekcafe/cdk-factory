@@ -29,5 +29,6 @@ dependencies = [
   "aws-lambda-powertools>=2.38.1",
   "aws-cdk-lib",
   "constructs",
-  "boto3_assist"
+  "boto3_assist",
+  "PyYAML"
 ]
