@@ -11,7 +11,7 @@ packages = ["src/cdk_factory"]
 
 name = "cdk_factory"
 source = "src/cdk_factory"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
