@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
+from cdk_factory.configurations.resources.resource_naming import ResourceNaming
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
 
 
@@ -145,6 +146,11 @@ class PipelineConfig:
 
         new_name = f"{self.workload_name}{separator}{pipline_name}{separator}{name}"
 
+        if resource_type:
+            new_name = ResourceNaming.validate_name(
+                new_name, resource_type=resource_type, fix=True
+            )
+
         return new_name.lower()
 
     def code_artifact_logins(self, include_profile: bool = False) -> List[str]:
@@ -165,4 +171,5 @@ class PipelineConfig:
             if os.getenv("AWS_PROFILE") and include_profile:
                 codeartifact_login_commands = f"{codeartifact_login_commands} --profile {os.getenv('AWS_PROFILE')}"
             logins = [codeartifact_login_commands]
+        return logins
         return logins

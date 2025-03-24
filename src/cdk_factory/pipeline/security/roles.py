@@ -6,7 +6,9 @@ MIT License.  See Project Root for the license information.
 
 from aws_cdk import aws_iam as iam
 from constructs import Construct
+
 from cdk_factory.configurations.pipeline import PipelineConfig
+from cdk_factory.configurations.resources.resource_types import ResourceTypes
 from cdk_factory.configurations.workload import WorkloadConfig
 
 
@@ -102,7 +104,9 @@ class PipelineRoles:
                 iam.ServicePrincipal("codebuild.amazonaws.com"),
                 iam.AccountPrincipal(f"{workload.devops.account}"),
             ),
-            role_name=pipeline.build_resource_name("CodeArtifactAccessRole"),
+            role_name=pipeline.build_resource_name(
+                "CodeArtifactAccessRole", resource_type=ResourceTypes.IAM_ROLE
+            ),
         )
 
         # Attach policies to the role to allow access to CodeArtifact
@@ -134,4 +138,7 @@ class PipelineRoles:
         )
         role.add_to_policy(ecr_policy)
 
+        return role
+
+        return role
         return role
