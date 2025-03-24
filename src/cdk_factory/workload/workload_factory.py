@@ -34,10 +34,12 @@ class WorkloadFactory:
         paths: List[str] | None = None,
         cdk_app_file: str | None = None,
     ):
-        self.config = CdkConfig(config=config)
-        self.workload: WorkloadConfig = WorkloadConfig(config=config)
+        self.app_config = CdkConfig(
+            config=config, cdk_context=app.node.get_all_context()
+        )
+        self.workload: WorkloadConfig = WorkloadConfig(config=self.app_config.config)
         self.workload.paths = paths or []
-        self.workload.cdk_app_file = cdk_app_file
+        self.workload.cdk_app_file = cdk_app_file or __file__
         self.app = app
         self.outdir = outdir
 

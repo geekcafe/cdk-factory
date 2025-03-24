@@ -42,6 +42,12 @@ class CommandLoader:
             return fallback or []
 
         path = self.__resolve_path(file_path)
+        if not path:
+            print(
+                f"⚠️ Command file '{file_path}' not found in workload paths, using fallback."
+            )
+            return fallback or []
+
         if not path.exists():
             print(f"⚠️ Command file '{path}' not found, using fallback.")
             return fallback or []
