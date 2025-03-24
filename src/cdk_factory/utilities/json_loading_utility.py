@@ -7,12 +7,12 @@ MIT License.  See Project Root for the license information.
 import copy
 import json
 import os
-from typing import Any
+from typing import Any, Dict
 
 
-class JsonUtility:
+class JsonLoadingUtility:
     """
-    JSON Utility
+    JSON Loading Utility
     This class is used to load a JSON file.  We have a special syntax that allows
     chaining JSON files together using __inherits__
 
@@ -62,7 +62,7 @@ class JsonUtility:
         if isinstance(section, dict):
             if self.nested_key in section:
                 nested_path = str(section.pop(self.nested_key))
-                print(f"Resolving parent path: {nested_path}")
+                # print(f"Resolving parent path: {nested_path}")
                 if nested_path.endswith(".json"):
                     nested_root_path = os.path.join(self.base_path, nested_path)
                     nested_section = self.__load_json_file(nested_root_path)
@@ -72,11 +72,11 @@ class JsonUtility:
                     for filename in os.listdir(dir_path):
                         if filename.endswith(".json"):
                             file_path = os.path.join(dir_path, filename)
-                            print(f"Loading file: {file_path}")
+                            # print(f"Loading file: {file_path}")
                             file_section = self.__load_json_file(file_path)
                             nested_section.append(file_section)
 
-                    print("done with nested sections")
+                    # print("done with nested sections")
                 else:
                     nested_section = self.get_nested_config(root_config, nested_path)
 
@@ -135,10 +135,50 @@ class JsonUtility:
 
         return setting
 
+    @staticmethod
+    def save(config: dict, path: str):
+        """Save a configuration dictionary to a JSON file."""
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+
+    @staticmethod
+    def recursive_replace(data: dict | list | str, replacements: Dict[str, Any]):
+        """
+        Recursively replaces substrings in all string values within a JSON-like structure.
+
+        :param data: The input data (dict, list, or other) to process.
+        :param replacements: A dictionary where keys are substrings to find and values are the replacements.
+            replacements = {
+                "{{workload-name}}": "geekcafe",
+                "{{deployment-name}}": "dev",
+                "{{awsAccount}}": "123456789012",
+                "{{hostedZoneName}}": "sandbox.geekcafe.com",
+                "{{placeholder}}": "DYNAMIC_VALUE"
+            }
+        :return: A new data structure with the replacements applied.
+        """
+        if isinstance(data, dict):
+            return {
+                k: JsonLoadingUtility.recursive_replace(v, replacements)
+                for k, v in data.items()
+            }
+        elif isinstance(data, list):
+            return [
+                JsonLoadingUtility.recursive_replace(item, replacements)
+                for item in data
+            ]
+        elif isinstance(data, str):
+            for find_str, replace_str in replacements.items():
+                data = data.replace(find_str, replace_str)
+            return data
+        else:
+            # Return the data unchanged if it's not a dict, list, or string.
+            return data
+
 
 def main():
     json_config_path = "config.json"
-    json_utility = JsonUtility(json_config_path)
+    json_utility = JsonLoadingUtility(json_config_path)
     resolved_config = json_utility.load()
     print(json.dumps(resolved_config, indent=2))
 

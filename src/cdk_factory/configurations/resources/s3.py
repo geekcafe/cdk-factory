@@ -7,7 +7,7 @@ MIT License.  See Project Root for the license information.
 import aws_cdk as cdk
 from aws_cdk import aws_s3 as s3
 
-from cdk_factory.utilities.json_utility import JsonUtility
+from cdk_factory.utilities.json_loading_utility import JsonLoadingUtility
 
 
 class S3BucketConfig:
@@ -65,24 +65,26 @@ class S3BucketConfig:
     @property
     def public_read_access(self) -> bool:
         """Determines if the bucket is publically readable"""
-        return JsonUtility.get_boolean_setting(
+        return JsonLoadingUtility.get_boolean_setting(
             self.__config, "public_read_access", False
         )
 
     @property
     def enforce_ssl(self) -> bool:
         """Determines if the bucket enforces SSL"""
-        return JsonUtility.get_boolean_setting(self.__config, "enforce_ssl", True)
+        return JsonLoadingUtility.get_boolean_setting(
+            self.__config, "enforce_ssl", True
+        )
 
     @property
     def versioned(self) -> bool:
         """Determines if the bucket is versioned"""
-        return JsonUtility.get_boolean_setting(self.__config, "versioned", True)
+        return JsonLoadingUtility.get_boolean_setting(self.__config, "versioned", True)
 
     @property
     def auto_delete_objects(self) -> bool:
         """Determines if the bucket auto deletes objects"""
-        return JsonUtility.get_boolean_setting(
+        return JsonLoadingUtility.get_boolean_setting(
             self.__config, "auto_delete_objects", False
         )
 
