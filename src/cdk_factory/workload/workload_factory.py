@@ -10,6 +10,7 @@ import aws_cdk
 from aws_cdk.cx_api import CloudAssembly
 from aws_lambda_powertools import Logger
 
+from cdk_factory.configurations.cdk_config import CdkConfig
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.workload import WorkloadConfig
@@ -33,7 +34,8 @@ class WorkloadFactory:
         paths: List[str] | None = None,
         cdk_app_file: str | None = None,
     ):
-        self.workload: WorkloadConfig = self.__load_config(config)
+        self.config = CdkConfig(config=config)
+        self.workload: WorkloadConfig = WorkloadConfig(config=config)
         self.workload.paths = paths or []
         self.workload.cdk_app_file = cdk_app_file
         self.app = app
@@ -45,13 +47,6 @@ class WorkloadFactory:
         self.__generate_deployments()
 
         return self.app.synth()
-
-    def __load_config(self, config: str | dict) -> WorkloadConfig:
-        """
-        Loads the configuration file and returns a Workload object
-        """
-
-        return WorkloadConfig(config=config)
 
     def __generate_deployments(self):
         """

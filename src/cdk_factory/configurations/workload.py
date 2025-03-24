@@ -6,17 +6,17 @@ MIT License.  See Project Root for the license information.
 
 import os
 from typing import Any, Dict, List
-from aws_lambda_powertools import Logger
-from cdk_factory.utilities.json_utility import JsonUtility
 
+from aws_lambda_powertools import Logger
+
+from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.devops import DevOps
 from cdk_factory.configurations.management import Management
-from cdk_factory.configurations.resources.cloudfront import CloudFrontConfig
-from cdk_factory.configurations.resources._resources import Resources
 from cdk_factory.configurations.pipeline import PipelineConfig
-from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
-from cdk_factory.configurations.deployment import DeploymentConfig
+from cdk_factory.configurations.resources._resources import Resources
+from cdk_factory.configurations.resources.cloudfront import CloudFrontConfig
+from cdk_factory.configurations.stack import StackConfig
 
 logger = Logger()
 
@@ -45,19 +45,6 @@ class WorkloadConfig:
         self.__cdk_app_file: str | None = None
 
     def __load_config(self, config: str | dict) -> None:
-        if isinstance(config, str):
-            config_path = config
-            if not os.path.exists(config_path):
-                raise FileNotFoundError(config_path)
-
-            ju = JsonUtility(config_path)
-            config = ju.load()
-
-        if not isinstance(config, dict):
-            raise ValueError(
-                "Failed to load Config. Config must be a dictionary at this point."
-            )
-
         workload: dict = {}
 
         if "workload" in config:

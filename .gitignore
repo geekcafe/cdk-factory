@@ -176,3 +176,7 @@ cdk.out
 
 # mac os file
 .DS_store
+
+# backup and local files
+*.backup.json
+.dynamic_*_config.json
