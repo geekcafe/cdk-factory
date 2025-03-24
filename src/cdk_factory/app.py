@@ -8,12 +8,6 @@ MIT License.  See Project Root for the license information.
 import aws_cdk
 from aws_cdk.cx_api import CloudAssembly
 
-try:
-    # helper to get our paths set
-    import __paths__  # noqa: F401, pylint: disable=w0611
-except ImportError:
-    pass
-
 from cdk_factory.utilities.commandline_args import CommandlineArgs
 from cdk_factory.workload.workload_factory import WorkloadFactory
 
