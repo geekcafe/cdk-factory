@@ -1,0 +1,9 @@
+cdk synth -c config=../../samples/website/website_config.json \
+    -c AccountNumber="AAAAAAAAAAAAA" \
+    -c AccountName="My Account 2" \
+    -c AccountRegion="us-east-1" \
+    -c CodeRepoName="company/my-repo-name" \
+    -c CodeRepoArn="aws::repo_arn" \
+    -c SiteBucketName="my-bucket-2" \
+    -c HostedZoneId="zone1234" \
+    -c HostedZoneName="dev.example.com"
