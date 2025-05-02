@@ -1,0 +1,188 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+        "value": "../../samples/website/commands/cdk_synth.sh",
+        "cdk_parameter_name": "CdkSynthCommandFile"
+      },
+      {
+        "placeholder": "{{WWW_FILES}}",
+        "value": "../../samples/website/src/www",
+        "cdk_parameter_name": "WwwFiles"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT_NUMBER",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+        "env_var_name": "DEVOPS_AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_REGION}}",
+        "env_var_name": "DEVOPS_REGION",
+        "cdk_parameter_name": "AwsRegion"
+      },
+      {
+        "placeholder": "{{CODE_REPOSITORY_NAME}}",
+        "env_var_name": "CODE_REPOSITORY_NAME",
+        "cdk_parameter_name": "CodeRepositoryName"
+      },
+      {
+        "placeholder": "{{CODE_REPOSITORY_ARN}}",
+        "env_var_name": "CODE_REPOSITORY_ARN",
+        "cdk_parameter_name": "CodeRepositoryArn"
+      },
+      {
+        "placeholder": "{{SITE_BUCKET_NAME}}",
+        "env_var_name": "SITE_BUCKET_NAME",
+        "cdk_parameter_name": "SiteBucketName"
+      },
+      {
+        "placeholder": "{{HOSTED_ZONE_ID}}",
+        "env_var_name": "HOSTED_ZONE_ID",
+        "cdk_parameter_name": "HostedZoneId"
+      },
+      {
+        "placeholder": "{{HOSTED_ZONE_NAME}}",
+        "env_var_name": "HOSTED_ZONE_NAME",
+        "cdk_parameter_name": "HostedZoneName"
+      },
+      {
+        "placeholder": "{{DNS_ALIAS}}",
+        "env_var_name": "DNS_ALIAS",
+        "cdk_parameter_name": "DnsAlias"
+      }
+    ]
+  },
+  "workload": {
+    "name": "sandbox-cdn-test",
+    "description": "General info about this app/workload",
+    "devops": {
+      "account": "328553401036",
+      "region": "us-east-1",
+      "code_repository": {
+        "name": "geekcafe/cdk-factory-sample-static-website",
+        "type": "connector_arn",
+        "connector_arn": "arn:aws:codeconnections:us-east-1:328553401036:connection/564e4daf-ccc8-4cbe-8414-39640c3e3e58"
+      },
+      "commands": [
+        {
+          "name": "cdk_synth",
+          "commands": [],
+          "file": "../../samples/website/commands/cdk_synth.sh"
+        }
+      ]
+    },
+    "stacks": [
+      {
+        "name": "web-site-bucket",
+        "module": "bucket_stack",
+        "enabled": true,
+        "bucket": {
+          "name": "gc-sandbox-cdn-123",
+          "fully_qualified_name": "{{workload-name}}-{{deployment-name}}-gc-sandbox-cdn-123",
+          "exists": false
+        }
+      },
+      {
+        "name": "web-site",
+        "module": "static_website_stack",
+        "enabled": true,
+        "bucket": {
+          "name": "gc-sandbox-cdn-123",
+          "fully_qualified_name": "{{workload-name}}-{{deployment-name}}-gc-sandbox-cdn-123",
+          "exists": true
+        },
+        "src": {
+          "location": "file_system",
+          "path": "../../samples/website/src/www"
+        },
+        "accounts": [
+          {
+            "account": "328553401036",
+            "environments": [
+              {
+                "environment": "dev",
+                "dns": {
+                  "hosted_zone_id": "Z05642272AJK83SGL7G88",
+                  "hosted_zone_name": "sandbox.geekcafe.com",
+                  "aliases": [
+                    "test.sandbox.geekcafe.com",
+                    "www.test.sandbox.geekcafe.com"
+                  ]
+                },
+                "cert": {
+                  "domain_name": "test.sandbox.geekcafe.com",
+                  "alternate_names": [
+                    "*.test.sandbox.geekcafe.com"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "pipelines": [
+      {
+        "name": "static-site-dev-pipeline",
+        "branch": "develop",
+        "enabled": false,
+        "stages": [
+          {
+            "name": "bucket",
+            "stacks": [
+              "web-site-bucket"
+            ]
+          },
+          {
+            "name": "website1",
+            "stacks": [
+              "web-site"
+            ]
+          }
+        ],
+        "deployments": [
+          {
+            "name": "dev",
+            "waves": [
+              "bucket",
+              "website"
+            ]
+          }
+        ]
+      }
+    ],
+    "deployments": [
+      {
+        "name": "dev",
+        "environment": "dev",
+        "account": "328553401036",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": [
+          "web-site-bucket"
+        ],
+        "enabled": true
+      },
+      {
+        "name": "static-site-dev-deployment",
+        "environment": "dev",
+        "account": "328553401036",
+        "region": "us-east-1",
+        "mode": "pipeline",
+        "pipeline": "static-site-dev-pipeline",
+        "enabled": true
+      }
+    ]
+  }
+}
