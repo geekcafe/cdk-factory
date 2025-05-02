@@ -4,6 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+from typing import Any, Dict, List
 from cdk_factory.configurations.resources.code_repository import CodeRepositoryConfig
 from cdk_factory.configurations.resources.lambda_layers import LambdaLayersConfig
 
@@ -72,7 +73,7 @@ class DevOps:
         return self.__code_repository
 
     @property
-    def commands(self) -> list[str]:
+    def commands(self) -> List[Dict[str, Any]]:
         """
         Returns the devops commands
         """

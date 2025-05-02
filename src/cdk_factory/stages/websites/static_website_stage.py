@@ -6,7 +6,7 @@ MIT License.  See Project Root for the license information.
 
 import aws_cdk
 from constructs import Construct
-from cdk_factory.stacks.websites.static_website_stack import StaticWebSiteStack
+from cdk_factory.stack_library.websites.static_website_stack import StaticWebSiteStack
 
 
 class StaticWebsiteStage(aws_cdk.Stage):

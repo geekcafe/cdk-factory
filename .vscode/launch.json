@@ -35,41 +35,44 @@
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True"                           
             }
-        },
-        {
-            "name": "CDK Synth with CDK Args",
-            "type": "node",
-            "request": "launch",
-            "program": "/Users/eric.wilson/.nvm/versions/node/v20.9.0/bin/cdk",
-            "console": "integratedTerminal",
-            "args": [
-                "synth",
-                "-a",
-                "python",
-                "${workspaceFolder}/src/cdk_factory/app.py",
-                "-c", "config=path/to/config.json"],
-            "env": {
-                
-                "ENVRIONMENT": "dev",
-                "DEBUG_MODE": "True",
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
-                "RUN_INTEGRATION_TESTS": "True"
-                
-               
-            }
-        },
+        },        
         {
             "name": "CDK Synth: Static WebSite",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/examples/website/static_website/devops/app.py",
-            "console": "integratedTerminal",           
+            "program": "${workspaceFolder}/src/cdk_factory/app.py",
+            "console": "integratedTerminal",    
+            "justMyCode": false,       
             "env": {                
                 "ENVRIONMENT": "dev",
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
-                "RUN_INTEGRATION_TESTS": "True"                   
-            }
+                "RUN_INTEGRATION_TESTS": "True",
+                "CDK_CONFIG_PATH" : "../../samples/website/config.json",
+                "CDK_WORKLOAD_NAME": "sandbox-cdn-test",                
+                
+                
+            },
+            "envFile": "${workspaceFolder}/samples/website/.env"
+        },
+        {
+            "name": "CDK Synth: Static Min WebSite",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cdk_factory/app.py",
+            "console": "integratedTerminal",    
+            "justMyCode": false,       
+            "env": {                
+                "ENVRIONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True",
+                "CDK_CONFIG_PATH" : "../../samples/website/config_min.json",
+                "CDK_WORKLOAD_NAME": "sandbox-min-website-test",                
+                
+                
+            },
+            "envFile": "${workspaceFolder}/samples/website/.env"
         },
         {
             "name": "Build & Deploy Artifacts",

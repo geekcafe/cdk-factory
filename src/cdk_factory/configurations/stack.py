@@ -4,17 +4,14 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
-# import os
-# from typing import List, Optional
-# from cdk_factory.configurations.deployment import Deployment
-# from cdk_factory.configurations.resources._resources import ResourceTypes
+from typing import List
 
 
 class StackConfig:
     """A Cloud Formation Stack built by the CDK"""
 
     def __init__(self, stack: dict, workload: dict) -> None:
-        self.__dictionary: dict = stack
+        self.__stack: dict = stack
         self.__workload: dict = workload
 
     @property
@@ -29,7 +26,7 @@ class StackConfig:
         """
         Returns the dictionary of the stack
         """
-        return self.__dictionary
+        return self.__stack
 
     @property
     def name(self) -> str:
@@ -67,6 +64,19 @@ class StackConfig:
         """
         value = self.dictionary.get("enabled")
         return str(value).lower() == "true" or value is True
+
+    @property
+    def dependancies(self) -> List[str]:
+        """
+        Returns the stack dependancies
+        """
+        value = self.dictionary.get("dependancies")
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        else:
+            raise ValueError("Stack dependancies must be a list of strings")
 
     def build_id(self) -> str:
         """

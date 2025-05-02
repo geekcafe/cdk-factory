@@ -17,6 +17,7 @@ from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
 from cdk_factory.configurations.resources._resources import Resources
 from cdk_factory.configurations.resources.cloudfront import CloudFrontConfig
 from cdk_factory.configurations.stack import StackConfig
+import json
 
 logger = Logger()
 
@@ -28,7 +29,7 @@ class WorkloadConfig:
 
     def __init__(self, config: str | dict) -> None:
         self.__workload: dict | None = None
-
+        self.__app_config: dict | None = None
         self.__devops: DevOps | None = None
         self.__management: Management | None = None
         self.__cloudfront: CloudFrontConfig | None = None
@@ -47,10 +48,28 @@ class WorkloadConfig:
     def __load_config(self, config: str | dict) -> None:
         workload: dict = {}
 
-        if "workload" in config:
-            workload = config["workload"]
+        if isinstance(config, str):
+            if os.path.exists(config):
+                self.__config_path = config
+                with open(config, "r", encoding="utf-8") as f:
+                    self.__app_config = json.load(f)
+
+            else:
+                raise ValueError(f"Configuration file not found: {config}")
+        elif isinstance(config, dict):
+            self.__app_config = config
         else:
-            workload = config
+            raise ValueError(
+                "Workload Configuration must be a string or dictionary at this point."
+            )
+
+        if self.__app_config is None:
+            raise ValueError("Configuration is not defined.")
+
+        if "workload" in self.__app_config:
+            workload = self.__app_config["workload"]
+        else:
+            workload = self.__app_config
 
         self.__workload = workload
 
@@ -75,6 +94,15 @@ class WorkloadConfig:
                 self.__deployments.append(DeploymentConfig(workload, deployment))
 
         self.tags = workload.get("tags", {})
+
+    @property
+    def app_config(self) -> Dict:
+        """The application configuration"""
+        if not self.__app_config:
+            raise ValueError(
+                "Application configuration is not defined in the configuration."
+            )
+        return self.__app_config
 
     @property
     def devops(self) -> DevOps:

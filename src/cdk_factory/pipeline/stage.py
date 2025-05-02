@@ -1,5 +1,7 @@
 """
-Aplos Analytics
+Geek Cafe, LLC
+Maintainers: Eric Wilson
+MIT License.  See Project Root for the license information.
 """
 
 import aws_cdk

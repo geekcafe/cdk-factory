@@ -51,21 +51,17 @@ class StaticWebSiteStack(IStack):
     ) -> None:
         logger.info("Building static website stack")
 
-        bucket = self.__get_s3_bucket(stack_config, deployment)
+        bucket = self.__get_s3_website_bucket(stack_config, deployment)
 
-        accounts = stack_config.dictionary.get("accounts", [])
-        account = self.__get_deployment_account_setting(deployment, accounts)
-
-        env_settings = (
-            self.__extract_environment_settings(account, deployment) if account else {}
-        )
         # Use DNS aliases from environment settings if available; fallback to global config.
-        aliases: List[str] = env_settings.get(
-            "aliases", stack_config.dictionary.get("dns", {}).get("aliases", [])
-        )
-        certificate: Optional[acm.Certificate] = None
+        dns: dict = stack_config.dictionary.get("dns", {})
+        aliases: List[str] = dns.get("aliases", [])
 
-        if env_settings.get("hosted_zone_id"):
+        cert: dict = stack_config.dictionary.get("cert", {})
+
+        certificate: Optional[acm.Certificate] = None
+        hosted_zone: Optional[route53.IHostedZone] = None
+        if dns.get("hosted_zone_id"):
             if not aliases or not isinstance(aliases, list) or len(aliases) == 0:
                 raise ValueError(
                     "DNS aliases are required and must be a non-empty list when "
@@ -73,19 +69,19 @@ class StaticWebSiteStack(IStack):
                 )
 
             hosted_zone = self.__get_hosted_zone(
-                hosted_zone_id=env_settings.get("hosted_zone_id", ""),
-                hosted_zone_name=env_settings.get("hosted_zone_name", ""),
+                hosted_zone_id=dns.get("hosted_zone_id", ""),
+                hosted_zone_name=dns.get("hosted_zone_name", ""),
                 deployment=deployment,
             )
 
-            cert_domain_name = env_settings.get("cert_domain_name")
+            cert_domain_name = cert.get("domain_name")
             if cert_domain_name:
                 certificate = acm.Certificate(
                     self,
                     id=deployment.build_resource_name("SiteCertificateWildPlus"),
                     domain_name=cert_domain_name,
                     validation=acm.CertificateValidation.from_dns(hosted_zone),
-                    subject_alternative_names=env_settings.get("cert_alternate_names"),
+                    subject_alternative_names=cert.get("alternate_names"),
                 )
 
         self.__setup_cloudfront_distribution(
@@ -98,42 +94,11 @@ class StaticWebSiteStack(IStack):
             hosted_zone=hosted_zone,
         )
 
-    def __extract_environment_settings(
-        self, account: Dict[str, Any], deployment: DeploymentConfig
-    ) -> Dict[str, Any]:
-        environment = next(
-            (
-                env
-                for env in account.get("environments", [])
-                if env.get("environment") == deployment.environment
-            ),
-            None,
-        )
-        if environment and isinstance(environment, dict):
-            dns = environment.get("dns", {})
-            cert = environment.get("cert", {})
-            return {
-                "hosted_zone_id": dns.get("hosted_zone_id"),
-                "hosted_zone_name": dns.get("hosted_zone_name"),
-                "aliases": dns.get("aliases", []),
-                "cert_domain_name": cert.get("domain_name"),
-                "cert_alternate_names": cert.get("alternate_names"),
-            }
-        return {}
+        if stack_config.dependancies:
+            for dependancy in stack_config.dependancies:
+                self.add_dependency(deployment.build_resource_name(dependancy))
 
-    def __get_deployment_account_setting(
-        self, deployment: DeploymentConfig, accounts: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        return next(
-            (
-                item
-                for item in accounts
-                if item.get("account", {}) == deployment.account
-            ),
-            None,
-        )
-
-    def __get_s3_bucket(
+    def __get_s3_website_bucket(
         self, stack_config: StackConfig, deployment: DeploymentConfig
     ) -> s3.IBucket:
         construct = S3BucketConstruct(

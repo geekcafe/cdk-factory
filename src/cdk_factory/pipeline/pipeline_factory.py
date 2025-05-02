@@ -2,12 +2,14 @@
 Geek Cafe Pipeline
 """
 
+import os
 from typing import List
 
 import aws_cdk as cdk
 from aws_cdk import aws_codebuild as codebuild
 from aws_cdk import aws_codecommit as codecommit
 from aws_cdk import pipelines
+from aws_cdk.aws_codepipeline import PipelineType
 from aws_lambda_powertools import Logger
 from constructs import Construct
 
@@ -20,6 +22,9 @@ from cdk_factory.pipeline.security.roles import PipelineRoles
 from cdk_factory.pipeline.stage import PipelineStage
 from cdk_factory.stack.stack_factory import StackFactory
 from cdk_factory.workload.workload_factory import WorkloadConfig
+
+from cdk_factory.configurations.cdk_config import CdkConfig
+from cdk_factory.utilities.configuration_loader import ConfigurationLoader
 
 logger = Logger()
 
@@ -36,9 +41,12 @@ class PipelineFactoryStack(cdk.Stack):
         *,
         deployment: DeploymentConfig,
         workload: WorkloadConfig,
+        cdk_config: CdkConfig,
         outdir: str | None = None,
         **kwargs,
     ):
+
+        self.cdk_config = cdk_config
         self.workload: WorkloadConfig = workload
         # use the devops account to run the pipeline
         devop_account = self.workload.devops.account
@@ -99,7 +107,7 @@ class PipelineFactoryStack(cdk.Stack):
             else:
                 print(
                     f"\t🚨 Deployment for Environment: {deployment.environment} "
-                    f"Branch: {deployment.branch} is disabled."
+                    f"is disabled."
                 )
         if len(self.pipeline.deployments) == 0:
             print(f"\t⛔️ No Deployments configured for {self.workload.name}.")
@@ -112,12 +120,10 @@ class PipelineFactoryStack(cdk.Stack):
         # CodePipeline to automate the deployment process
         pipeline_name = self.pipeline.build_resource_name("pipeline")
         branch = self.pipeline.branch
+
+        env_vars = self.__get_environment_vars()
         # add some environment vars
-        build_environment = codebuild.BuildEnvironment(
-            environment_variables={
-                "GIT_BRANCH_NAME": codebuild.BuildEnvironmentVariable(value=branch)
-            }
-        )
+        build_environment = codebuild.BuildEnvironment(environment_variables=env_vars)
 
         codebuild_policy = CodeBuildPolicy()
         role_policy = codebuild_policy.code_build_policies(
@@ -141,9 +147,34 @@ class PipelineFactoryStack(cdk.Stack):
             # make sure this is set or you'll get errors, we're doing cross account deployments
             cross_account_keys=True,
             code_build_defaults=build_options,
+            # TODO: make this configurable
+            pipeline_type=PipelineType.V2,
         )
 
         return code_pipeline
+
+    def __get_environment_vars(self) -> dict:
+
+        branch = self.pipeline.branch
+
+        temp: dict = self.cdk_config.environment_vars
+        environment_variables = {}
+        for key, value in temp.items():
+            environment_variables[key] = codebuild.BuildEnvironmentVariable(value=value)
+
+        environment_variables["GIT_BRANCH_NAME"] = codebuild.BuildEnvironmentVariable(
+            value=branch
+        )
+
+        if self.cdk_config.config_file_path:
+
+            config_path = self.cdk_config.config_file_path
+            if config_path:
+                environment_variables["CDK_CONFIG_PATH"] = (
+                    codebuild.BuildEnvironmentVariable(value=config_path)
+                )
+
+        return environment_variables
 
     def __setup_waves(self, deployment: DeploymentConfig, **kwargs):
         for deployment in self.pipeline.deployments:

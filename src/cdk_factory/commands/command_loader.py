@@ -95,8 +95,8 @@ class CommandLoader:
         if path.exists():
             return path
 
-        for path in self.workload.paths:
-            full_path = Path(path).joinpath(file_path).resolve()
+        for workload_path in self.workload.paths:
+            full_path = Path(workload_path).joinpath(file_path).resolve()
             if full_path.exists():
                 return full_path
         return None

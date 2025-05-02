@@ -21,3 +21,5 @@ pkginfo # occasionally we need to upgrade this or we can get upload errors when 
 # ERROR    InvalidDistribution: Metadata is missing required fields: Name, Version.                                                
 #          Make sure the distribution includes the files where those fields are specified, and is using a supported                
 #          Metadata-Version: 1.0, 1.1, 1.2, 2.0, 2.1, 2.2, 2.3. 
+
+pytest

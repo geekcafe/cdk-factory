@@ -104,10 +104,7 @@ class S3BucketConfig:
             elif value.lower() == "kms":
                 return s3.BucketEncryption.KMS
 
-        if not value:
-            return s3.BucketEncryption.S3_MANAGED
-
-        return value
+        return s3.BucketEncryption.S3_MANAGED
 
     @property
     def lifecycle_rules(self) -> list[dict]:
@@ -149,10 +146,7 @@ class S3BucketConfig:
             elif value.lower() == "private":
                 return s3.BucketAccessControl.PRIVATE
 
-        if not value:
-            return s3.BucketAccessControl.PRIVATE
-
-        return value
+        return s3.BucketAccessControl.PRIVATE
 
     @property
     def block_public_access(self) -> s3.BlockPublicAccess:
@@ -164,14 +158,15 @@ class S3BucketConfig:
         if value and isinstance(value, str):
             if value.lower() == "block_acls":
                 return s3.BlockPublicAccess.BLOCK_ACLS
-            elif value.lower() == "block_public_acls":
-                return s3.BlockPublicAccess.block_public_acls
-            elif value.lower() == "block_public_policy":
-                return s3.BlockPublicAccess.block_public_policy
+            # elif value.lower() == "block_public_acls":
+            #     return s3.BlockPublicAccess.block_public_acls
+            # elif value.lower() == "block_public_policy":
+            #     return s3.BlockPublicAccess.block_public_policy
             elif value.lower() == "block_all":
                 return s3.BlockPublicAccess.BLOCK_ALL
-
+            else:
+                return s3.BlockPublicAccess.BLOCK_ALL
         if not value:
             return s3.BlockPublicAccess.BLOCK_ALL
 
-        return value
+        # return value

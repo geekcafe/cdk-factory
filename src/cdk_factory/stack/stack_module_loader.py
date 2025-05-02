@@ -22,7 +22,7 @@ class ModuleLoader:
     def load_known_modules(self):
         """Load the known modules"""
         path = str(Path(__file__).parents[1].resolve())
-        path = os.path.join(path, "stacks")
+        path = os.path.join(path, "stack_library")
 
         # get all files in the directory
         paths = [os.path.join(path, name) for name in os.listdir(path)]

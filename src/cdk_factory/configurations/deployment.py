@@ -203,14 +203,14 @@ class DeploymentConfig:
         """
         Returns the deployment environment name
         """
-        return self.__deployment["environment"]
+        return self.__deployment.get("environment")
 
     @property
     def subdomain(self):
         """
         Returns the deployment subdomain name
         """
-        return self.__deployment["subdomain"]
+        return self.__deployment.get("subdomain")
 
     @property
     def hosted_zone(self) -> "Route53HostedZoneConfig":
@@ -330,3 +330,16 @@ class DeploymentConfig:
         Returns the naming convention for deployment
         """
         return self.__deployment.get("naming_convention", "latest")
+
+    def get_ssm_parameter_arn(self, parameter_path: str) -> str:
+        """
+        Gets an SSM Parameter for parameter store.
+        Note that you can't have duplicates across different stacks, Cfn will error out.
+
+        """
+        if parameter_path.startswith("/"):
+            parameter_path = parameter_path[1::]
+
+        arn = f"arn:aws:ssm:{self.region}:{self.account}:parameter/{parameter_path}"
+
+        return arn

@@ -6,6 +6,9 @@ MIT License.  See Project Root for the license information.
 
 import os
 import subprocess
+from aws_lambda_powertools import Logger
+
+logger = Logger()
 
 
 class GitUtilities:
@@ -56,3 +59,47 @@ class GitUtilities:
                 "An error occurred while trying to fetch the current Git commit hash."
             )
             return None
+
+    @staticmethod
+    def get_version_tag(suffix: str | None = None) -> str:
+        tag = None
+        try:
+            tag = None
+            if not suffix:
+                # Runs the git command to get the most recent tag reachable from the current commit
+                tag = (
+                    subprocess.check_output(
+                        ["git", "describe", "--tags"], stderr=subprocess.STDOUT
+                    )
+                    .strip()
+                    .decode()
+                )
+            else:
+                tags = (
+                    subprocess.check_output(
+                        ["git", "tag", "--contains", "HEAD"], stderr=subprocess.STDOUT
+                    )
+                    .strip()
+                    .decode()
+                ).split("\n")
+
+                for t in tags:
+                    if suffix in t:
+                        tag = t
+                        break
+                if not tag:
+                    tag = tags[0]
+
+            # Split the output by '-' and take the first part to ignore the commit count and hash
+            # This splits the output and keeps only the tag part
+
+            tag = tag.split("-", 1)[0]
+        except subprocess.CalledProcessError as e:
+            logger.exception(str(e))
+
+        except Exception as e:  # pylint: disable=w0718
+            logger.exception(str(e))
+        if not tag:
+            tag = "v0.0.0"
+
+        return tag

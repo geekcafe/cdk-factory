@@ -10,8 +10,7 @@ packages = ["src/cdk_factory"]
 [project]
 
 name = "cdk_factory"
-source = "src/cdk_factory"
-version = "0.0.3"
+version = "0.0.10"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
@@ -29,6 +28,6 @@ dependencies = [
   "aws-lambda-powertools>=2.38.1",
   "aws-cdk-lib",
   "constructs",
-  "boto3_assist",
+  "boto3_assist>=0.10.0",
   "PyYAML"
 ]

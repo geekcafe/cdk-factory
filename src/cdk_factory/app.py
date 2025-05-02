@@ -4,12 +4,13 @@ Geek Cafe, LLC
 Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
-
+import os
 import aws_cdk
 from aws_cdk.cx_api import CloudAssembly
 
 from cdk_factory.utilities.commandline_args import CommandlineArgs
 from cdk_factory.workload.workload_factory import WorkloadFactory
+from cdk_factory.utilities.configuration_loader import ConfigurationLoader
 
 
 class CdkAppFactory:
@@ -18,7 +19,7 @@ class CdkAppFactory:
     def __init__(
         self,
         args: CommandlineArgs | None = None,
-        config: str | dict | None = None,
+        config_path: str | None = None,
         outdir: str | None = None,
     ) -> None:
         if not args:
@@ -26,7 +27,9 @@ class CdkAppFactory:
         self.outdir = outdir or args.outdir
         self.app: aws_cdk.App = aws_cdk.App(outdir=outdir)
 
-        self.config = config or args.config or self.app.node.try_get_context("config")
+        self.config_path = ConfigurationLoader().get_runtime_config(
+            config_path=config_path, args=args, app=self.app
+        )
 
     def synth(
         self,
@@ -40,7 +43,7 @@ class CdkAppFactory:
             CloudAssembly: CDK CloudAssemby
         """
 
-        print("config", self.config)
+        print("config_path", self.config_path)
 
         if not paths:
             paths = []
@@ -50,16 +53,18 @@ class CdkAppFactory:
         if cdk_app_file:
             paths.append(cdk_app_file)
         workload: WorkloadFactory = WorkloadFactory(
-            app=self.app, config=self.config, cdk_app_file=cdk_app_file, paths=paths
+            app=self.app,
+            config_path=self.config_path,
+            cdk_app_file=cdk_app_file,
+            paths=paths,
         )
-        # add any external stacks to the app
 
-        ca: CloudAssembly = workload.synth()
+        assembly: CloudAssembly = workload.synth()
 
         # print("output dir", self.app.outdir)
-        print("☁️ cloud assembly dir", ca.directory)
+        print("☁️ cloud assembly dir", assembly.directory)
 
-        return ca
+        return assembly
 
 
 if __name__ == "__main__":

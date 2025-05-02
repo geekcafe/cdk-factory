@@ -81,7 +81,7 @@ class CloudFrontDistributionConstruct(Construct):
             if len(self.aliases) == 0:
                 self.aliases = None
 
-        if not isinstance(self.aliases, list) or self.aliases is None:
+        if self.aliases and not isinstance(self.aliases, list):
             raise ValueError("Aliases must be a list of strings or None")
 
     def create(self) -> cloudfront.Distribution:

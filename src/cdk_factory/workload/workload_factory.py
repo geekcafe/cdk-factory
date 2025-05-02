@@ -29,15 +29,15 @@ class WorkloadFactory:
     def __init__(
         self,
         app: aws_cdk.App,
-        config: str | dict,
+        config_path: str,
         outdir: str | None = None,
         paths: List[str] | None = None,
         cdk_app_file: str | None = None,
     ):
-        self.app_config = CdkConfig(
-            config=config, cdk_context=app.node.get_all_context()
+        self.cdk_config = CdkConfig(
+            config_path=config_path, cdk_context=app.node.get_all_context()
         )
-        self.workload: WorkloadConfig = WorkloadConfig(config=self.app_config.config)
+        self.workload: WorkloadConfig = WorkloadConfig(config=self.cdk_config.config)
         self.workload.paths = paths or []
         self.workload.cdk_app_file = cdk_app_file or __file__
         self.app = app
@@ -122,6 +122,7 @@ class WorkloadFactory:
             deployment=deployment,
             outdir=self.outdir,
             workload=self.workload,
+            cdk_config=self.cdk_config,
         )
 
         factory.build()
