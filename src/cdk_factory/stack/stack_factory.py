@@ -12,7 +12,7 @@ from cdk_factory.stack.stack_module_registry import modules
 
 
 class StackFactory:
-    """Cleaning Rule Factory"""
+    """Stack Factory"""
 
     def __init__(self):
         ml: ModuleLoader = ModuleLoader()

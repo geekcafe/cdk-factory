@@ -4,6 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import os
 import cdk_nag
 from aws_cdk import aws_ecr, aws_lambda
 from aws_cdk import aws_iam as iam
@@ -20,6 +21,7 @@ from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
 )
 from cdk_factory.utilities.environment_services import EnvironmentServices
+from cdk_factory.configurations.workload import WorkloadConfig
 
 logger = Logger(__name__)
 
@@ -36,21 +38,23 @@ class LambdaDockerConstruct(Construct):
         id: str,  # pylint: disable=W0622
         *,
         deployment: Deployment,
+        workload: WorkloadConfig,
         **kwargs,
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
         self.scope = scope
         self.deployment = deployment
+        self.workload = workload
 
     def function(
         self,
         scope: Construct,
         deployment: Deployment,
         lambda_config: LambdaFunctionConfig,
-        tag_or_digest: str,
-        ecr_repo_name: str,
-        ecr_arn: str,
+        tag_or_digest: str | None = "dev",
+        ecr_repo_name: str | None = None,
+        ecr_arn: str | None = None,
         role: iam.Role | None = None,
         environment: dict | None = None,
     ) -> aws_lambda.DockerImageFunction:
@@ -77,17 +81,9 @@ class LambdaDockerConstruct(Construct):
                 deployment=deployment,
                 lambda_config=lambda_config,
             )
-        # get a reference to the ecr repoistory
-        ecr_repository: aws_ecr.IRepository = self.get_ecr_repo(
-            scope=scope,
-            deployment=deployment,
-            name=ecr_repo_name,
-            arn=ecr_arn,
-            function_name=lambda_config.name,
-        )
 
         self.update_role_permissions(role=role, repo_arn=ecr_arn)
-        function_name = deployment.build_resource_name(
+        function_id = deployment.build_resource_name(
             lambda_config.name, resource_type=ResourceTypes.LAMBDA_FUNCTION
         )
         environment = EnvironmentServices.load_environment_variables(
@@ -99,14 +95,47 @@ class LambdaDockerConstruct(Construct):
 
         self.__suppress_nag(role=role)
 
-        function = aws_lambda.DockerImageFunction(
-            scope=scope,
-            id=function_name,
-            # important this needs to match what's being built later in the pipeline
-            code=aws_lambda.DockerImageCode.from_ecr(
+        code: aws_lambda.DockerImageCode
+
+        if lambda_config.docker.file:
+
+            source = lambda_config.src
+            if not os.path.exists(source):
+
+                for dir in self.workload.paths:
+                    if os.path.exists(os.path.join(dir, source)):
+                        source = os.path.join(dir, source)
+                        break
+            if not os.path.exists(source):
+                raise ValueError(f"Lambda Source directory {source} not found.")
+
+            code = aws_lambda.DockerImageCode.from_image_asset(
+                directory=lambda_config.src,
+            )
+
+        else:
+            # get a reference to the ecr repoistory
+            ecr_repository: aws_ecr.IRepository = self.get_ecr_repo(
+                scope=scope,
+                deployment=deployment,
+                name=ecr_repo_name,
+                arn=ecr_arn,
+                function_name=lambda_config.name,
+            )
+            # important this needs to match an existing ECR
+            code = aws_lambda.DockerImageCode.from_ecr(
                 repository=ecr_repository,
                 tag_or_digest=tag_or_digest,
-            ),
+            )
+
+        function_name: str | None = None
+        if not lambda_config.auto_name:
+            function_name = function_id
+
+        function = aws_lambda.DockerImageFunction(
+            scope=scope,
+            id=function_id,
+            code=code,
             architecture=lambda_config.architecture,
             memory_size=lambda_config.memory_size,
             timeout=lambda_config.timeout,

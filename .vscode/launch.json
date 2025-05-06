@@ -86,12 +86,12 @@
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True",
-                "CDK_CONFIG_PATH" : "../../samples/lambdas/docker_image/config.json",
+                "CDK_CONFIG_PATH" : "../../samples/lambdas/docker_file/config.json",
                 "CDK_WORKLOAD_NAME": "sandbox-lambda-docker-image",                
                 
                 
             },
-            "envFile": "${workspaceFolder}/samples/lambdas/docker_image/.env"
+            "envFile": "${workspaceFolder}/samples/lambdas/docker_file/.env"
         },
         {
             "name": "Build & Deploy Artifacts",

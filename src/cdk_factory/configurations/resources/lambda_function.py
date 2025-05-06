@@ -109,7 +109,7 @@ class LambdaFunctionConfig:
     def src(self) -> str:
         """Source Directory"""
         if self.__config and isinstance(self.__config, dict):
-            src_directory = self.__config.get("source_directory")
+            src_directory = self.__config.get("src")
 
             if src_directory:
                 return src_directory

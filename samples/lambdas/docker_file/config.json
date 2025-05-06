@@ -34,11 +34,11 @@
     ]
   },
   "workload": {
-    "name": "sandbox-lambda-docker-image",
+    "name": "{{WORKLOAD_NAME}}",
     "description": "General info about this app/workload",
     "devops": {
-      "account": "328553401036",
-      "region": "us-east-1",
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}",
       "code_repository": {
         "name": "{{CODE_REPOSITORY_NAME}}",
         "type": "connector_arn",
@@ -48,7 +48,7 @@
         {
           "name": "cdk_synth",
           "commands": [],
-          "file": "../../samples/lambdas/docker_image/commands/cdk_synth.sh"
+          "file": "{{CDK_SYNTH_COMMAND_FILE}}"
         }
       ]
     },
@@ -60,7 +60,7 @@
         "resources": [
           {
             "name": "usage-report",
-            "fully_qualified_name": "sandbox-lambda-docker-image-{{deployment-name}}-usage-report",
+            "fully_qualified_name": "{{WORKLOAD_NAME}}-{{deployment-name}}-usage-report",
             "exists": false
           }
         ]
@@ -68,20 +68,21 @@
       {
         "name": "lambdas",
         "module": "lambda_stack",
-        "account": "328553401036",
+        "account": "{{AWS_ACCOUNT}}",
         "environment": "dev",
         "enabled": true,
         "resources": [
           {
             "name": "usage-report",
-            "fully_qualified_name": "sandbox-lambda-docker-image-{{deployment-name}}-usage-report",
+            "fully_qualified_name": "{{WORKLOAD_NAME}}-{{deployment-name}}-usage-report",
             "auto_name": true,
+            "src": "./samples/lambdas/docker_image/src/lambda_handlers/summary_report",
             "docker": {
               "file": "Dockerfile",
               "context": ".",
               "path": "",
               "image": "lambda-usage-report",
-              "image_tag": "latest",
+              "image_tag": "{{ENVIRONMENT}}",
               "build_args": "",
               "build_target": "",
               "file_exists": true,
@@ -89,8 +90,8 @@
             },
             "ecr": {
               "name": "{{workload-name}}-{{deployment-name}}-usage-report",
-              "account": "328553401036",
-              "region": "us-east-1",
+              "account": "{{AWS_ACCOUNT}}",
+              "region": "{{AWS_REGION}}",
               "tag": "{{ENVIRONMENT}}",
               "exists": false
             }
@@ -98,27 +99,24 @@
         ]
       }
     ],
+
     "deployments": [
       {
         "name": "ecr-deployment",
         "environment": "dev",
-        "account": "328553401036",
+        "account": "{{AWS_ACCOUNT}}",
         "region": "us-east-1",
         "mode": "stack",
-        "stacks": [
-          "ecr-repos"
-        ],
+        "stacks": ["ecr-repos"],
         "enabled": true
       },
       {
         "name": "lambda-deployment",
         "environment": "dev",
-        "account": "328553401036",
+        "account": "{{AWS_ACCOUNT}}",
         "region": "us-east-1",
         "mode": "stack",
-        "stacks": [
-          "lambdas"
-        ],
+        "stacks": ["lambdas"],
         "enabled": true
       }
     ]

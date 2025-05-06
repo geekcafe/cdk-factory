@@ -60,6 +60,10 @@ class LambdaStack(IStack):
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
+        self.stack_config: StackConfig | None = None
+        self.deployment: DeploymentConfig | None = None
+        self.workload: WorkloadConfig | None = None
+
         self.__nag_rule_suppressions()
 
         StackStandards.nag_auto_resources(scope)
@@ -74,6 +78,7 @@ class LambdaStack(IStack):
 
         self.stack_config = stack_config
         self.deployment = deployment
+        self.workload = workload
         resources = stack_config.dictionary.get("resources", [])
 
         lambda_functions: List[LambdaFunctionConfig] = []
@@ -178,25 +183,9 @@ class LambdaStack(IStack):
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig
     ) -> aws_lambda.DockerImageFunction:
-        # parameter_name = self.deployment.get_ssm_parameter_ecr_uri(
-        #     lambda_config.ecr.name
-        # )
-        # repo_uri = ParameterStoreUtilties().get_parameter_value(parameter_name)
-        repo_uri = lambda_config.ecr.uri
-
-        # parameter_name = self.deployment.get_ssm_parameter_ecr_arn(
-        #     lambda_config.ecr.name
-        # )
-        # repo_arn = ParameterStoreUtilties().get_parameter_value(parameter_name)
-        repo_arn = lambda_config.ecr.arn
-        # parameter_name = self.deployment.get_ssm_parameter_ecr_name(
-        #     lambda_config.ecr.name
-        # )
-        # repo_name = ParameterStoreUtilties().get_parameter_value(parameter_name)
-        repo_name = lambda_config.ecr.name
 
         tag_or_digest = DockerUtilities().generate_tags(
-            repo_uri=repo_uri,
+            repo_uri="NA",
             primary_tag=self.deployment.tenant,
             environment=self.deployment.environment,
             version=lambda_config.version_number,
@@ -205,14 +194,13 @@ class LambdaStack(IStack):
             scope=self,
             id=f"{lambda_config.name}-construct",
             deployment=self.deployment,
+            workload=self.workload,
         )
 
         docker_image_function = lambda_docker.function(
             scope=self,
             lambda_config=lambda_config,
             deployment=self.deployment,
-            ecr_repo_name=repo_name,
-            ecr_arn=repo_arn,
             tag_or_digest=tag_or_digest[0].split(":")[-1],
         )
 
