@@ -8,9 +8,9 @@ from aws_lambda_powertools import Logger
 from constructs import Construct
 
 from cdk_factory.configurations.deployment import DeploymentConfig
-from cdk_factory.configurations.resources.s3 import S3BucketConfig
+from cdk_factory.configurations.resources.ecr import ECRConfig
 from cdk_factory.configurations.stack import StackConfig
-from cdk_factory.constructs.s3_buckets.s3_bucket_construct import S3BucketConstruct
+from cdk_factory.constructs.ecr.ecr_construct import ECRConstruct
 from cdk_factory.stack.istack import IStack
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
@@ -18,10 +18,10 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
-@register_stack("bucket_stack")
-class S3BucketStack(IStack):
+@register_stack("ecr_stack")
+class ECRStack(IStack):
     """
-    A CloudFormation Stack for an S3 Bucket
+    A CloudFormation Stack for an ECR
 
     """
 
@@ -37,7 +37,6 @@ class S3BucketStack(IStack):
         self.id = id
         self.stack_config: StackConfig | None = None
         self.deployment: DeploymentConfig | None = None
-        self.bucket_config: S3BucketConfig | None = None
 
     def build(
         self,
@@ -50,11 +49,23 @@ class S3BucketStack(IStack):
         self.stack_config = stack_config
         self.deployment = deployment
 
-        self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
+        constructs = []
+        repos = stack_config.dictionary.get("resources", [])
+        repo: dict
+        for repo in repos:
+            config = ECRConfig(config=repo, deployment=deployment)
+            construct_id = deployment.build_resource_name(
+                repo.get("fully_qualified_name", repo.get("name", None))
+            )
 
-        S3BucketConstruct(
-            self,
-            id=deployment.build_resource_name(self.bucket_config.name),
-            stack_config=stack_config,
-            deployment=deployment,
-        )
+            if not construct_id:
+                raise ValueError(f"Invalid ECR name: {construct_id}")
+
+            construct = ECRConstruct(
+                scope=self,
+                id=construct_id,
+                deployment=deployment,
+                repo=config,
+            )
+
+            constructs.append(construct)

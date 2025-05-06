@@ -61,7 +61,6 @@ class CdkAppFactory:
 
         assembly: CloudAssembly = workload.synth()
 
-        # print("output dir", self.app.outdir)
         print("☁️ cloud assembly dir", assembly.directory)
 
         return assembly

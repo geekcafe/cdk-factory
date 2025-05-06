@@ -82,4 +82,4 @@ class StackConfig:
         """
         Returns the stack name
         """
-        return f"{self.name}-{self.name}"
+        return f"{self.name}"

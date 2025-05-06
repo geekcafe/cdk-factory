@@ -155,21 +155,24 @@ class PipelineConfig:
 
     def code_artifact_logins(self, include_profile: bool = False) -> List[str]:
         """
-        Returns the code artifact logins
+        Returns the code artifact logins (if any)
         """
         # todo
-        return []
 
-        logins = self.pipeline.get("code_artifact_logins")
-        if not logins:
-            # logins = []
-            domain = "<to-do>"
-            repository = "<to-do>"
-            region = self.workload.devops.region
-            codeartifact_login_commands = f"aws codeartifact login --tool pip --domain {domain} --repository {repository} --region {region}"
-            # if debugging / or a profile is being used
-            if os.getenv("AWS_PROFILE") and include_profile:
-                codeartifact_login_commands = f"{codeartifact_login_commands} --profile {os.getenv('AWS_PROFILE')}"
-            logins = [codeartifact_login_commands]
-        return logins
+        logins = self.pipeline.get("code_artifact_logins", [])
+
+        if not isinstance(logins, list):
+            logins = [logins]
+
+        # if not logins:
+        #     workload = WorkloadConfig(self.workload)
+
+        #     domain = workload.devops.code_artifact_domain
+        #     repository = workload.devops.code_artifact_repository
+        #     region = workload.devops.region
+        #     codeartifact_login_commands = f"aws codeartifact login --tool pip --domain {domain} --repository {repository} --region {region}"
+        #     # if debugging / or a profile is being used
+        #     if os.getenv("AWS_PROFILE") and include_profile:
+        #         codeartifact_login_commands = f"{codeartifact_login_commands} --profile {os.getenv('AWS_PROFILE')}"
+        #     logins = [codeartifact_login_commands]
         return logins

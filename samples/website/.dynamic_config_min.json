@@ -37,8 +37,8 @@
         "cdk_parameter_name": "CodeRepositoryName"
       },
       {
-        "placeholder": "{{CODE_REPOSITORY_ARN}}",
-        "env_var_name": "CODE_REPOSITORY_ARN",
+        "placeholder": "{{CODE_REPOSITORY_CONNECTOR_ARN}}",
+        "env_var_name": "CODE_REPOSITORY_CONNECTOR_ARN",
         "cdk_parameter_name": "CodeRepositoryArn"
       },
       {

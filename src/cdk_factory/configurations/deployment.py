@@ -6,7 +6,7 @@ MIT License.  See Project Root for the license information.
 
 from typing import Any, Dict, List, Optional
 
-from cdk_factory.configurations.resources._resources import Resources
+# from cdk_factory.configurations.resources._resources import Resources
 from cdk_factory.configurations.resources.resource_naming import ResourceNaming
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
 from cdk_factory.configurations.resources.route53_hosted_zone import (
@@ -24,7 +24,7 @@ class DeploymentConfig:
         self.__workload: dict = workload
         self.__deployment: dict = deployment
         self.__pipeline: dict = {}
-        self.__resources: Resources | None = None
+        # self.__resources: Resources | None = None
         self.__stacks: List[StackConfig] = []
         self.__load()
 
@@ -80,12 +80,16 @@ class DeploymentConfig:
         )
 
     @property
-    def resources(self) -> Resources:
-        """Deployment Resources"""
-        if self.__resources is None:
-            self.__resources = Resources(self.__deployment.get("resources", {}))
+    def config(self) -> Dict[str, Any]:
+        return self.__deployment
 
-        return self.__resources
+    # @property
+    # def resources(self) -> Resources:
+    #     """Deployment Resources"""
+    #     if self.__resources is None:
+    #         self.__resources = Resources(self.__deployment.get("resources", {}))
+
+    #     return self.__resources
 
     @property
     def stacks(self) -> List[StackConfig]:
@@ -331,15 +335,45 @@ class DeploymentConfig:
         """
         return self.__deployment.get("naming_convention", "latest")
 
-    def get_ssm_parameter_arn(self, parameter_path: str) -> str:
+    def get_ssm_parameter_arn(self, parameter_name: str) -> str:
         """
         Gets an SSM Parameter for parameter store.
         Note that you can't have duplicates across different stacks, Cfn will error out.
 
         """
-        if parameter_path.startswith("/"):
-            parameter_path = parameter_path[1::]
+        if parameter_name.startswith("/"):
+            parameter_name = parameter_name[1::]
 
-        arn = f"arn:aws:ssm:{self.region}:{self.account}:parameter/{parameter_path}"
+        arn = f"arn:aws:ssm:{self.region}:{self.account}:parameter/{parameter_name}"
 
         return arn
+
+    def get_ssm_parameter_name(
+        self,
+        resource_type: str,
+        resource_name: str,
+        resource_property: Optional[str] = None,
+    ) -> str:
+        """
+        Gets an SSM Parameter for parameter store.
+        Note that you can't have duplicates across different stacks, Cfn will error out.
+        Arguments:
+            resource_type {str} -- Resource Type (e.g S3)
+            resource_name {str} -- Resource Name (bucket name)
+            resource_property {str} -- Resource Property (optional) (arn)
+        Returns:
+            str: The SSM Parameter Name
+        Best Practice Nameing Convention:
+            /<env>/<workload-or-app-name>/<resource-type>/<name>/<optional-sub-property>
+            /dev/workload-name/s3/primary-bucket
+            /dev/workload-name/hosted-zone/example.com/id
+        """
+
+        parameter_name = (
+            f"/{self.environment}/{self.workload_name}/{resource_type}"
+            f"/{resource_name}"
+        )
+        if resource_property:
+            parameter_name = f"{parameter_name}/{resource_property}"
+
+        return parameter_name.lower()

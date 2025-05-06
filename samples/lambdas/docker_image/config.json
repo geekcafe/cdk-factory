@@ -1,0 +1,123 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+        "value": "../../samples/lambdas/docker_image/commands/cdk_synth.sh",
+        "cdk_parameter_name": "CdkSynthCommandFile"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{AWS_REGION}}",
+        "env_var_name": "AWS_REGION",
+        "cdk_parameter_name": "AwsRegion"
+      },
+      {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+        "env_var_name": "DEVOPS_AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountDevOpsNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_REGION}}",
+        "env_var_name": "DEVOPS_REGION",
+        "cdk_parameter_name": "AwsDevopsRegion"
+      }
+    ]
+  },
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "General info about this app/workload",
+    "devops": {
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}",
+      "code_repository": {
+        "name": "{{CODE_REPOSITORY_NAME}}",
+        "type": "connector_arn",
+        "connector_arn": "{{CODE_REPOSITORY_CONNECTOR_ARN}}"
+      },
+      "commands": [
+        {
+          "name": "cdk_synth",
+          "commands": [],
+          "file": "{{CDK_SYNTH_COMMAND_FILE}}"
+        }
+      ]
+    },
+    "stacks": [
+      {
+        "name": "ecr-repos",
+        "module": "ecr_stack",
+        "enabled": true,
+        "resources": [
+          {
+            "name": "usage-report",
+            "fully_qualified_name": "{{WORKLOAD_NAME}}-{{deployment-name}}-usage-report",
+            "exists": false
+          }
+        ]
+      },
+      {
+        "name": "lambdas",
+        "module": "lambda_stack",
+        "account": "{{AWS_ACCOUNT}}",
+        "environment": "dev",
+        "enabled": true,
+        "resources": [
+          {
+            "name": "usage-report",
+            "fully_qualified_name": "{{WORKLOAD_NAME}}-{{deployment-name}}-usage-report",
+            "auto_name": true,
+            "docker": {
+              "file": "Dockerfile",
+              "context": ".",
+              "path": "",
+              "image": "lambda-usage-report",
+              "image_tag": "latest",
+              "build_args": "",
+              "build_target": "",
+              "file_exists": true,
+              "image_exists": false
+            },
+            "ecr": {
+              "name": "{{workload-name}}-{{deployment-name}}-usage-report",
+              "account": "{{AWS_ACCOUNT}}",
+              "region": "{{AWS_REGION}}",
+              "tag": "{{ENVIRONMENT}}",
+              "exists": false
+            }
+          }
+        ]
+      }
+    ],
+
+    "deployments": [
+      {
+        "name": "ecr-deployment",
+        "environment": "dev",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": ["ecr-repos"],
+        "enabled": true
+      },
+      {
+        "name": "lambda-deployment",
+        "environment": "dev",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": ["lambdas"],
+        "enabled": true
+      }
+    ]
+  }
+}

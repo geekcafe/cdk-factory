@@ -19,7 +19,9 @@ except:  # noqa: E722, pylint: disable=bare-except
 
 
 def load_stacks():
-    # Dynamically import all modules in this package.
+    """
+    Dynamically import all modules in this package.
+    """
     for loader, module_name, is_pkg in pkgutil.iter_modules(paths):
         libray = f"{__name__}.{module_name}"
         # print(f"importing library: {libray}")

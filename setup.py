@@ -12,6 +12,7 @@ requirements_files = [
     "requirements.txt",
     "requirements.dev.txt",
     "requirements.iac.txt",
+    "requirements.tests.txt",
 ]
 
 

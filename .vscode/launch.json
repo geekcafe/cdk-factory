@@ -75,6 +75,25 @@
             "envFile": "${workspaceFolder}/samples/website/.env"
         },
         {
+            "name": "CDK Synth: Lambda w/ Docker Image",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cdk_factory/app.py",
+            "console": "integratedTerminal",    
+            "justMyCode": false,       
+            "env": {                
+                "ENVRIONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True",
+                "CDK_CONFIG_PATH" : "../../samples/lambdas/docker_image/config.json",
+                "CDK_WORKLOAD_NAME": "sandbox-lambda-docker-image",                
+                
+                
+            },
+            "envFile": "${workspaceFolder}/samples/lambdas/docker_image/.env"
+        },
+        {
             "name": "Build & Deploy Artifacts",
             "type": "debugpy",
             "request": "launch",

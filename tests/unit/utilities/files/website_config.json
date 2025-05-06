@@ -26,8 +26,8 @@
         "ssm_parameter_name": "/workload/cdk/devops/code/repository/name"
       },
       {
-        "placeholder": "{{CODE_REPOSITORY_ARN}}",
-        "cdk_parameter_name": "CodeRepoArn",
+        "placeholder": "{{CODE_REPOSITORY_CONNECTOR_ARN}}",
+        "cdk_parameter_name": "CodeRepoConnectorArn",
         "ssm_parameter_name": "/workload/cdk/devops/code/repository/arn"
       },
       {
@@ -57,7 +57,7 @@
       "code_repository": {
         "name": "{{CODE_REPOSITORY_NAME}}",
         "type": "connector_arn",
-        "connector_arn": "{{CODE_REPOSITORY_ARN}}"
+        "connector_arn": "{{CODE_REPOSITORY_CONNECTOR_ARN}}"
       },
       "commands": [
         {

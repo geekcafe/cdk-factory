@@ -21,7 +21,7 @@ class JsonUtilityTests(unittest.TestCase):
             "AccountName": "My Account",
             "AccountRegion": "us-east-1",
             "CodeRepoName": "company/my-repo-name",
-            "CodeRepoArn": "aws::repo_arn",
+            "CodeRepoConnectorArn": "aws::repo_arn",
             "SiteBucketName": "my-bucket",
             "HostedZoneId": "zone1234",
             "HostedZoneName": "dev.example.com",

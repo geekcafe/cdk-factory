@@ -22,6 +22,7 @@ from cdk_factory.utilities.os_execute import OsExecute
 from cdk_factory.configurations.resources.resource_mapping import (
     ResourceMapping,
 )
+from cdk_factory.configurations.deployment import DeploymentConfig
 
 logger = Logger()
 
@@ -29,11 +30,15 @@ logger = Logger()
 class LambdaFunctionConfig:
     """Lambda Function Config Settings"""
 
-    def __init__(self, config: dict) -> None:
+    def __init__(
+        self, config: dict, deployment: DeploymentConfig | None = None
+    ) -> None:
         self.__config = config
         self.docker: DockerConfig = DockerConfig(config=config.get("docker", {}))
         self.api: ApiGatewayConfig = ApiGatewayConfig(config=config.get("api", {}))
-        self.ecr: ECRConfig = ECRConfig(config=config.get("ecr", {}))
+        self.ecr: ECRConfig = ECRConfig(
+            config=config.get("ecr", {}), deployment=deployment
+        )
         self.sqs: SQS = SQS(config=config.get("sqs", {}))
         self.triggers: List[LambdaTriggersConfig] = []
         self.cloudwatch_widget: CloudWatchWidgetConfig = CloudWatchWidgetConfig(
@@ -42,6 +47,7 @@ class LambdaFunctionConfig:
         self.__name: str | None = None
         self.__execution_role_arn: str | None = None
         self.__execution_role_name: str | None = None
+        self.__deployment = deployment
         self.__load()
 
     def __load(self) -> None:
@@ -287,49 +293,7 @@ class LambdaFunctionConfig:
         if self.__config and isinstance(self.__config, dict):
             environment_vars = self.__config.get("environment_variables", [])
 
-        defaults: List[Dict[str, Any]] = [self.__get_audit_environment_var()]
-
-        # only add if they aren't already in there
-        for default in defaults:
-            found = False
-            for env_var in environment_vars:
-                if env_var["name"] == default["name"]:
-                    found = True
-                    break
-            if not found:
-                environment_vars.append(default)
-
         return environment_vars
-
-    def __get_audit_environment_var(self) -> dict:
-        """
-        All lambdas should have the following added, so that they can be audited
-        The lambdas themselves will still need to add the actual functionality via
-        a wrapper function. This is just to ensure that the audit log is captured.
-
-        Example:
-            # add the following to your lambda handler
-            from services.lambda_function_audit_wrapper import LambdaAudit
-            audit = LambdaAudit()
-            @audit.lambda_audit
-            def lambda_handler(event: dict, context: LambdaContext):
-
-        Returns:
-            dict: _description_
-        """
-        env_var = {
-            "name": "SQS_LAMBDA_AUDIT_URL",
-            "value": "audit-logger-sqs-queue",
-            "transform": "true",
-            "notes": (
-                "The var SQS_LAMBDA_AUDIT_URL is in the common libarary. "
-                "You won't find it referenced anywhere else in this repo. "
-                "This is the name of the queue that will be used for auditing. "
-                "The value will be transformed the actual queue url during the cdk build"
-            ),
-        }
-        raise RuntimeError("This needs to be created a different way")
-        return env_var
 
     @property
     def log_level(self) -> str:

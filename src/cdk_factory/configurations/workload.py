@@ -90,8 +90,7 @@ class WorkloadConfig:
             )
 
         for deployment in workload.get("deployments", []):
-            for pipeline in self.pipelines:
-                self.__deployments.append(DeploymentConfig(workload, deployment))
+            self.__deployments.append(DeploymentConfig(workload, deployment))
 
         self.tags = workload.get("tags", {})
 
