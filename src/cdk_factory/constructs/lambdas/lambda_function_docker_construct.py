@@ -22,6 +22,8 @@ from cdk_factory.configurations.resources.lambda_function import (
 )
 from cdk_factory.utilities.environment_services import EnvironmentServices
 from cdk_factory.configurations.workload import WorkloadConfig
+from cdk_factory.utilities.os_execute import OsExecute
+from typing import List
 
 logger = Logger(__name__)
 
@@ -69,10 +71,6 @@ class LambdaDockerConstruct(Construct):
             aws_lambda.DockerImageFunction: Docker Image Function Reference
         """
         assert tag_or_digest
-        # assert ecr_repo_name
-
-        if not ecr_repo_name:
-            ecr_repo_name = "first_deployment_temp_place_holder"
 
         if not role:
             role = LambdaRoleConstruct.Role(
@@ -82,7 +80,8 @@ class LambdaDockerConstruct(Construct):
                 lambda_config=lambda_config,
             )
 
-        self.update_role_permissions(role=role, repo_arn=ecr_arn)
+        self.update_ecr_permissions(role=role, repo_arn=ecr_arn)
+        self.update_role_permissions(role=role, lambda_config=lambda_config)
         function_id = deployment.build_resource_name(
             lambda_config.name, resource_type=ResourceTypes.LAMBDA_FUNCTION
         )
@@ -109,8 +108,10 @@ class LambdaDockerConstruct(Construct):
             if not os.path.exists(source):
                 raise ValueError(f"Lambda Source directory {source} not found.")
 
+            build_args = self.__process_build_args(lambda_config.docker.build_args)
             code = aws_lambda.DockerImageCode.from_image_asset(
-                directory=lambda_config.src,
+                directory=source,
+                build_args=build_args,
             )
 
         else:
@@ -150,7 +151,74 @@ class LambdaDockerConstruct(Construct):
 
         return function
 
-    def update_role_permissions(self, role: iam.Role, repo_arn: str) -> None:
+    def __process_build_args(self, build_args: dict) -> dict:
+        """
+        Process the build args
+        """
+        proceses_args = {}
+        # fixme
+        # Add logic to process the build args
+        for key, value in build_args.items():
+            if "action:" in value:
+                values = value.split(":")
+                if values[0] == "action":
+                    if values[1] == "generate_codeartifact_auth_token":
+
+                        domain = values[2]
+                        domain_owner = values[3]
+                        duration = 900
+                        profile: str | None = None
+                        if len(values) == 5:
+                            duration = values[4]
+                        if len(values) == 6:
+                            profile = values[5]
+
+                        command = (
+                            "aws codeartifact get-authorization-token "
+                            f"--domain {domain} "
+                            f"--domain-owner {domain_owner} "
+                            "--query authorizationToken "
+                            "--output text "
+                            f"--duration-seconds {duration} "
+                        )
+
+                        if profile:
+                            command += f"--profile {profile}"
+                        commands = command.split(" ")
+                        output = OsExecute.execute(commands=commands)
+
+                        proceses_args[key] = output
+                else:
+                    raise ValueError(f"Invalid action {values[0]}")
+
+            else:
+                proceses_args[key] = value
+        return proceses_args
+
+    def update_role_permissions(
+        self, role: iam.Role, lambda_config: LambdaFunctionConfig
+    ) -> None:
+        """
+        Update the role to allow getting the ecr images
+        """
+
+        if not role:
+            logger.warning("No role to update.")
+            return
+
+        permission: dict = {}
+        for permission in lambda_config.permissions:
+            actions: List[str] = []
+            actions = permission.get("actions", [])
+            resources = permission.get("resources", [])
+            role.add_to_policy(
+                iam.PolicyStatement(
+                    actions=actions,
+                    resources=resources,
+                )
+            )
+
+    def update_ecr_permissions(self, role: iam.Role, repo_arn: str) -> None:
         """
         Update the role to allow getting the ecr images
         """

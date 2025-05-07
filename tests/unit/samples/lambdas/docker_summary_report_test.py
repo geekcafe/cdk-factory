@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 import json
 
-from samples.lambdas.docker_image.src.lambda_handlers.summary_report.app import (
+from samples.lambdas.docker_file.src.lambda_handlers.summary_report.app import (
     lambda_handler,
 )
 

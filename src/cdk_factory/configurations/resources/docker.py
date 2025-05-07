@@ -1,3 +1,5 @@
+from typing import Dict
+
 """
 Geek Cafe, LLC
 Maintainers: Eric Wilson
@@ -62,3 +64,13 @@ class DockerConfig:
             return str(self.__config.get("image")).lower() == "true"
 
         return False
+
+    @property
+    def build_args(self) -> Dict[str, str]:
+        """build_args"""
+        if self.__config and isinstance(self.__config, dict):
+            value = self.__config.get("build_args")
+            if isinstance(value, dict):
+                return value
+
+        return {}
