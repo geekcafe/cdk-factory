@@ -31,11 +31,20 @@ class PipelineConfig:
         """
         deployment: dict = {}
         deployments: List[DeploymentConfig] = []
+
+        # this is the older way,
         for deployment in self.pipeline.get("deployments", []):
             resolved_deployment = self.__load_deployment(deployment.get("name", {}))
             deployments.append(
                 DeploymentConfig(workload=self.workload, deployment=resolved_deployment)
             )
+
+        # this is the newer way
+        for deployment in self.workload.get("deployments", []):
+            if deployment.get("mode") == "pipeline":
+                deployments.append(
+                    DeploymentConfig(workload=self.workload, deployment=deployment)
+                )
 
         # sort the deployments by order
         deployments.sort(key=lambda x: x.order)
@@ -47,6 +56,8 @@ class PipelineConfig:
 
         workload_level_deployment: dict = {}
         pipeline_level_deployment: dict = {}
+        resolved_deployment = {}
+
         if deployments:
             deployment: dict = {}
             for deployment in deployments:
@@ -60,7 +71,6 @@ class PipelineConfig:
                 pipeline_level_deployment = deployment
                 break
 
-        resolved_deployment = {}
         # merge the two dictionaries
         # start witht workload
         resolved_deployment.update(workload_level_deployment)
@@ -134,7 +144,6 @@ class PipelineConfig:
         as we may want to change them in the future for a given stack.
         """
 
-        assert name
         assert self.name
         assert self.workload_name
         separator = "-"
@@ -144,12 +153,17 @@ class PipelineConfig:
 
         pipline_name = self.name
 
-        new_name = f"{self.workload_name}{separator}{pipline_name}{separator}{name}"
+        new_name = f"{self.workload_name}{separator}{pipline_name}"
+
+        if not new_name.endswith(name) and name:
+            new_name = f"{new_name}{separator}{name}"
 
         if resource_type:
             new_name = ResourceNaming.validate_name(
                 new_name, resource_type=resource_type, fix=True
             )
+
+        new_name = new_name.replace(" ", "-")
 
         return new_name.lower()
 
@@ -164,15 +178,4 @@ class PipelineConfig:
         if not isinstance(logins, list):
             logins = [logins]
 
-        # if not logins:
-        #     workload = WorkloadConfig(self.workload)
-
-        #     domain = workload.devops.code_artifact_domain
-        #     repository = workload.devops.code_artifact_repository
-        #     region = workload.devops.region
-        #     codeartifact_login_commands = f"aws codeartifact login --tool pip --domain {domain} --repository {repository} --region {region}"
-        #     # if debugging / or a profile is being used
-        #     if os.getenv("AWS_PROFILE") and include_profile:
-        #         codeartifact_login_commands = f"{codeartifact_login_commands} --profile {os.getenv('AWS_PROFILE')}"
-        #     logins = [codeartifact_login_commands]
         return logins

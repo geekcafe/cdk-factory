@@ -72,11 +72,15 @@ class DeploymentConfig:
                 self.__pipeline = pipeline
                 return
 
+        if self.mode == "pipeline":
+            self.__pipeline = self.__deployment
+            return
+
         # if we get here, we didn't find the pipeline name
         # in the list but we defined a name in the deployment
         raise ValueError(
-            f"The Pipeline name {pipeline_name} was not found in "
-            "the list of defined pipelines. "
+            f'The Pipeline name "{pipeline_name}" was not found in '
+            f"the list of defined pipelines: {pipelines}"
         )
 
     @property

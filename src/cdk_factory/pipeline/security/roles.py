@@ -34,7 +34,9 @@ class PipelineRoles:
         # CodePipeline Service Role
         role = iam.Role(
             scope,
-            pipeline.build_resource_name("CodePipelineServiceRole"),
+            pipeline.build_resource_name(
+                "CodePipelineServiceRole", resource_type=ResourceTypes.IAM_ROLE
+            ),
             assumed_by=iam.ServicePrincipal("codepipeline.amazonaws.com"),
         )
 
@@ -138,7 +140,4 @@ class PipelineRoles:
         )
         role.add_to_policy(ecr_policy)
 
-        return role
-
-        return role
         return role

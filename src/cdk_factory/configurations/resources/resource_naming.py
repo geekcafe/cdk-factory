@@ -132,6 +132,10 @@ class ResourceNaming:
                     )
                 resource_name = f"/{resource_name}"
 
+        elif resource_type == ResourceTypes.IAM_ROLE:
+            # For S3 buckets, spaces and periods are invalid.
+            resource_name = resource_name.replace(" ", "-")
+
         resource_name = ResourceNaming._ensure_max_length_x(
             resource_name, resource_type, fix
         )

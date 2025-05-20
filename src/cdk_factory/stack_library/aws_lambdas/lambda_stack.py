@@ -35,7 +35,7 @@ from cdk_factory.configurations.resources.lambda_function import (
 from cdk_factory.utilities.docker_utilities import DockerUtilities
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.stack.istack import IStack
-
+from cdk_factory.configurations.resources.lambda_triggers import LambdaTriggersConfig
 
 logger = Logger(__name__)
 
@@ -136,20 +136,22 @@ class LambdaStack(IStack):
                         )
 
             if function_config.triggers:
+                trigger: LambdaTriggersConfig
                 for trigger in function_config.triggers:
                     if trigger.resoure_type.lower() == "s3":
                         raise NotImplementedError("S3 tiggers are implemented yet.")
 
                     if trigger.resoure_type == "event-bridge":
-                        raise NotImplementedError(
-                            "Event bridge triggers are not implemented yet."
-                        )
+
                         rule = events.Rule(
                             self,
                             id=f"{function_config.name}-event-bridge-trigger",
                             # TODO: get the schedule, this is just a test
                             schedule=events.Schedule.rate(aws_cdk.Duration.minutes(15)),
                         )
+                        # events.Schedule.rate()
+                        # events.Schedule.cron()
+                        # events.Schedule.expression()
 
                         # Add the Lambda function as the target of the rule
                         rule.add_target(

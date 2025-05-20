@@ -23,16 +23,19 @@ class CdkConfig:
     Cdk Configuration
     """
 
-    def __init__(self, config_path: str, cdk_context: dict | None) -> None:
+    def __init__(
+        self, config_path: str, cdk_context: dict | None, runtime_directory: str | None
+    ) -> None:
         self.cdk_context = cdk_context
+        self.__relative_config_path = config_path
         self.__config_file_path: str | None = config_path
         self.__resolved_config_file_path: str | None = None
         self.__env_vars: Dict[str, str] = {}
+        self.__runtime_directory = runtime_directory
 
         self.config = self.__load(config_path)
 
-    @property
-    def config_file_path(self) -> str:
+    def get_relative_config_file_path(self) -> str:
         if not self.__config_file_path:
             raise ValueError("Config file path is not set")
         # check for a string, which should be a path
@@ -89,11 +92,11 @@ class CdkConfig:
 
     def __resolve_config_file_path(self, config_file: str):
         """Resolve the config file path (locally or s3://)"""
-        local_package_root_path = Path(__file__).parent.parent
+        local_path_runtime = self.__runtime_directory or Path(__file__).parent.parent
         # is this a local path
         if config_file.startswith("./") or config_file.startswith("../"):
             config_file = str(
-                Path(os.path.join(local_package_root_path, config_file)).resolve()
+                Path(os.path.join(local_path_runtime, config_file)).resolve()
             )
 
         elif config_file.startswith("s3://"):
@@ -104,6 +107,9 @@ class CdkConfig:
                 raise FileNotFoundError(config_file)
             else:
                 config_file = file
+
+        if not os.path.exists(config_file):
+            config_file = os.path.join(local_path_runtime, config_file)
 
         if not os.path.exists(config_file):
             raise FileNotFoundError(config_file)

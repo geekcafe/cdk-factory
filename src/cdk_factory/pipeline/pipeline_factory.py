@@ -118,7 +118,7 @@ class PipelineFactoryStack(cdk.Stack):
         self,
     ) -> pipelines.CodePipeline:
         # CodePipeline to automate the deployment process
-        pipeline_name = self.pipeline.build_resource_name("pipeline")
+        pipeline_name = self.pipeline.build_resource_name("")
         branch = self.pipeline.branch
 
         env_vars = self.__get_environment_vars()
@@ -166,9 +166,9 @@ class PipelineFactoryStack(cdk.Stack):
             value=branch
         )
 
-        if self.cdk_config.config_file_path:
+        if self.cdk_config.get_relative_config_file_path():
 
-            config_path = self.cdk_config.config_file_path
+            config_path = self.cdk_config.get_relative_config_file_path()
             if config_path:
                 environment_variables["CDK_CONFIG_PATH"] = (
                     codebuild.BuildEnvironmentVariable(value=config_path)

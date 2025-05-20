@@ -5,6 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
+from pathlib import Path
 import aws_cdk
 from cdk_factory.utilities.commandline_args import CommandlineArgs
 
@@ -23,7 +24,8 @@ class ConfigurationLoader:
 
     def get_runtime_config(
         self,
-        config_path: str | None,
+        realtive_config_path: str | None,
+        runtime_directory: str | None,
         args: CommandlineArgs | None,
         app: aws_cdk.App | None,
     ) -> str:
@@ -34,8 +36,9 @@ class ConfigurationLoader:
 
         if node:
             config_node_path = node.try_get_context(self.commandline_arg_name)
+
         runtime_config = (
-            config_path
+            realtive_config_path
             or args_config
             or config_node_path
             or os.getenv(self.environment_variable_name, None)
@@ -44,11 +47,12 @@ class ConfigurationLoader:
         if not runtime_config:
             raise Exception("No configuration file provided")
 
-        if str(runtime_config).startswith("/"):
-            print(
-                "WARNING: a full config path was found, switching to default config.json"
-            )
-            print(f"Path: {runtime_config}")
-            return "config.json"
+        if os.path.exists(runtime_config):
+            return runtime_config
 
-        return runtime_config
+        temp = str(Path(os.path.join(runtime_directory, runtime_config)).resolve())
+        if os.path.exists(temp):
+            return temp
+
+        else:
+            raise Exception(f"Configuration file not found: {runtime_config}")

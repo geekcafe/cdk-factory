@@ -181,8 +181,9 @@ class LambdaDockerConstruct(Construct):
                             "--output text "
                             f"--duration-seconds {duration} "
                         )
+                        code_build_id = os.getenv("CODEBUILD_BUILD_ID")
 
-                        if profile:
+                        if profile and not code_build_id:
                             command += f"--profile {profile}"
                         commands = command.split(" ")
                         output = OsExecute.execute(commands=commands)
