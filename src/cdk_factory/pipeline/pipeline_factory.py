@@ -141,7 +141,7 @@ class PipelineFactoryStack(cdk.Stack):
             scope=self,
             id=f"{pipeline_name}",
             pipeline_name=f"{pipeline_name}",
-            synth=self.__get_synth_shell_step(branch=branch),
+            synth=self.__get_synth_shell_step(),
             # set up the role you want the pipeline to use
             role=self.roles.code_pipeline_service_role,
             # make sure this is set or you'll get errors, we're doing cross account deployments
@@ -217,14 +217,14 @@ class PipelineFactoryStack(cdk.Stack):
     def __setup_standard_pipeline(self, deployment: DeploymentConfig):
         raise NotImplementedError("This feature is not implemented yet")
 
-    def __get_synth_shell_step(self, branch: str) -> pipelines.ShellStep:
+    def __get_synth_shell_step(self) -> pipelines.ShellStep:
         if not self.workload.cdk_app_file:
             raise ValueError("CDK app file is not defined")
         cdk_directory = self.workload.cdk_app_file.removesuffix("/app.py")
 
         build_commands = self.__get_build_commands()
 
-        cdk_out_directory = f"{cdk_directory}/cdk.out"
+        cdk_out_directory = self.workload.output_directory
 
         build_commands.append(f"echo 👉 cdk_directory: {cdk_directory}")
         build_commands.append(f"echo 👉 cdk_out_directory: {cdk_out_directory}")

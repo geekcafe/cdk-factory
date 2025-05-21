@@ -142,20 +142,8 @@ class LambdaStack(IStack):
                         raise NotImplementedError("S3 tiggers are implemented yet.")
 
                     if trigger.resoure_type == "event-bridge":
-
-                        rule = events.Rule(
-                            self,
-                            id=f"{function_config.name}-event-bridge-trigger",
-                            # TODO: get the schedule, this is just a test
-                            schedule=events.Schedule.rate(aws_cdk.Duration.minutes(15)),
-                        )
-                        # events.Schedule.rate()
-                        # events.Schedule.cron()
-                        # events.Schedule.expression()
-
-                        # Add the Lambda function as the target of the rule
-                        rule.add_target(
-                            aws_events_targets.LambdaFunction(lambda_function)
+                        self.__set_event_bridge_event(
+                            trigger=trigger, lambda_function=lambda_function
                         )
 
             if function_config.resource_policies:
@@ -181,6 +169,88 @@ class LambdaStack(IStack):
             logger.warning("No Lambda function_configs were found")
 
         return functions
+
+    # TODO: move to a service
+    def __set_event_bridge_event(
+        self,
+        trigger: LambdaTriggersConfig,
+        lambda_function: aws_lambda.Function | aws_lambda.DockerImageFunction,
+    ):
+        if trigger.resoure_type == "event-bridge":
+            schedule_config = (
+                trigger.schedule
+            )  # e.g., {'type': 'rate', 'value': '15 minutes'}
+
+            if (
+                not schedule_config
+                or "type" not in schedule_config
+                or "value" not in schedule_config
+            ):
+                raise ValueError(
+                    "Invalid or missing EventBridge schedule configuration. "
+                    " {'type': 'rate|cron|expressions', 'value': '15 minutes'}"
+                )
+
+            schedule_type = schedule_config["type"].lower()
+            schedule_value = str(schedule_config["value"])
+
+            if schedule_type == "rate":
+                # Support simple duration strings like "15 minutes", "1 hour", etc.
+                value_parts = schedule_value.split()
+                if len(value_parts) != 2:
+                    raise ValueError(
+                        f"Invalid rate expression: {schedule_value} "
+                        'Support simple duration strings like "15 minutes", "1 hour", etc.'
+                    )
+
+                num, unit = value_parts
+                num = int(num)
+
+                duration = {
+                    "minute": aws_cdk.Duration.minutes,
+                    "minutes": aws_cdk.Duration.minutes,
+                    "hour": aws_cdk.Duration.hours,
+                    "hours": aws_cdk.Duration.hours,
+                    "day": aws_cdk.Duration.days,
+                    "days": aws_cdk.Duration.days,
+                }.get(unit.lower())
+
+                if not duration:
+                    raise ValueError(
+                        f"Unsupported rate unit: {unit}. "
+                        "Supported: minute|minutes|hour|hours|day|days"
+                    )
+
+                schedule = events.Schedule.rate(duration(num))
+
+            elif schedule_type == "cron":
+                # Provide a dict for cron like: {'minute': '0', 'hour': '18', 'day': '*', ...}
+                if not isinstance(schedule_value, dict):
+                    raise ValueError(
+                        "Cron schedule must be a dictionary. "
+                        "Provide a dict for cron like: {'minute': '0', 'hour': '18', 'day': '*', ...}"
+                    )
+                schedule = events.Schedule.cron(**schedule_value)
+
+            elif schedule_type == "expression":
+                # Provide a string expression: "rate(15 minutes)" or "cron(0 18 * * ? *)"
+                if not isinstance(schedule_value, str):
+                    raise ValueError(
+                        "Expression schedule must be a string. "
+                        'Provide a string expression:  \rate(15 minutes)" or "cron(0 18 * * ? *)"'
+                    )
+                schedule = events.Schedule.expression(schedule_value)
+
+            else:
+                raise ValueError(f"Unsupported schedule type: {schedule_type}")
+
+            rule = events.Rule(
+                self,
+                id=f"{function_config.name}-event-bridge-trigger",
+                schedule=schedule,
+            )
+
+            rule.add_target(aws_events_targets.LambdaFunction(lambda_function))
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig

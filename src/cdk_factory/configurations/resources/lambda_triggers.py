@@ -19,3 +19,13 @@ class LambdaTriggersConfig:
             return self.__config.get("resource_type", "")
 
         return ""
+
+    @property
+    def schedule(self) -> dict:
+        """Schedule, used for event bridge"""
+        if self.__config and isinstance(self.__config, dict):
+            value = self.__config.get("schedule")
+            if isinstance(value, dict):
+                return value
+
+        return {}
