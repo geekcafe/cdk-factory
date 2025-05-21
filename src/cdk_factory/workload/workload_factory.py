@@ -45,6 +45,7 @@ class WorkloadFactory:
         self.workload.cdk_app_file = cdk_app_file or __file__
         self.app = app
         self.outdir = outdir
+        self.workload.output_directory = outdir
 
     def synth(self) -> CloudAssembly:
         """Build the workload"""

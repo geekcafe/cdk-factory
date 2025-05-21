@@ -26,7 +26,7 @@ class CdkAppFactory:
         if not args:
             args = CommandlineArgs()
         self.outdir = outdir or args.outdir
-        self.app: aws_cdk.App = aws_cdk.App(outdir=outdir)
+        self.app: aws_cdk.App = aws_cdk.App()
         self.runtime_directory = runtime_directory
         self.config_path = ConfigurationLoader().get_runtime_config(
             realtive_config_path=realtive_config_path,
@@ -63,6 +63,7 @@ class CdkAppFactory:
             cdk_app_file=cdk_app_file,
             paths=paths,
             runtime_directory=self.runtime_directory,
+            outdir=self.outdir,
         )
 
         assembly: CloudAssembly = workload.synth()

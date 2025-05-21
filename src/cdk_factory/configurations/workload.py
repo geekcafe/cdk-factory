@@ -230,9 +230,20 @@ class WorkloadConfig:
     @cdk_app_file.setter
     def cdk_app_file(self, value: str):
         """
-        Sets the cdk root directory
+        Sets the cdk app file
         """
-        # if not os.path.isfile(value):
-        #     raise ValueError(f"{value} is not a file")
-
         self.__cdk_app_file = value
+
+    @property
+    def output_directory(self) -> str | None:
+        """
+        Returns the cdk app file
+        """
+        return self.__output_directory
+
+    @output_directory.setter
+    def output_directory(self, value: str):
+        """
+        Sets the cdk app file
+        """
+        self.__output_directory = value
