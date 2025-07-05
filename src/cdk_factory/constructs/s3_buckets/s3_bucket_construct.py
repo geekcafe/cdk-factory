@@ -56,7 +56,7 @@ class S3BucketConstruct(Construct):
             )
 
         else:
-            logger.info("creating a new bucket")
+            logger.debug("creating a new bucket")
 
             bucket = s3.Bucket(
                 self,

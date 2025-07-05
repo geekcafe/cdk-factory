@@ -94,6 +94,15 @@ class WorkloadFactory:
     def __build_stacks(self, deployment: DeploymentConfig):
         if deployment.mode != "stack":
             return
+
+        if VERBOSE:
+            print(
+                "######################################################################"
+            )
+            print(f"✨ Building 🎁 deployment stack: {deployment.name}")
+            print(
+                "######################################################################"
+            )
         stack: StackConfig
         factory: StackFactory = StackFactory()
         for stack in deployment.stacks:
@@ -105,7 +114,16 @@ class WorkloadFactory:
                 module.build(
                     stack_config=stack, deployment=deployment, workload=self.workload
                 )
-        print("building stack")
+
+        if VERBOSE:
+            print(
+                "######################################################################"
+            )
+            print(f"✨ Completed 🎁 deployment stack: {deployment.name}")
+            print(
+                "######################################################################"
+            )
+            print("")
 
     def __build_pipelines(self, deployment: DeploymentConfig):
         if deployment.mode != "pipeline":
@@ -129,7 +147,7 @@ class WorkloadFactory:
             cdk_config=self.cdk_config,
         )
 
-        factory.build()
+        count = factory.build()
 
         if VERBOSE:
             print(

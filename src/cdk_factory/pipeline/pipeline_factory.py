@@ -85,6 +85,7 @@ class PipelineFactoryStack(cdk.Stack):
 
         for deployment in self.pipeline.deployments:
             if deployment.wave_name is not None:
+                print(f"Defining wave 🌊 {deployment.wave_name}")
                 wave: pipelines.Wave = self.aws_code_pipeline.add_wave(
                     id=deployment.wave_name,
                 )
@@ -100,24 +101,30 @@ class PipelineFactoryStack(cdk.Stack):
 
     def build(self) -> int:
         """Build the stack"""
-        for deployment in self.pipeline.deployments:
+
+        if not self.pipeline.enabled:
+            print(f"🚨 Pipeline is disabled for {self.pipeline.name}")
+            return 0
+
+        # only get deployments that are of mode "pipeline"
+        pipeline_deployments = [
+            d for d in self.pipeline.deployments if d.mode == "pipeline"
+        ]
+
+        for deployment in pipeline_deployments:
             # stacks can be added to a deployment wave
             if deployment.enabled:
-                # deploy our stages
-                # if deployment.wave_name:
-                # set up the waves
-                self._setup_waves(deployment=deployment, **self.kwargs)
-                # else:
-                # self._setup_standard_pipeline(deployment=deployment)
+
+                self._setup_deployment_stages(deployment=deployment, **self.kwargs)
             else:
                 print(
                     f"\t🚨 Deployment for Environment: {deployment.environment} "
                     f"is disabled."
                 )
-        if len(self.pipeline.deployments) == 0:
-            print(f"\t⛔️ No Deployments configured for {self.workload.name}.")
+        if len(pipeline_deployments) == 0:
+            print(f"\t⛔️ No Pipeline Deployments configured for {self.workload.name}.")
 
-        return len(self.pipeline.deployments)
+        return len(pipeline_deployments)
 
     def _pipeline(
         self,
@@ -181,13 +188,16 @@ class PipelineFactoryStack(cdk.Stack):
 
         return environment_variables
 
-    def _setup_waves(self, deployment: DeploymentConfig, **kwargs):
+    def _setup_deployment_stages(self, deployment: DeploymentConfig, **kwargs):
 
         if not deployment.enabled:
             return
-        # stacks can be added to a deployment wave
 
+        print("👉 Loading all stages of the deployment")
+
+        # add the stages to a pipeline
         for stage in self.pipeline.stages:
+            print(f"\t 👉 Prepping stage: {stage.name}")
             pipeline_stage = PipelineStage(
                 self, f"{deployment.name}-{stage.name}", **kwargs
             )
@@ -196,7 +206,7 @@ class PipelineFactoryStack(cdk.Stack):
             # add the stacks to the stage
             for stack in stage.stacks:
                 if stack.enabled:
-                    print(f"building stack: {stack.name}")
+                    print(f"\t\t 👉 Adding stack: {stack.name} to Stage: {stage.name}")
                     module = factory.load_module(
                         module_name=stack.module,
                         scope=pipeline_stage,
@@ -207,13 +217,16 @@ class PipelineFactoryStack(cdk.Stack):
                         deployment=deployment,
                         workload=self.workload,
                     )
-
+            # add the stacks to a wave or a regular
             if deployment.wave_name:
+                print(f"\t 👉 Adding stage {stage.name} to 🌊 {deployment.wave_name}")
+                # waves can run multiple stages in parallel
                 wave = self._get_wave(deployment.wave_name)
                 wave.add_stage(pipeline_stage)
-
-        # create the waves based on the resources
-        print("setting up waves... find all the waves and add stages to waves")
+            else:
+                # regular stages are run sequentially
+                print(f"\t 👉 Adding stage {stage.name} to pipeline")
+                self.aws_code_pipeline.add_stage(pipeline_stage)
 
     def _get_wave(self, wave_name: str) -> pipelines.Wave:
         for wave in self.deployment_waves:
@@ -247,13 +260,13 @@ class PipelineFactoryStack(cdk.Stack):
         return shell
 
     def _get_build_commands(self) -> List[str]:
-        print("generating building commands")
+        # print("generating building commands")
 
         loader = CommandLoader(workload=self.workload)
         custom_commands = loader.get("cdk_synth")
 
         if custom_commands:
-            print("Using custom CDK synth commands from external file")
+            # print("Using custom CDK synth commands from external file")
             return custom_commands
         else:
             raise RuntimeError("Missing custom CDK synth commands from external file")

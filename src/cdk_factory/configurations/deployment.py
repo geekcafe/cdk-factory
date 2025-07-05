@@ -107,7 +107,7 @@ class DeploymentConfig:
 
     @property
     def pipeline(self) -> dict:
-        """Access to the pipline dictionary"""
+        """Access to the pipeline dictionary"""
         return self.__pipeline
 
     @property
@@ -229,9 +229,9 @@ class DeploymentConfig:
     @property
     def wave_name(self) -> str | None:
         """Gets the wave name"""
-        return self.__deployment.get("wave", {}).get(
-            "name", f"{self.name}-deployment-wave"
-        )
+        wave_name = self.__deployment.get("wave", {}).get("name")
+        wave_name = wave_name or f"{self.name}-deployment-wave"
+        return wave_name
 
     @property
     def ssl_cert_arn(self) -> str | None:

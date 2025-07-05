@@ -100,36 +100,6 @@
         }
       }
     ],
-    "pipelines": [
-      {
-        "name": "static-site-dev-pipeline",
-        "branch": "develop",
-        "enabled": false,
-        "stages": [
-          {
-            "name": "bucket",
-            "stacks": [
-              "web-site-bucket"
-            ]
-          },
-          {
-            "name": "website1",
-            "stacks": [
-              "web-site"
-            ]
-          }
-        ],
-        "deployments": [
-          {
-            "name": "dev",
-            "waves": [
-              "bucket",
-              "website"
-            ]
-          }
-        ]
-      }
-    ],
     "deployments": [
       {
         "name": "dev",
@@ -144,12 +114,34 @@
       },
       {
         "name": "static-site-dev-deployment",
+        "description": "this deployment points to a pipeline build",
         "environment": "dev",
         "account": "328553401036",
         "region": "us-east-1",
         "mode": "pipeline",
         "pipeline": "static-site-dev-pipeline",
         "enabled": true
+      }
+    ],
+    "pipelines": [
+      {
+        "name": "static-site-dev-pipeline",
+        "branch": "develop",
+        "enabled": true,
+        "stages": [
+          {
+            "name": "bucket",
+            "stacks": [
+              "web-site-bucket"
+            ]
+          },
+          {
+            "name": "website1",
+            "stacks": [
+              "web-site"
+            ]
+          }
+        ]
       }
     ]
   }
