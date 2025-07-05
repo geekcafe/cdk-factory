@@ -28,9 +28,6 @@ class ModuleLoader:
         paths = [os.path.join(path, name) for name in os.listdir(path)]
 
         for loader, module_name, _ in pkgutil.iter_modules(paths):
-            # print(loader, module_name, is_pkg)
-
-            # print(type(loader))
 
             loader_with_path = cast(FileFinder, loader)
             module_path = str(loader_with_path.path)
@@ -38,7 +35,6 @@ class ModuleLoader:
             # get everything after cdk_factory
             namespaces = module_path.split("cdk_factory")[1].split(os.sep)[1:]
             module_path = ".".join(namespaces)
-            libray = f"cdk_factory.{module_path}.{module_name}"
-            # print(libray)
-
-            importlib.import_module(libray)
+            library = f"cdk_factory.{module_path}.{module_name}"
+            # import the library
+            importlib.import_module(library)

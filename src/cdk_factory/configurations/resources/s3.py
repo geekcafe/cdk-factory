@@ -55,16 +55,20 @@ class S3BucketConfig:
         """Determines if we send events to event bridge"""
         return str(self.__config.get("enable_event_bridge", "false")).lower() == "true"
 
-    def fully_qualified_name(self) -> str:
-        """Returns the fully qualified name of the bucket"""
+    @property
+    def fully_qualified_name(self) -> str | None:
+        """
+        Returns the fully qualified name of the bucket
+        Use this if you don't want any name manipulation
+        """
         if self.__config and isinstance(self.__config, dict):
-            return self.__config.get("fully_qualified_name", self.name)
+            return self.__config.get("fully_qualified_name")
 
-        return self.name
+        return None
 
     @property
     def public_read_access(self) -> bool:
-        """Determines if the bucket is publically readable"""
+        """Determines if the bucket is publicly readable"""
         return JsonLoadingUtility.get_boolean_setting(
             self.__config, "public_read_access", False
         )

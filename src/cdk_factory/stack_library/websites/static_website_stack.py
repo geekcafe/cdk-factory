@@ -94,9 +94,9 @@ class StaticWebSiteStack(IStack):
             hosted_zone=hosted_zone,
         )
 
-        if stack_config.dependancies:
-            for dependancy in stack_config.dependancies:
-                self.add_dependency(deployment.build_resource_name(dependancy))
+        if stack_config.dependencies:
+            for dependency in stack_config.dependencies:
+                self.add_dependency(deployment.build_resource_name(dependency))
 
     def __get_s3_website_bucket(
         self, stack_config: StackConfig, deployment: DeploymentConfig
@@ -132,7 +132,7 @@ class StaticWebSiteStack(IStack):
         hosted_zone: Optional[route53.IHostedZone] = None,
     ) -> None:
         assets_path = self.__get_website_assets_path(stack_config, workload)
-        version = self.__get_version_numer(assets_path)
+        version = self.__get_version_number(assets_path)
         logger.info(f"👉 WEBSITE VERSION NUMBER: {version}")
 
         cloudfront_distribution = CloudFrontDistributionConstruct(
@@ -195,7 +195,7 @@ class StaticWebSiteStack(IStack):
             zone_name=hosted_zone_name,
         )
 
-    def __get_version_numer(self, assets_path: str) -> str:
+    def __get_version_number(self, assets_path: str) -> str:
         version = "0.0.5"
 
         # look for a version file

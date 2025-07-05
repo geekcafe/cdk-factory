@@ -1,6 +1,6 @@
 aws-cdk-lib==2.189.0
 cdk_nag
 constructs>=10.0.0,<11.0.0
-aws_lambda_powertools[logger]
+aws_lambda_powertools
 boto3_assist
 PyYAML

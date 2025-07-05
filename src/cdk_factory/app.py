@@ -4,7 +4,7 @@ Geek Cafe, LLC
 Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
-import os
+from pathlib import Path
 import aws_cdk
 from aws_cdk.cx_api import CloudAssembly
 
@@ -20,21 +20,20 @@ class CdkAppFactory:
         self,
         args: CommandlineArgs | None = None,
         runtime_directory: str | None = None,
-        realtive_config_path: str | None = None,
+        relative_config_path: str | None = None,
         outdir: str | None = None,
     ) -> None:
         if not args:
             args = CommandlineArgs()
         self.outdir = outdir or args.outdir
         self.app: aws_cdk.App = aws_cdk.App()
-        self.runtime_directory = runtime_directory
+        self.runtime_directory = runtime_directory or str(Path(__file__).parent)
         self.config_path = ConfigurationLoader().get_runtime_config(
-            realtive_config_path=realtive_config_path,
+            relative_config_path=relative_config_path,
             args=args,
             app=self.app,
-            runtime_directory=runtime_directory,
+            runtime_directory=self.runtime_directory,
         )
-        self.relative_config_path = realtive_config_path
 
     def synth(
         self,
@@ -45,7 +44,7 @@ class CdkAppFactory:
         """
         The AWS CDK Deployment pipeline is defined here
         Returns:
-            CloudAssembly: CDK CloudAssemby
+            CloudAssembly: CDK CloudAssembly
         """
 
         print("config_path", self.config_path)
@@ -59,7 +58,7 @@ class CdkAppFactory:
             paths.append(cdk_app_file)
         workload: WorkloadFactory = WorkloadFactory(
             app=self.app,
-            relative_config_path=self.relative_config_path,
+            config_path=self.config_path,
             cdk_app_file=cdk_app_file,
             paths=paths,
             runtime_directory=self.runtime_directory,
@@ -76,5 +75,5 @@ class CdkAppFactory:
 if __name__ == "__main__":
     # deploy_test()
     cmd_args: CommandlineArgs = CommandlineArgs()
-    cdkapp: CdkAppFactory = CdkAppFactory(args=cmd_args)
-    cdkapp.synth()
+    cdk_app: CdkAppFactory = CdkAppFactory(args=cmd_args)
+    cdk_app.synth()

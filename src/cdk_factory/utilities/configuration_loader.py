@@ -24,7 +24,7 @@ class ConfigurationLoader:
 
     def get_runtime_config(
         self,
-        realtive_config_path: str | None,
+        relative_config_path: str | None,
         runtime_directory: str | None,
         args: CommandlineArgs | None,
         app: aws_cdk.App | None,
@@ -38,7 +38,7 @@ class ConfigurationLoader:
             config_node_path = node.try_get_context(self.commandline_arg_name)
 
         runtime_config = (
-            realtive_config_path
+            relative_config_path
             or args_config
             or config_node_path
             or os.getenv(self.environment_variable_name, None)

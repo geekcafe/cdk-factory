@@ -10,7 +10,7 @@ modules = Modules()
 
 
 def register_stack(module_name):
-    """Registure a module to the global registry"""
+    """Register a module to the global registry"""
 
     def decorator(cls):
         modules.registry[module_name] = cls

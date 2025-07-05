@@ -29,14 +29,14 @@ class WorkloadFactory:
     def __init__(
         self,
         app: aws_cdk.App,
-        relative_config_path: str,
+        config_path: str,
         runtime_directory: str,
         outdir: str | None = None,
         paths: List[str] | None = None,
         cdk_app_file: str | None = None,
     ):
         self.cdk_config = CdkConfig(
-            config_path=relative_config_path,
+            config_path=config_path,
             cdk_context=app.node.get_all_context(),
             runtime_directory=runtime_directory,
         )

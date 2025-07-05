@@ -27,7 +27,7 @@ class CdkConfig:
         self, config_path: str, cdk_context: dict | None, runtime_directory: str | None
     ) -> None:
         self.cdk_context = cdk_context
-        self.__relative_config_path = config_path
+
         self.__config_file_path: str | None = config_path
         self.__resolved_config_file_path: str | None = None
         self.__env_vars: Dict[str, str] = {}
@@ -162,7 +162,7 @@ class CdkConfig:
     def __get_cdk_parameter_value(self, parameter: Dict[str, Any]) -> str | None:
         cdk_parameter_name = parameter.get("cdk_parameter_name", None)
         # ssm_parameter_name = parameter.get("ssm_parameter_name", None)
-        envrionment_variable_name = parameter.get("env_var_name", None)
+        environment_variable_name = parameter.get("env_var_name", None)
         static_value = parameter.get("value", None)
         value: str | None = None
 
@@ -173,15 +173,15 @@ class CdkConfig:
 
         if static_value is not None:
             value = static_value
-        elif envrionment_variable_name is not None and not value:
-            value = os.environ.get(envrionment_variable_name, None)
+        elif environment_variable_name is not None and not value:
+            value = os.environ.get(environment_variable_name, None)
             if value is None:
                 raise ValueError(
-                    f"Failed to get value for environment variable {envrionment_variable_name}"
+                    f"Failed to get value for environment variable {environment_variable_name}"
                 )
 
-        if envrionment_variable_name is not None and value is not None:
-            self.__env_vars[envrionment_variable_name] = value
+        if environment_variable_name is not None and value is not None:
+            self.__env_vars[environment_variable_name] = value
 
         if value is None:
             raise ValueError(

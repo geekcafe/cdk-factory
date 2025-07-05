@@ -18,7 +18,7 @@ class CodeBuildPolicy:
     """Code Build Policy Information"""
 
     def code_build_policies(
-        self, pipeline: PipelineConfig, code_artifacte_access_role: iam.Role
+        self, pipeline: PipelineConfig, code_artifact_access_role: iam.Role
     ) -> List[iam.PolicyStatement]:
         """
         Generate the Code Build Polices
@@ -90,7 +90,7 @@ class CodeBuildPolicy:
             sid="SSMPolicy",
             effect=iam.Effect.ALLOW,
             actions=["ssm:*"],
-            resources=[("*")],
+            resources=["*"],
         )
         code_build_policy.append(policy)
 
@@ -103,7 +103,7 @@ class CodeBuildPolicy:
                 "codeartifact:ReadFromRepository",
                 "sts:GetServiceBearerToken",
             ],
-            resources=[("*")],
+            resources=["*"],
         )
         code_build_policy.append(policy)
 
@@ -112,7 +112,7 @@ class CodeBuildPolicy:
         assume_codeartifact_role_policy = iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["sts:AssumeRole"],
-            resources=[f"{code_artifacte_access_role.role_arn}"],
+            resources=[f"{code_artifact_access_role.role_arn}"],
         )
         code_build_policy.append(assume_codeartifact_role_policy)
 

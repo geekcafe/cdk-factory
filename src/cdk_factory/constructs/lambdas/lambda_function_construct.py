@@ -53,7 +53,7 @@ class LambdaConstruct(Construct):
     ) -> aws_lambda.Function:
         # do a layers check
         layers = self.__check_layers(
-            uniqe_id=id, layers=layers, lambda_config=lambda_config
+            unique_id=id, layers=layers, lambda_config=lambda_config
         )
         environment = EnvironmentServices.load_environment_variables(
             environment=environment,
@@ -62,7 +62,7 @@ class LambdaConstruct(Construct):
             scope=self,
         )
         # create the standard role
-        role = self.__check_role(role=role, uniqe_id=id, lambda_config=lambda_config)
+        role = self.__check_role(role=role, unique_id=id, lambda_config=lambda_config)
 
         utilities = LambdaFunctionUtilities(deployment=self.deployment)
 
@@ -80,13 +80,13 @@ class LambdaConstruct(Construct):
     def __check_role(
         self,
         role: iam.Role | None,
-        uniqe_id: str,
+        unique_id: str,
         lambda_config: LambdaFunctionConfig,
     ) -> iam.Role:
         if not role:
             role = LambdaRoleConstruct.Role(
                 scope=self,
-                uniqe_id=uniqe_id,
+                unique_id=unique_id,
                 deployment=self.deployment,
                 lambda_config=lambda_config,
             )
@@ -95,7 +95,7 @@ class LambdaConstruct(Construct):
 
     def __check_layers(
         self,
-        uniqe_id: str,
+        unique_id: str,
         layers: List[aws_lambda.ILayerVersion] | None,
         lambda_config: LambdaFunctionConfig,
     ) -> List[aws_lambda.ILayerVersion] | None:
@@ -103,7 +103,7 @@ class LambdaConstruct(Construct):
         Check to see if we have our standard / common layer in the list
         If they are needed and not in the list, we'll add them
         Args:
-            uniqe_id (str): A unique is for the layer construct to avoid conflicts
+            unique_id (str): A unique is for the layer construct to avoid conflicts
             layers (Sequence[aws_lambda.ILayerVersion] | None): a list of layers
             add_common_layer (bool): adds the common layer if needed
 
@@ -125,7 +125,7 @@ class LambdaConstruct(Construct):
             layers.append(
                 aws_lambda.LayerVersion.from_layer_version_arn(
                     scope=self.scope,
-                    id=f"{uniqe_id}-{name}",
+                    id=f"{unique_id}-{name}",
                     layer_version_arn=arn,
                 )
             )
@@ -136,7 +136,7 @@ class LambdaConstruct(Construct):
 
         if len(layers) > 5:
             raise ValueError(
-                f"Too many layers are added to this lambda function {uniqe_id}. "
+                f"Too many layers are added to this lambda function {unique_id}. "
                 f"The max is 5 and we found {len(layers)}"
             )
 

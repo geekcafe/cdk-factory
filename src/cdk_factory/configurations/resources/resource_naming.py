@@ -74,7 +74,7 @@ class ResourceNaming:
         If it does and fix is True, returns a shortened name;
         otherwise, raises a ValueError with error_msg.
         """
-        # find it by resourcemap.type
+        # find it by ResourceMap.type
         items: List[Dict[str, Any]] = ResourceMap
 
         resource = next((item for item in items if item["type"] == resource_type), None)

@@ -49,15 +49,18 @@ class PipelineFactoryStack(cdk.Stack):
         self.cdk_config = cdk_config
         self.workload: WorkloadConfig = workload
         # use the devops account to run the pipeline
-        devop_account = self.workload.devops.account
-        devop_region = self.workload.devops.region
+        devops_account = self.workload.devops.account
+        devops_region = self.workload.devops.region
         self.outdir: str | None = outdir
         self.kwargs = kwargs
-        assert devop_account is not None
-        assert devop_region is not None
+
+        if not devops_account:
+            raise ValueError("DevOps Account is required")
+        if not devops_region:
+            raise ValueError("DevOps Regions is required")
 
         devops_environment: cdk.Environment = cdk.Environment(
-            account=f"{devop_account}", region=f"{devop_region}"
+            account=f"{devops_account}", region=f"{devops_region}"
         )
         # pass it up the chain
         super().__init__(scope, id, env=devops_environment, **kwargs)
@@ -67,16 +70,18 @@ class PipelineFactoryStack(cdk.Stack):
         )
 
         # get the pipeline infrastructure
-        self.__aws_code_pipeline: pipelines.CodePipeline | None = None
+        self._aws_code_pipeline: pipelines.CodePipeline | None = None
 
         self.roles = PipelineRoles(self, self.pipeline)
 
         self.deployment_waves: List[pipelines.Wave] = []
 
-        self.__build_wave_list()
+        self._build_wave_list()
 
-    def __build_wave_list(self):
-        """Build the wave list"""
+    def _build_wave_list(self):
+        """
+        Build the wave list based on what we have defined in the configuration
+        """
 
         for deployment in self.pipeline.deployments:
             if deployment.wave_name is not None:
@@ -88,22 +93,22 @@ class PipelineFactoryStack(cdk.Stack):
     @property
     def aws_code_pipeline(self) -> pipelines.CodePipeline:
         """AWS Code Pipeline"""
-        if not self.__aws_code_pipeline:
-            self.__aws_code_pipeline = self.__pipeline()
+        if not self._aws_code_pipeline:
+            self._aws_code_pipeline = self._pipeline()
 
-        return self.__aws_code_pipeline
+        return self._aws_code_pipeline
 
     def build(self) -> int:
-        """Build the statck"""
+        """Build the stack"""
         for deployment in self.pipeline.deployments:
             # stacks can be added to a deployment wave
             if deployment.enabled:
                 # deploy our stages
                 # if deployment.wave_name:
                 # set up the waves
-                self.__setup_waves(deployment=deployment, **self.kwargs)
+                self._setup_waves(deployment=deployment, **self.kwargs)
                 # else:
-                # self.__setup_standard_pipeline(deployment=deployment)
+                # self._setup_standard_pipeline(deployment=deployment)
             else:
                 print(
                     f"\t🚨 Deployment for Environment: {deployment.environment} "
@@ -114,21 +119,21 @@ class PipelineFactoryStack(cdk.Stack):
 
         return len(self.pipeline.deployments)
 
-    def __pipeline(
+    def _pipeline(
         self,
     ) -> pipelines.CodePipeline:
         # CodePipeline to automate the deployment process
         pipeline_name = self.pipeline.build_resource_name("")
         branch = self.pipeline.branch
 
-        env_vars = self.__get_environment_vars()
+        env_vars = self._get_environment_vars()
         # add some environment vars
         build_environment = codebuild.BuildEnvironment(environment_variables=env_vars)
 
         codebuild_policy = CodeBuildPolicy()
         role_policy = codebuild_policy.code_build_policies(
             pipeline=self.pipeline,
-            code_artifacte_access_role=self.roles.code_artifact_access_role,
+            code_artifact_access_role=self.roles.code_artifact_access_role,
         )
         # set up our build options and include our cross account policy
         build_options: pipelines.CodeBuildOptions = pipelines.CodeBuildOptions(
@@ -141,7 +146,7 @@ class PipelineFactoryStack(cdk.Stack):
             scope=self,
             id=f"{pipeline_name}",
             pipeline_name=f"{pipeline_name}",
-            synth=self.__get_synth_shell_step(),
+            synth=self._get_synth_shell_step(),
             # set up the role you want the pipeline to use
             role=self.roles.code_pipeline_service_role,
             # make sure this is set or you'll get errors, we're doing cross account deployments
@@ -153,7 +158,7 @@ class PipelineFactoryStack(cdk.Stack):
 
         return code_pipeline
 
-    def __get_environment_vars(self) -> dict:
+    def _get_environment_vars(self) -> dict:
 
         branch = self.pipeline.branch
 
@@ -176,53 +181,55 @@ class PipelineFactoryStack(cdk.Stack):
 
         return environment_variables
 
-    def __setup_waves(self, deployment: DeploymentConfig, **kwargs):
-        for deployment in self.pipeline.deployments:
-            # stacks can be added to a deployment wave
-            if deployment.enabled:
-                for stage in self.pipeline.stages:
-                    pipeline_stage = PipelineStage(
-                        self, f"{deployment.name}-{stage.name}", **kwargs
+    def _setup_waves(self, deployment: DeploymentConfig, **kwargs):
+
+        if not deployment.enabled:
+            return
+        # stacks can be added to a deployment wave
+
+        for stage in self.pipeline.stages:
+            pipeline_stage = PipelineStage(
+                self, f"{deployment.name}-{stage.name}", **kwargs
+            )
+            stack: StackConfig
+            factory: StackFactory = StackFactory()
+            # add the stacks to the stage
+            for stack in stage.stacks:
+                if stack.enabled:
+                    print(f"building stack: {stack.name}")
+                    module = factory.load_module(
+                        module_name=stack.module,
+                        scope=pipeline_stage,
+                        id=stack.name,
                     )
-                    stack: StackConfig
-                    factory: StackFactory = StackFactory()
-                    # add the stacks to the stage
-                    for stack in stage.stacks:
-                        if stack.enabled:
-                            print(f"building stack: {stack.name}")
-                            module = factory.load_module(
-                                module_name=stack.module,
-                                scope=pipeline_stage,
-                                id=stack.name,
-                            )
-                            module.build(
-                                stack_config=stack,
-                                deployment=deployment,
-                                workload=self.workload,
-                            )
+                    module.build(
+                        stack_config=stack,
+                        deployment=deployment,
+                        workload=self.workload,
+                    )
 
-                    if deployment.wave_name:
-                        wave = self.__get_wave(deployment.wave_name)
-                        wave.add_stage(pipeline_stage)
+            if deployment.wave_name:
+                wave = self._get_wave(deployment.wave_name)
+                wave.add_stage(pipeline_stage)
 
-                # create the waves based on the resources
-                print("setting up waves... find all the waves and add stages to waves")
+        # create the waves based on the resources
+        print("setting up waves... find all the waves and add stages to waves")
 
-    def __get_wave(self, wave_name: str) -> pipelines.Wave:
+    def _get_wave(self, wave_name: str) -> pipelines.Wave:
         for wave in self.deployment_waves:
             if wave.id == wave_name:
                 return wave
         raise RuntimeError(f"Wave {wave_name} not found")
 
-    def __setup_standard_pipeline(self, deployment: DeploymentConfig):
+    def _setup_standard_pipeline(self, deployment: DeploymentConfig):
         raise NotImplementedError("This feature is not implemented yet")
 
-    def __get_synth_shell_step(self) -> pipelines.ShellStep:
+    def _get_synth_shell_step(self) -> pipelines.ShellStep:
         if not self.workload.cdk_app_file:
             raise ValueError("CDK app file is not defined")
         cdk_directory = self.workload.cdk_app_file.removesuffix("/app.py")
 
-        build_commands = self.__get_build_commands()
+        build_commands = self._get_build_commands()
 
         cdk_out_directory = self.workload.output_directory
 
@@ -232,21 +239,14 @@ class PipelineFactoryStack(cdk.Stack):
 
         shell = pipelines.ShellStep(
             "CDK Synth",
-            input=self.__get_source_repository(),
+            input=self._get_source_repository(),
             commands=build_commands,
             primary_output_directory=cdk_out_directory,
         )
 
-        # shell = pipelines.CodeBuildStep(
-        #     "CDK Synth",
-        #     input=self.__get_source_repository(),
-        #     partial_build_spec=pipelines.CodeBui
-        #     primary_output_directory=cdk_out_directory,
-        # )
-
         return shell
 
-    def __get_build_commands(self) -> List[str]:
+    def _get_build_commands(self) -> List[str]:
         print("generating building commands")
 
         loader = CommandLoader(workload=self.workload)
@@ -258,12 +258,12 @@ class PipelineFactoryStack(cdk.Stack):
         else:
             raise RuntimeError("Missing custom CDK synth commands from external file")
         # TODO: add some default commands ?? maybe
-        # commands = self.__default_build_commands(
+        # commands = self._default_build_commands(
         #     branch, cdk_directory, cdk_out_directory
         # )
         # return commands
 
-    def __get_source_repository(self) -> pipelines.CodePipelineSource:
+    def _get_source_repository(self) -> pipelines.CodePipelineSource:
         repo_name: str = self.workload.devops.code_repository.name
         branch: str = self.pipeline.branch
         repo_id: str = self.pipeline.build_resource_name(repo_name)
@@ -295,6 +295,6 @@ class PipelineFactoryStack(cdk.Stack):
                 code_repo, branch, code_build_clone_output=True
             )
         else:
-            raise RuntimeError("Unknow code repository type.")
+            raise RuntimeError("Unknown code repository type.")
 
         return source_artifact

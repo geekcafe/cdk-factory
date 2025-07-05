@@ -75,7 +75,7 @@ class LambdaDockerConstruct(Construct):
         if not role:
             role = LambdaRoleConstruct.Role(
                 scope=scope,
-                uniqe_id=lambda_config.name,
+                unique_id=lambda_config.name,
                 deployment=deployment,
                 lambda_config=lambda_config,
             )
@@ -115,7 +115,7 @@ class LambdaDockerConstruct(Construct):
             )
 
         else:
-            # get a reference to the ecr repoistory
+            # get a reference to the ecr repository
             ecr_repository: aws_ecr.IRepository = self.get_ecr_repo(
                 scope=scope,
                 deployment=deployment,
@@ -155,7 +155,7 @@ class LambdaDockerConstruct(Construct):
         """
         Process the build args
         """
-        proceses_args = {}
+        process_args = {}
         # fixme
         # Add logic to process the build args
         for key, value in build_args.items():
@@ -188,13 +188,13 @@ class LambdaDockerConstruct(Construct):
                         commands = command.split(" ")
                         output = OsExecute.execute(commands=commands)
 
-                        proceses_args[key] = output
+                        process_args[key] = output
                 else:
                     raise ValueError(f"Invalid action {values[0]}")
 
             else:
-                proceses_args[key] = value
-        return proceses_args
+                process_args[key] = value
+        return process_args
 
     def update_role_permissions(
         self, role: iam.Role, lambda_config: LambdaFunctionConfig

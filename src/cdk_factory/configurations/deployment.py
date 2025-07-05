@@ -303,9 +303,9 @@ class DeploymentConfig:
         from workload and pipeline.  It's important that this does not change once we
         go live.
 
-        NOTICE - BECAREFULL
+        NOTICE - BE CAREFUL
         Changing this can break deployments!!  Resources and stack names use this.
-        If you break this pattern, it will mostlikely have an adverse affect on deployments.
+        If you break this pattern, it will most-likely have an adverse affect on deployments.
         """
 
         if not resource_name:

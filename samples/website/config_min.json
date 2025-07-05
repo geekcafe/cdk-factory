@@ -45,6 +45,11 @@
         "placeholder": "{{SITE_BUCKET_NAME}}",
         "env_var_name": "SITE_BUCKET_NAME",
         "cdk_parameter_name": "SiteBucketName"
+      },
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
       }
     ]
   },
@@ -74,7 +79,7 @@
         "enabled": true,
         "bucket": {
           "name": "{{SITE_BUCKET_NAME}}",
-          "fully_qualified_name": "{{workload-name}}-{{deployment-name}}-{{SITE_BUCKET_NAME}}",
+          "fully_qualified_name": "{{AWS_ACCOUNT}}-{{SITE_BUCKET_NAME}}-{{ENVIRONMENT}}",
           "exists": false
         }
       },
@@ -86,7 +91,7 @@
         "enabled": true,
         "bucket": {
           "name": "{{SITE_BUCKET_NAME}}",
-          "fully_qualified_name": "{{workload-name}}-{{deployment-name}}-{{SITE_BUCKET_NAME}}",
+          "fully_qualified_name": "{{AWS_ACCOUNT}}-{{SITE_BUCKET_NAME}}-{{ENVIRONMENT}}",
           "exists": true
         },
         "src": {

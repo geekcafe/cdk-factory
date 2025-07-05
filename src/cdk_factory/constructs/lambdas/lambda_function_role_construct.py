@@ -18,7 +18,7 @@ class LambdaRoleConstruct:
     @staticmethod
     def Role(
         scope: Construct,
-        uniqe_id: str,
+        unique_id: str,
         deployment: Deployment,
         lambda_config: LambdaFunctionConfig,
     ) -> iam.Role:
@@ -26,7 +26,7 @@ class LambdaRoleConstruct:
         lambda_execution_role = iam.Role(
             scope,
             id=deployment.build_resource_name(
-                f"{uniqe_id}-LambdaExecutionRole", ResourceTypes.IAM_ROLE
+                f"{unique_id}-LambdaExecutionRole", ResourceTypes.IAM_ROLE
             ),
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
         )

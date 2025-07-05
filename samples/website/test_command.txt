@@ -6,4 +6,5 @@ cdk synth -c config=../../samples/website/website_config.json \
     -c CodeRepoConnectorArn="aws::repo_arn" \
     -c SiteBucketName="my-bucket-2" \
     -c HostedZoneId="zone1234" \
-    -c HostedZoneName="dev.example.com"
+    -c HostedZoneName="dev.example.com" \
+    -c Environment="dev"

@@ -13,7 +13,7 @@
             "justMyCode": true,
             "env": {
                 
-                "ENVRIONMENT": "dev",
+                "ENVIRONMENT": "dev",
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True"
@@ -30,7 +30,7 @@
             "args": ["-c", "config=path/to/config.json"],
             "env": {
                 
-                "ENVRIONMENT": "dev",
+                "ENVIRONMENT": "dev",
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True"                           
@@ -44,7 +44,7 @@
             "console": "integratedTerminal",    
             "justMyCode": false,       
             "env": {                
-                "ENVRIONMENT": "dev",
+                "ENVIRONMENT": "dev",
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True",
@@ -63,7 +63,7 @@
             "console": "integratedTerminal",    
             "justMyCode": false,       
             "env": {                
-                "ENVRIONMENT": "dev",
+                "ENVIRONMENT": "dev",
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True",
@@ -82,7 +82,7 @@
             "console": "integratedTerminal",    
             "justMyCode": false,       
             "env": {                
-                "ENVRIONMENT": "dev",
+                "ENVIRONMENT": "dev",
                 "DEBUG_MODE": "True",
                 "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
                 "RUN_INTEGRATION_TESTS": "True",

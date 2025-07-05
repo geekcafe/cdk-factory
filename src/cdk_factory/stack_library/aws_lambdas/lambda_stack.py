@@ -41,7 +41,7 @@ logger = Logger(__name__)
 
 
 # currently this will support all three, I may want to bust this out
-# to individual code bases (time and maintenace will tell)
+# to individual code bases (time and maintenance will tell)
 # but we'll make 3 module entry points to help with the transition
 @register_stack("lambda_docker_image_stack")
 @register_stack("lambda_docker_file_stack")
@@ -136,14 +136,22 @@ class LambdaStack(IStack):
                         )
 
             if function_config.triggers:
+                trigger_id: int = 0
                 trigger: LambdaTriggersConfig
                 for trigger in function_config.triggers:
-                    if trigger.resoure_type.lower() == "s3":
-                        raise NotImplementedError("S3 tiggers are implemented yet.")
+                    trigger_id += 1
+                    if trigger.resource_type.lower() == "s3":
+                        raise NotImplementedError("S3 triggers are implemented yet.")
 
-                    if trigger.resoure_type == "event-bridge":
+                    elif trigger.resource_type == "event-bridge":
                         self.__set_event_bridge_event(
-                            trigger=trigger, lambda_function=lambda_function
+                            trigger=trigger,
+                            lambda_function=lambda_function,
+                            name=f"{function_config.name}-{trigger_id}",
+                        )
+                    else:
+                        raise ValueError(
+                            f"Trigger type {trigger.resource_type} is not supported"
                         )
 
             if function_config.resource_policies:
@@ -165,8 +173,19 @@ class LambdaStack(IStack):
 
             functions.append(lambda_function)
 
+        if len(functions) == 0:
+            logger.warning(
+                f"🚨 No Lambda Functions were created. Number of configs: {len(lambda_functions)}"
+            )
+
+        elif len(functions) != len(lambda_functions):
+            logger.warning(
+                f"🚨 Mismatch on number of lambdas created vs configs."
+                f" Created: {functions}. "
+                f"Number of configs: {len(lambda_functions)}"
+            )
         else:
-            logger.warning("No Lambda function_configs were found")
+            print(f"👉 {len(functions)} Lambda Definition(s) Created.")
 
         return functions
 
@@ -175,8 +194,9 @@ class LambdaStack(IStack):
         self,
         trigger: LambdaTriggersConfig,
         lambda_function: aws_lambda.Function | aws_lambda.DockerImageFunction,
+        name: str,
     ):
-        if trigger.resoure_type == "event-bridge":
+        if trigger.resource_type == "event-bridge":
             schedule_config = (
                 trigger.schedule
             )  # e.g., {'type': 'rate', 'value': '15 minutes'}
@@ -192,7 +212,7 @@ class LambdaStack(IStack):
                 )
 
             schedule_type = schedule_config["type"].lower()
-            schedule_value = str(schedule_config["value"])
+            schedule_value = schedule_config["value"]
 
             if schedule_type == "rate":
                 # Support simple duration strings like "15 minutes", "1 hour", etc.
@@ -246,7 +266,7 @@ class LambdaStack(IStack):
 
             rule = events.Rule(
                 self,
-                id=f"{function_config.name}-event-bridge-trigger",
+                id=f"{name}-event-bridge-trigger",
                 schedule=schedule,
             )
 
@@ -389,7 +409,7 @@ class LambdaStack(IStack):
         visibility_timeout = sqs_config.visibility_timeout_seconds
 
         if not retention_period:
-            raise RuntimeError(f"Missing rention period for SQS: {name_reg}")
+            raise RuntimeError(f"Missing retention period for SQS: {name_reg}")
 
         if not visibility_timeout:
             raise RuntimeError(f"Missing visibility timeout for SQS: {name_reg}")
@@ -439,7 +459,7 @@ class LambdaStack(IStack):
     ):
         # typically you have one (scalable) consumer and 1 or more producers
         # TODO: I don't think we should do this here.  It's too tightly bound to this
-        # lambda and it's deployment.  It should be in a different stack and probably a differnt
+        # lambda and it's deployment.  It should be in a different stack and probably a different
         # pipeline.
         queue: sqs.Queue = self.__create_sqs(sqs_config=sqs_config)
 

@@ -12,6 +12,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.s3 import S3BucketConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
+
 logger = Logger(__name__)
 
 
@@ -31,8 +32,11 @@ class S3BucketConstruct(Construct):
 
         self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
         self.deployment = deployment
-        bucket_name = deployment.build_resource_name(
-            self.bucket_config.fully_qualified_name(), ResourceTypes.S3_BUCKET
+        bucket_name = (
+            self.bucket_config.fully_qualified_name
+            or deployment.build_resource_name(
+                self.bucket_config.name, ResourceTypes.S3_BUCKET
+            )
         )
 
         bucket: s3.IBucket

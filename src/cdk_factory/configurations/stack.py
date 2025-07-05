@@ -66,17 +66,17 @@ class StackConfig:
         return str(value).lower() == "true" or value is True
 
     @property
-    def dependancies(self) -> List[str]:
+    def dependencies(self) -> List[str]:
         """
-        Returns the stack dependancies
+        Returns the stack dependencies
         """
-        value = self.dictionary.get("dependancies")
+        value = self.dictionary.get("dependencies")
         if value is None:
             return []
         if isinstance(value, list):
             return value
         else:
-            raise ValueError("Stack dependancies must be a list of strings")
+            raise ValueError("Stack dependencies must be a list of strings")
 
     def build_id(self) -> str:
         """

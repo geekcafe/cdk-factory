@@ -13,7 +13,7 @@ class LambdaTriggersConfig:
         return ""
 
     @property
-    def resoure_type(self) -> str:
+    def resource_type(self) -> str:
         """Resource Type"""
         if self.__config and isinstance(self.__config, dict):
             return self.__config.get("resource_type", "")
