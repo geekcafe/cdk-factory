@@ -94,6 +94,25 @@
             "envFile": "${workspaceFolder}/samples/lambdas/docker_file/.env"
         },
         {
+            "name": "CDK Synth: Docker Build Pipeline",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cdk_factory/app.py",
+            "console": "integratedTerminal",    
+            "justMyCode": false,       
+            "env": {                
+                "ENVIRONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True",
+                "CDK_CONFIG_PATH" : "../../samples/docker_build/config_min.json",
+                "CDK_WORKLOAD_NAME": "docker-build-test",                
+                
+                
+            },
+            "envFile": "${workspaceFolder}/samples/docker_build/.env"
+        },
+        {
             "name": "Build & Deploy Artifacts",
             "type": "debugpy",
             "request": "launch",

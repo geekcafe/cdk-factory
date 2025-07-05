@@ -16,9 +16,9 @@ The core configuration for any of the CDK deployments are controlled in your con
 |---|---|
 |`cdk`|Any cdk configs/parameters that you need to pass|
 |`workload`|General information about your workload|
-|`stacks`|A CDK implementation of a CloudFormation Stack|
-|`deployments`|Grouping of Stacks, which can be deployed via `stack` or `pipeline` mode|
-|`pipelines`|An AWS Code Pipeline deployment|
+|`workload`->`stacks`|A CDK implementation of a CloudFormation Stack|
+|`workload`->`deployments`|Grouping of Stacks, which can be deployed via `stack` or `pipeline` mode|
+|`workload`->`pipelines`|An AWS Code Pipeline deployment|
 
 
 ### cdk

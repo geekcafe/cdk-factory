@@ -6,7 +6,7 @@ MIT License.  See Project Root for the license information.
 
 # import os
 # from typing import List, Optional
-from typing import List
+from typing import List, Dict, Any
 
 from cdk_factory.configurations.stack import StackConfig
 
@@ -106,3 +106,12 @@ class PipelineStageConfig:
                 if stack_dict is None:
                     raise ValueError(f"Stack {stack} not found in workload")
                 self.__stacks.append(StackConfig(stack_dict, self.__workload))
+
+    @property
+    def builds(self) -> List[Dict[str, Any]]:
+        """
+        Returns the stages for this pipeline
+        """
+        builds = self.workload.get("builds", [])
+
+        return builds

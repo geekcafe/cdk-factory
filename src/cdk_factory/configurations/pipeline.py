@@ -5,7 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
@@ -21,8 +21,8 @@ class PipelineConfig:
     def __init__(self, pipeline: dict, workload: dict) -> None:
         self.pipeline: dict = pipeline
         self.workload: dict = workload
-        self.__deployments: List[DeploymentConfig] = []
-        self.__stages: List[PipelineStageConfig] = []
+        self._deployments: List[DeploymentConfig] = []
+        self._stages: List[PipelineStageConfig] = []
         self.__load_deployments()
 
     def __load_deployments(self):
@@ -48,7 +48,7 @@ class PipelineConfig:
 
         # sort the deployments by order
         deployments.sort(key=lambda x: x.order)
-        self.__deployments = deployments
+        self._deployments = deployments
 
     def __load_deployment(self, deployment_name: str):
         # look for the config at the workload level
@@ -84,17 +84,17 @@ class PipelineConfig:
         """
         Returns the deployments for this pipeline
         """
-        return self.__deployments
+        return self._deployments
 
     @property
     def stages(self) -> List[PipelineStageConfig]:
         """
         Returns the stages for this pipeline
         """
-        if not self.__stages:
+        if not self._stages:
             for stage in self.pipeline.get("stages", []):
-                self.__stages.append(PipelineStageConfig(stage, self.workload))
-        return self.__stages
+                self._stages.append(PipelineStageConfig(stage, self.workload))
+        return self._stages
 
     @property
     def name(self):
@@ -124,7 +124,7 @@ class PipelineConfig:
         return str(value).lower() == "true" or value is True
 
     @property
-    def versbose_output(self) -> bool:
+    def verbose_output(self) -> bool:
         # todo: add to config
         return False
 

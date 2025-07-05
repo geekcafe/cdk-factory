@@ -3,7 +3,7 @@ Geek Cafe Pipeline
 """
 
 import os
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import aws_cdk as cdk
 from aws_cdk import aws_codebuild as codebuild
@@ -24,7 +24,9 @@ from cdk_factory.stack.stack_factory import StackFactory
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
 from cdk_factory.configurations.cdk_config import CdkConfig
-from cdk_factory.utilities.configuration_loader import ConfigurationLoader
+
+# from cdk_factory.utilities.configuration_loader import ConfigurationLoader
+from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
 
 logger = Logger()
 
@@ -75,21 +77,6 @@ class PipelineFactoryStack(cdk.Stack):
         self.roles = PipelineRoles(self, self.pipeline)
 
         self.deployment_waves: Dict[str, pipelines.Wave] = {}
-
-        # self._build_wave_list()
-
-    # def _build_wave_list(self):
-    #     """
-    #     Build the wave list based on what we have defined in the configuration
-    #     """
-
-    #     for deployment in self.pipeline.deployments:
-    #         if deployment.wave_name is not None:
-    #             print(f"Defining wave 🌊 {deployment.wave_name}")
-    #             wave: pipelines.Wave = self.aws_code_pipeline.add_wave(
-    #                 id=deployment.wave_name,
-    #             )
-    #             self.deployment_waves.append(wave)
 
     @property
     def aws_code_pipeline(self) -> pipelines.CodePipeline:
@@ -201,32 +188,94 @@ class PipelineFactoryStack(cdk.Stack):
             pipeline_stage = PipelineStage(
                 self, f"{deployment.name}-{stage.name}", **kwargs
             )
-            stack: StackConfig
-            factory: StackFactory = StackFactory()
-            # add the stacks to the stage
-            for stack in stage.stacks:
-                if stack.enabled:
-                    print(f"\t\t 👉 Adding stack: {stack.name} to Stage: {stage.name}")
-                    module = factory.load_module(
-                        module_name=stack.module,
-                        scope=pipeline_stage,
-                        id=stack.name,
-                    )
-                    module.build(
-                        stack_config=stack,
-                        deployment=deployment,
-                        workload=self.workload,
-                    )
+            self.__setup_stacks(
+                stage_config=stage, pipeline_stage=pipeline_stage, deployment=deployment
+            )
             # add the stacks to a wave or a regular
-            if stage.wave_name:
-                print(f"\t 👉 Adding stage {stage.name} to 🌊 {stage.wave_name}")
+            pre_steps = self._get_pre_steps(stage)
+            post_steps = self._get_post_steps(stage)
+            wave_name = stage.wave_name
+
+            # if we don't have any stacks we'll need to use the wave
+            if len(stage.stacks) == 0:
+                wave_name = stage.name
+
+            if wave_name:
+                print(f"\t 👉 Adding stage {stage.name} to 🌊 {wave_name}")
                 # waves can run multiple stages in parallel
-                wave = self._get_wave(stage.wave_name)
-                wave.add_stage(pipeline_stage)
+                wave = self._get_wave(wave_name)
+
+                if len(stage.stacks) > 0:
+                    # only add the stage if we have at least one stack
+                    wave.add_stage(pipeline_stage)
+
+                for pre_step in pre_steps:
+                    wave.add_pre(pre_step)
+
+                for post_step in post_steps:
+                    wave.add_post(post_step)
             else:
                 # regular stages are run sequentially
                 print(f"\t 👉 Adding stage {stage.name} to pipeline")
-                self.aws_code_pipeline.add_stage(pipeline_stage)
+                self.aws_code_pipeline.add_stage(
+                    stage=pipeline_stage, pre=pre_steps, post=post_steps
+                )
+
+    def _get_pre_steps(
+        self, stage_config: PipelineStageConfig
+    ) -> List[pipelines.ShellStep]:
+        return self._get_steps("pre_steps", stage_config)
+
+    def _get_post_steps(
+        self, stage_config: PipelineStageConfig
+    ) -> List[pipelines.ShellStep]:
+        return self._get_steps("post_steps", stage_config)
+
+    def _get_steps(self, key: str, stage_config: PipelineStageConfig):
+        """
+        Gets the build steps from the config.json
+        """
+        shell_steps: List[pipelines.ShellStep] = []
+
+        for build in stage_config.builds:
+            if str(build.get("enabled", "true")).lower() == "true":
+                steps = build.get(key, [])
+                step: Dict[str, Any]
+                for step in steps:
+                    step_id = step.get("id") or step.get("name")
+                    commands = step.get("commands", [])
+                    shell_step = pipelines.ShellStep(
+                        id=step_id,
+                        commands=commands,
+                    )
+                    shell_steps.append(shell_step)
+
+        return shell_steps
+
+    def __setup_stacks(
+        self,
+        stage_config: PipelineStageConfig,
+        pipeline_stage: PipelineStage,
+        deployment: DeploymentConfig,
+    ):
+        stack: StackConfig
+        factory: StackFactory = StackFactory()
+        # add the stacks to the stage_config
+        for stack in stage_config.stacks:
+            if stack.enabled:
+                print(
+                    f"\t\t 👉 Adding stack: {stack.name} to Stage: {stage_config.name}"
+                )
+                module = factory.load_module(
+                    module_name=stack.module,
+                    scope=pipeline_stage,
+                    id=stack.name,
+                )
+                module.build(
+                    stack_config=stack,
+                    deployment=deployment,
+                    workload=self.workload,
+                )
 
     def _get_wave(self, wave_name: str) -> pipelines.Wave:
 
@@ -277,11 +326,6 @@ class PipelineFactoryStack(cdk.Stack):
             return custom_commands
         else:
             raise RuntimeError("Missing custom CDK synth commands from external file")
-        # TODO: add some default commands ?? maybe
-        # commands = self._default_build_commands(
-        #     branch, cdk_directory, cdk_out_directory
-        # )
-        # return commands
 
     def _get_source_repository(self) -> pipelines.CodePipelineSource:
         repo_name: str = self.workload.devops.code_repository.name

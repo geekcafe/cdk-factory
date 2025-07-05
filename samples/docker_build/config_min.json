@@ -8,14 +8,9 @@
       },
       {
         "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
-        "value": "../../samples/website/commands/cdk_synth.sh",
+        "value": "../../samples/docker_build/commands/cdk_synth.sh",
         "cdk_parameter_name": "CdkSynthCommandFile"
-      },
-      {
-        "placeholder": "{{WWW_FILES}}",
-        "value": "../../samples/website/src/www",
-        "cdk_parameter_name": "WwwFiles"
-      },
+      },     
       {
         "placeholder": "{{AWS_ACCOUNT}}",
         "env_var_name": "AWS_ACCOUNT_NUMBER",
@@ -72,76 +67,77 @@
         }
       ]
     },
-    "stacks": [
+    "builds": [
       {
-        "name": "web-site-bucket",
-        "module": "bucket_stack",
+        "name": "my-docker-app",        
         "enabled": true,
-        "bucket": {
-          "name": "{{SITE_BUCKET_NAME}}",
-          "fully_qualified_name": "{{AWS_ACCOUNT}}-{{SITE_BUCKET_NAME}}-{{ENVIRONMENT}}",
-          "exists": false
-        }
-      },
-      {
-        "name": "web-site",
-        "module": "static_website_stack",
-        "account": "{{AWS_ACCOUNT}}",
-        "environment": "dev",
-        "enabled": true,
-        "bucket": {
-          "name": "{{SITE_BUCKET_NAME}}",
-          "fully_qualified_name": "{{AWS_ACCOUNT}}-{{SITE_BUCKET_NAME}}-{{ENVIRONMENT}}",
-          "exists": true
-        },
-        "src": {
-          "location": "file_system",
-          "path": "{{WWW_FILES}}"
-        }
-      }
+        "wave": "docker-wave",
+        "pre_steps": [          
+          {
+            "name": "where-am-i",
+            "commands": ["$(pwd)", "pwd"]
+          },
+          {
+            "name": "who-am-i",
+            "commands": ["whoami"]
+          },
+          {
+            "name": "unit-tests",
+            "commands": ["../../samples/docker_build/commands/unit_tests.sh"]
+          },
+          {
+            "name": "docker-build",
+            "commands": ["../../samples/docker_build/commands/docker_build.sh"]
+          },
+          {
+            "name": "docker-tag-integration",
+            "commands": ["../../samples/docker_build/commands/docker_tag.sh --tag integration"]            
+          },          
+          {
+            "name": "docker-push-integration",
+            "commands": ["../../samples/docker_build/commands/docker_push.sh"]
+          },
+          {
+            "name": "integration-tests",
+            "commands": ["../../samples/docker_build/commands/integration-tests.sh"]
+          },
+          {
+            "name": "docker-tag-dev",
+            "commands": ["../../samples/docker_build/commands/docker_tag.sh --tag dev"]            
+          },          
+          {
+            "name": "docker-push",
+            "commands": ["../../samples/docker_build/commands/docker_push.sh"]
+          }
+
+        ]
+        
+      }      
     ],
-    "deployments": [
+    
+    "deployments": [      
       {
-        "name": "dev",
-        "environment": "dev",
-        "account": "{{AWS_ACCOUNT}}",
-        "region": "us-east-1",
-        "mode": "stack",
-        "stacks": [
-          "web-site-bucket"
-        ],
-        "enabled": true
-      },
-      {
-        "name": "static-site-dev-deployment",
+        "name": "my-docker-build-pipeline",
         "description": "this deployment points to a pipeline build",
         "environment": "dev",
         "account": "{{AWS_ACCOUNT}}",
         "region": "us-east-1",
         "mode": "pipeline",
-        "pipeline": "static-site-dev-pipeline",
-        "enabled": true
+        "pipeline": "docker-build",
+        "enabled": true        
       }
     ],
     "pipelines": [
       {
-        "name": "static-site-dev-pipeline",
+        "name": "docker-build",
         "branch": "develop",
         "enabled": true,
         "stages": [
           {
-            "name": "bucket",
-            "stacks": [
-              "web-site-bucket"
-            ]
-          },
-          {
-            "name": "website1",
-            "stacks": [
-              "web-site"
-            ]
-          }
-        ]
+            "name": "docker",
+            "builds": ["my-docker-app"]
+          }          
+        ]        
       }
     ]
   }
