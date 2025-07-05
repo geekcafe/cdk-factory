@@ -230,7 +230,7 @@ class DeploymentConfig:
     def wave_name(self) -> str | None:
         """Gets the wave name"""
         wave_name = self.__deployment.get("wave", {}).get("name")
-        wave_name = wave_name or f"{self.name}-deployment-wave"
+
         return wave_name
 
     @property

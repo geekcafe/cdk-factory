@@ -3,7 +3,7 @@ Geek Cafe Pipeline
 """
 
 import os
-from typing import List
+from typing import List, Dict
 
 import aws_cdk as cdk
 from aws_cdk import aws_codebuild as codebuild
@@ -74,22 +74,22 @@ class PipelineFactoryStack(cdk.Stack):
 
         self.roles = PipelineRoles(self, self.pipeline)
 
-        self.deployment_waves: List[pipelines.Wave] = []
+        self.deployment_waves: Dict[str, pipelines.Wave] = {}
 
-        self._build_wave_list()
+        # self._build_wave_list()
 
-    def _build_wave_list(self):
-        """
-        Build the wave list based on what we have defined in the configuration
-        """
+    # def _build_wave_list(self):
+    #     """
+    #     Build the wave list based on what we have defined in the configuration
+    #     """
 
-        for deployment in self.pipeline.deployments:
-            if deployment.wave_name is not None:
-                print(f"Defining wave 🌊 {deployment.wave_name}")
-                wave: pipelines.Wave = self.aws_code_pipeline.add_wave(
-                    id=deployment.wave_name,
-                )
-                self.deployment_waves.append(wave)
+    #     for deployment in self.pipeline.deployments:
+    #         if deployment.wave_name is not None:
+    #             print(f"Defining wave 🌊 {deployment.wave_name}")
+    #             wave: pipelines.Wave = self.aws_code_pipeline.add_wave(
+    #                 id=deployment.wave_name,
+    #             )
+    #             self.deployment_waves.append(wave)
 
     @property
     def aws_code_pipeline(self) -> pipelines.CodePipeline:
@@ -218,10 +218,10 @@ class PipelineFactoryStack(cdk.Stack):
                         workload=self.workload,
                     )
             # add the stacks to a wave or a regular
-            if deployment.wave_name:
-                print(f"\t 👉 Adding stage {stage.name} to 🌊 {deployment.wave_name}")
+            if stage.wave_name:
+                print(f"\t 👉 Adding stage {stage.name} to 🌊 {stage.wave_name}")
                 # waves can run multiple stages in parallel
-                wave = self._get_wave(deployment.wave_name)
+                wave = self._get_wave(stage.wave_name)
                 wave.add_stage(pipeline_stage)
             else:
                 # regular stages are run sequentially
@@ -229,10 +229,17 @@ class PipelineFactoryStack(cdk.Stack):
                 self.aws_code_pipeline.add_stage(pipeline_stage)
 
     def _get_wave(self, wave_name: str) -> pipelines.Wave:
-        for wave in self.deployment_waves:
-            if wave.id == wave_name:
-                return wave
-        raise RuntimeError(f"Wave {wave_name} not found")
+
+        if wave_name in self.deployment_waves:
+            print(f"\t\tRetrieving wave 🌊 {wave_name}")
+            return self.deployment_waves[wave_name]
+        else:
+            print(f"\t\tDefining wave 🌊 {wave_name}")
+            wave: pipelines.Wave = self.aws_code_pipeline.add_wave(
+                id=wave_name,
+            )
+            self.deployment_waves[wave_name] = wave
+            return wave
 
     def _setup_standard_pipeline(self, deployment: DeploymentConfig):
         raise NotImplementedError("This feature is not implemented yet")

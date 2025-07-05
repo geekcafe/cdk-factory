@@ -66,6 +66,13 @@ class PipelineStageConfig:
         return self.dictionary.get("description")
 
     @property
+    def wave_name(self) -> str | None:
+        """
+        Returns the wave name if found
+        """
+        return self.dictionary.get("wave") or self.dictionary.get("wave_name")
+
+    @property
     def module(self) -> str | None:
         """
         Returns the module name

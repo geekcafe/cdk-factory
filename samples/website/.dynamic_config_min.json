@@ -133,13 +133,15 @@
             "name": "bucket",
             "stacks": [
               "web-site-bucket"
-            ]
+            ],
+            "wave": "wave_one"
           },
           {
             "name": "website1",
             "stacks": [
               "web-site"
-            ]
+            ],
+            "wave": "wave_one"
           }
         ]
       }
