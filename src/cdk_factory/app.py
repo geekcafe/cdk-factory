@@ -20,7 +20,7 @@ class CdkAppFactory:
         self,
         args: CommandlineArgs | None = None,
         runtime_directory: str | None = None,
-        relative_config_path: str | None = None,
+        config_path: str | None = None,
         outdir: str | None = None,
     ) -> None:
         if not args:
@@ -29,7 +29,7 @@ class CdkAppFactory:
         self.app: aws_cdk.App = aws_cdk.App()
         self.runtime_directory = runtime_directory or str(Path(__file__).parent)
         self.config_path = ConfigurationLoader().get_runtime_config(
-            relative_config_path=relative_config_path,
+            relative_config_path=config_path,
             args=args,
             app=self.app,
             runtime_directory=self.runtime_directory,

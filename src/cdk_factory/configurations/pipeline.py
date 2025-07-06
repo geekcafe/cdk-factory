@@ -33,11 +33,11 @@ class PipelineConfig:
         deployments: List[DeploymentConfig] = []
 
         # this is the older way,
-        for deployment in self.pipeline.get("deployments", []):
-            resolved_deployment = self.__load_deployment(deployment.get("name", {}))
-            deployments.append(
-                DeploymentConfig(workload=self.workload, deployment=resolved_deployment)
-            )
+        # for deployment in self.pipeline.get("deployments", []):
+        #     resolved_deployment = self.__load_deployment(deployment.get("name", {}))
+        #     deployments.append(
+        #         DeploymentConfig(workload=self.workload, deployment=resolved_deployment)
+        #     )
 
         # this is the newer way
         for deployment in self.workload.get("deployments", []):

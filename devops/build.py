@@ -15,7 +15,7 @@ def main():
     """build the artifacts"""
     project_root = Path(__file__).parent.parent
 
-    # extact the version
+    # extract the version
     pyproject_toml = os.path.join(project_root, "pyproject.toml")
     version_file = os.path.join(project_root, "src", "cdk_factory", "version.py")
     extract_version_and_write_to_file(pyproject_toml, version_file)
@@ -62,7 +62,7 @@ def extract_version_and_write_to_file(pyproject_toml: str, version_file: str):
 
 def run_build():
     """Run python build commands"""
-    run_commands(["python", "-m", "build"])
+    run_commands(["python", "-m", "build", "--no-isolation"])
 
 
 def run_publish():
