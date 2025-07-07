@@ -16,7 +16,7 @@ markers = [
 [project]
 
 name = "cdk_factory"
-version = "0.0.29"
+version = "0.1.0"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
@@ -32,7 +32,7 @@ classifiers = [
 
 dependencies = [
   "aws-lambda-powertools>=2.38.1",
-  "aws-cdk-lib",
+  "aws-cdk-lib==2.202.0",
   "constructs",
   "boto3_assist>=0.10.0",
   "PyYAML",
