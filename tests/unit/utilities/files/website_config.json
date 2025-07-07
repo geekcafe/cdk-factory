@@ -73,8 +73,7 @@
         "module": "bucket_stack",
         "enabled": true,
         "bucket": {
-          "name": "{{SITE_BUCKET_NAME}}",
-          "fully_qualified_name": "{{workload-name}}-{{deployment-name}}-{{SITE_BUCKET_NAME}}",
+          "name": "{{AWS_ACCOUNT}}-{{SITE_BUCKET_NAME}}-{{ENVIRONMENT}}",          
           "exists": false
         }
       },
@@ -85,8 +84,7 @@
         "environment": "dev",
         "enabled": true,
         "bucket": {
-          "name": "{{SITE_BUCKET_NAME}}",
-          "fully_qualified_name": "{{workload-name}}-{{deployment-name}}-{{SITE_BUCKET_NAME}}",
+          "name": "{{AWS_ACCOUNT}}-{{SITE_BUCKET_NAME}}-{{ENVIRONMENT}}",          
           "exists": true
         },
         "src": {
