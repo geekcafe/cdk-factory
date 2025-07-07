@@ -78,3 +78,14 @@ class DevOps:
         Returns the devops commands
         """
         return self.__commands
+
+    @property
+    def cdk_cli_version(self) -> str | None:
+        """
+        Returns the CDK CLI version
+        """
+        return self.__devops.get("cdk_cli_version")
+
+    @property
+    def pipeline_version(self) -> str:
+        return self.__devops.get("pipeline_version", "v2")

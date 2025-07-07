@@ -6,7 +6,7 @@ MIT License.  See Project Root for the license information.
 
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 
 from aws_lambda_powertools import Logger
 from boto3_assist.ssm.parameter_store.parameter_store import ParameterStore
@@ -24,34 +24,65 @@ class CdkConfig:
     """
 
     def __init__(
-        self, config_path: str, cdk_context: dict | None, runtime_directory: str | None
+        self,
+        config_path: str,
+        cdk_context: dict | None,
+        runtime_directory: str | None,
+        paths: Optional[List[str]] = None,
     ) -> None:
         self.cdk_context = cdk_context
 
-        self.__config_file_path: str | None = config_path
-        self.__resolved_config_file_path: str | None = None
-        self.__env_vars: Dict[str, str] = {}
-        self.__runtime_directory = runtime_directory
-
+        self._config_file_path: str | None = config_path
+        self._resolved_config_file_path: str | None = None
+        self._env_vars: Dict[str, str] = {}
+        self._runtime_directory = runtime_directory
+        self._paths: List[str] = paths or []  # type: ignore
         self.config = self.__load(config_path)
 
-    def get_relative_config_file_path(self) -> str:
-        if not self.__config_file_path:
+    def get_config_path_environment_setting(self) -> str:
+        """
+        This should be a relative config or an S3
+        """
+
+        if not self._config_file_path:
             raise ValueError("Config file path is not set")
         # check for a string, which should be a path
-        if isinstance(self.__config_file_path, str):
+        if isinstance(self._config_file_path, str):
             # resolve the path
-            self.__resolved_config_file_path = self.__resolve_config_file_path(
-                config_file=self.__config_file_path
+            self._resolved_config_file_path = self.__resolve_config_file_path(
+                config_file=self._config_file_path
             )
 
-            if not self.__resolved_config_file_path:
-                raise FileNotFoundError(self.__config_file_path)
+            if not self._resolved_config_file_path:
+                raise FileNotFoundError(self._config_file_path)
 
-            if not os.path.exists(self.__resolved_config_file_path):
-                raise FileNotFoundError(self.__resolved_config_file_path)
+            if not os.path.exists(self._resolved_config_file_path):
+                raise FileNotFoundError(self._resolved_config_file_path)
 
-        return self.__config_file_path
+        config_path = self._config_file_path
+        runtime_directory = self._runtime_directory
+        print(f"👉 Config Path: {config_path}")
+        print(f"👉 Runtime Directory: {runtime_directory}")
+
+        if not runtime_directory:
+            raise ValueError("Missing Runtime Directory")
+
+        relative_config_path = ""
+        # is this a relative path or a real path
+        if not config_path.startswith("."):
+
+            root_path = os.path.commonpath([config_path, runtime_directory])
+            if root_path in config_path:
+                relative_config_path = config_path.replace(root_path, ".")
+
+            print(f"👉 Relative Config: {relative_config_path}")
+        else:
+            relative_config_path = config_path
+
+        if relative_config_path.startswith("/"):
+            print("🚨 Warning this will probably fail in CI/CD.")
+
+        return relative_config_path
 
     def __load(self, config_path: str | dict) -> Dict[str, Any]:
         config = self.__load_config(config_path)
@@ -68,17 +99,17 @@ class CdkConfig:
         # check for a string, which should be a path
         if isinstance(config, str):
             # resolve the path
-            self.__resolved_config_file_path = self.__resolve_config_file_path(
+            self._resolved_config_file_path = self.__resolve_config_file_path(
                 config_file=config
             )
 
-            if not self.__resolved_config_file_path:
+            if not self._resolved_config_file_path:
                 raise FileNotFoundError(config)
 
-            if not os.path.exists(self.__resolved_config_file_path):
-                raise FileNotFoundError(self.__resolved_config_file_path)
+            if not os.path.exists(self._resolved_config_file_path):
+                raise FileNotFoundError(self._resolved_config_file_path)
 
-            ju = JsonLoadingUtility(self.__resolved_config_file_path)
+            ju = JsonLoadingUtility(self._resolved_config_file_path)
             config_dict: dict = ju.load()
             return config_dict
 
@@ -92,14 +123,17 @@ class CdkConfig:
 
     def __resolve_config_file_path(self, config_file: str):
         """Resolve the config file path (locally or s3://)"""
-        local_path_runtime = self.__runtime_directory or Path(__file__).parent.parent
-        # is this a local path
-        if config_file.startswith("./") or config_file.startswith("../"):
-            config_file = str(
-                Path(os.path.join(local_path_runtime, config_file)).resolve()
-            )
 
-        elif config_file.startswith("s3://"):
+        paths = self._paths
+        paths.append(self._runtime_directory)
+        # is this a local path
+        for path in paths:
+            tmp = str(Path(os.path.join(path, config_file)).resolve())
+            if os.path.exists(tmp):
+                return tmp
+
+        local_path_runtime = self._runtime_directory
+        if config_file.startswith("s3://"):
             # download the file to a local temp file
             # NOTE: this is a live call to boto3 to get the config
             file = self.__get_file_from_s3(s3_path=config_file)
@@ -143,11 +177,11 @@ class CdkConfig:
                     # do a find replace on the config
                     print(f"replacing {placeholder} with {value}")
 
-        if self.__resolved_config_file_path is None:
+        if self._resolved_config_file_path is None:
             raise ValueError("Config file path is not set")
 
-        file_name = f".dynamic_{os.path.basename(self.__resolved_config_file_path)}"
-        path = os.path.join(Path(self.__resolved_config_file_path).parent, file_name)
+        file_name = f".dynamic_{os.path.basename(self._resolved_config_file_path)}"
+        path = os.path.join(Path(self._resolved_config_file_path).parent, file_name)
 
         cdk = config.get("cdk", {})
         if replacements and len(replacements) > 0:
@@ -181,7 +215,7 @@ class CdkConfig:
                 )
 
         if environment_variable_name is not None and value is not None:
-            self.__env_vars[environment_variable_name] = value
+            self._env_vars[environment_variable_name] = value
 
         if value is None:
             raise ValueError(
@@ -194,4 +228,4 @@ class CdkConfig:
         """
         Gets the environment variables
         """
-        return self.__env_vars
+        return self._env_vars

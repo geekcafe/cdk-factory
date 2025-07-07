@@ -33,7 +33,7 @@ class S3BucketConstruct(Construct):
         self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
         self.deployment = deployment
         bucket_name = deployment.build_resource_name(
-            self.bucket_config.fully_qualified_name, ResourceTypes.S3_BUCKET
+            self.bucket_config.name, ResourceTypes.S3_BUCKET
         )
 
         bucket: s3.IBucket

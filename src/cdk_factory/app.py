@@ -23,17 +23,12 @@ class CdkAppFactory:
         config_path: str | None = None,
         outdir: str | None = None,
     ) -> None:
-        if not args:
-            args = CommandlineArgs()
-        self.outdir = outdir or args.outdir
+
+        self.args = args or CommandlineArgs()
+        self.outdir = outdir or self.args.outdir
         self.app: aws_cdk.App = aws_cdk.App()
         self.runtime_directory = runtime_directory or str(Path(__file__).parent)
-        self.config_path = ConfigurationLoader().get_runtime_config(
-            relative_config_path=config_path,
-            args=args,
-            app=self.app,
-            runtime_directory=self.runtime_directory,
-        )
+        self.config_path: str | None = config_path
 
     def synth(
         self,
@@ -56,6 +51,14 @@ class CdkAppFactory:
         paths.append(__file__)
         if cdk_app_file:
             paths.append(cdk_app_file)
+
+        self.config_path = ConfigurationLoader().get_runtime_config(
+            relative_config_path=self.config_path,
+            args=self.args,
+            app=self.app,
+            runtime_directory=self.runtime_directory,
+        )
+
         workload: WorkloadFactory = WorkloadFactory(
             app=self.app,
             config_path=self.config_path,

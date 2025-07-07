@@ -35,7 +35,9 @@ class PipelineRoles:
         role = iam.Role(
             scope,
             pipeline.build_resource_name(
-                "CodePipelineServiceRole", resource_type=ResourceTypes.IAM_ROLE
+                "CodePipelineServiceRole-{{pipeline-name}}-{{environment}}",
+                resource_type=ResourceTypes.IAM_ROLE,
+                lower_case=False,
             ),
             assumed_by=iam.ServicePrincipal("codepipeline.amazonaws.com"),
         )
@@ -107,7 +109,9 @@ class PipelineRoles:
                 iam.AccountPrincipal(f"{workload.devops.account}"),
             ),
             role_name=pipeline.build_resource_name(
-                "CodeArtifactAccessRole", resource_type=ResourceTypes.IAM_ROLE
+                "CodeArtifactAccessRole-{{pipeline-name}}-{{environment}}",
+                resource_type=ResourceTypes.IAM_ROLE,
+                lower_case=False,
             ),
         )
 

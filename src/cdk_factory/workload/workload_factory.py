@@ -39,6 +39,7 @@ class WorkloadFactory:
             config_path=config_path,
             cdk_context=app.node.get_all_context(),
             runtime_directory=runtime_directory,
+            paths=paths,
         )
         self.workload: WorkloadConfig = WorkloadConfig(config=self.cdk_config.config)
         self.workload.paths = paths or []
@@ -76,13 +77,15 @@ class WorkloadFactory:
             return 0
 
         for deployment in self.workload.deployments:
-            stack_id = deployment.build_resource_name("deployment")
+
             if deployment.enabled:
                 self.__build_pipelines(deployment)
                 self.__build_stacks(deployment)
             else:
                 if VERBOSE:
-                    print(f"Skipping {stack_id}, deployment: {deployment.name}")
+                    print(
+                        f"Skipping deployment: {deployment.name}. Reason enabled: {deployment.enabled}"
+                    )
 
         logger.info(
             {
@@ -147,7 +150,7 @@ class WorkloadFactory:
             cdk_config=self.cdk_config,
         )
 
-        count = factory.build()
+        factory.build()
 
         if VERBOSE:
             print(

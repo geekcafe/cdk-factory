@@ -54,9 +54,7 @@ class ECRStack(IStack):
         repo: dict
         for repo in repos:
             config = ECRConfig(config=repo, deployment=deployment)
-            construct_id = deployment.build_resource_name(
-                repo.get("fully_qualified_name", repo.get("name", None))
-            )
+            construct_id = deployment.build_resource_name(repo.get("name", None))
 
             if not construct_id:
                 raise ValueError(f"Invalid ECR name: {construct_id}")

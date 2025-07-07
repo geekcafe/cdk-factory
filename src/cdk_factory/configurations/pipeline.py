@@ -32,13 +32,6 @@ class PipelineConfig:
         deployment: dict = {}
         deployments: List[DeploymentConfig] = []
 
-        # this is the older way,
-        # for deployment in self.pipeline.get("deployments", []):
-        #     resolved_deployment = self.__load_deployment(deployment.get("name", {}))
-        #     deployments.append(
-        #         DeploymentConfig(workload=self.workload, deployment=resolved_deployment)
-        #     )
-
         # this is the newer way
         for deployment in self.workload.get("deployments", []):
             if deployment.get("mode") == "pipeline":
@@ -136,36 +129,49 @@ class PipelineConfig:
         return self.pipeline["npm_build_mode"]
 
     def build_resource_name(
-        self, name: str, resource_type: Optional[ResourceTypes] = None
+        self,
+        name: str,
+        resource_type: Optional[ResourceTypes] = None,
+        lower_case: bool = True,
     ):
         """
         Builds a name based on the workload_name-stack_name-name
         We need to avoid using things like branch names and environment names
         as we may want to change them in the future for a given stack.
         """
+        resource_name = name
 
-        assert self.name
-        assert self.workload_name
-        separator = "-"
+        if not resource_name:
+            raise ValueError("Resource name is required")
 
-        if resource_type and resource_type == ResourceTypes.CLOUD_WATCH_LOGS:
-            separator = "/"
+        resource_name = str(resource_name).replace(
+            "{{workload-name}}", self.workload_name
+        )
+        resource_name = str(resource_name).replace("{{pipeline-name}}", self.name)
 
-        pipline_name = self.name
+        resource_name = str(resource_name).replace(
+            "{{environment}}", os.getenv("ENVIRONMENT", "")
+        )
 
-        new_name = f"{self.workload_name}{separator}{pipline_name}"
-
-        if not new_name.endswith(name) and name:
-            new_name = f"{new_name}{separator}{name}"
+        # remove any leading dashes -
+        parts = resource_name.split("-")
+        # remove any empty elements in the array
+        parts = [x for x in parts if x]
+        # put it back
+        resource_name = "-".join(parts)
 
         if resource_type:
-            new_name = ResourceNaming.validate_name(
-                new_name, resource_type=resource_type, fix=True
+            resource_name = ResourceNaming.validate_name(
+                resource_name,
+                resource_type=resource_type,
+                fix=str(self.workload.get("auto_fix_resource_names", False)).lower()
+                == "true",
             )
 
-        new_name = new_name.replace(" ", "-")
+        if lower_case:
+            resource_name = resource_name.lower()
 
-        return new_name.lower()
+        return resource_name
 
     def code_artifact_logins(self, include_profile: bool = False) -> List[str]:
         """
