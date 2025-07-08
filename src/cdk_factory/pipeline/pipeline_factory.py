@@ -22,10 +22,7 @@ from cdk_factory.pipeline.security.roles import PipelineRoles
 from cdk_factory.pipeline.stage import PipelineStage
 from cdk_factory.stack.stack_factory import StackFactory
 from cdk_factory.workload.workload_factory import WorkloadConfig
-
 from cdk_factory.configurations.cdk_config import CdkConfig
-
-# from cdk_factory.utilities.configuration_loader import ConfigurationLoader
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
 
 logger = Logger()
@@ -119,8 +116,8 @@ class PipelineFactoryStack(cdk.Stack):
         # CodePipeline to automate the deployment process
         pipeline_name = self.pipeline.build_resource_name(self.pipeline.name)
 
-        env_vars = self._get_environment_vars()
         # add some environment vars
+        env_vars = self._get_environment_vars()
         build_environment = codebuild.BuildEnvironment(environment_variables=env_vars)
 
         codebuild_policy = CodeBuildPolicy()
@@ -295,9 +292,6 @@ class PipelineFactoryStack(cdk.Stack):
             )
             self.deployment_waves[wave_name] = wave
             return wave
-
-    def _setup_standard_pipeline(self, deployment: DeploymentConfig):
-        raise NotImplementedError("This feature is not implemented yet")
 
     def _get_synth_shell_step(self) -> pipelines.ShellStep:
         if not self.workload.cdk_app_file:

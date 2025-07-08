@@ -55,12 +55,12 @@ class CommandlineArgs:
         """
         Parses the args
         """
-        # see if we have any aruments
+        # see if we have any arguments
         known_args, unknown_args = self.parser.parse_known_args()
 
         branches: str | List[str] = known_args.branches
         if isinstance(branches, str):
-            print("found string, convering to an array")
+            print("found string, converting to an array")
             self.branches = [branches]
         else:
             self.branches = branches
