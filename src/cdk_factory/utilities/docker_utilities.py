@@ -5,9 +5,10 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
+import json
 import subprocess
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 from aws_lambda_powertools import Logger
 
 
@@ -19,37 +20,52 @@ class DockerUtilities:
         self.build_tag: str | None = None
         self.tags: List[str] = []
 
-    def generate_tags(
-        self, repo_uri, primary_tag: str, environment: str, version: str
-    ) -> List[str]:
-        """
-        Generates the docker tag based on the uri, tag and branch
-        Args:
-            repo_uri (_type_): Repo URI
-            primary_tag (str): build tag
-            branch (str): build branch
+    def get_artifact_auth_token(
+        self,
+        code_artifact_domain: str,
+        repository_name: str,
+        region: str,
+        tool: str = "pip",
+        profile: str | None = None,
+    ) -> bool:
+        command = (
+            f"aws codeartifact get-authorization-token "
+            f" --domain {code_artifact_domain} "
+            f" --region {region} "
+        )
 
-        Returns:
-            List[str]: a tag in with the following formats ~
-                "{repo_uri}:{primary_tag}_{branch}_{version}"
-                "{repo_uri}:{primary_tag}_{branch}"
-                "{repo_uri}:{version}"
-        """
-        if not environment:
-            environment = "dev"
+        if profile:
+            command += f" --profile {profile}"
 
-        if not version:
-            version = "0.0.0"
+        response = self.__run_command(command, out=subprocess.PIPE)
+        token = json.loads(response.stdout.strip())["authorizationToken"]
+        return token
 
-        tags = []
-        tags.append(f"{repo_uri}:{primary_tag}")
-        tags.append(f"{repo_uri}:{primary_tag}_{version}")
-        tags.append(f"{repo_uri}:{version}")
-        tags.append(f"{repo_uri}:{environment}")
+    def login_code_artifact(
+        self,
+        code_artifact_domain: str,
+        repository_name: str,
+        region: str,
+        tool: str = "pip",
+        profile: str | None = None,
+    ) -> bool:
+        command = (
+            f"aws codeartifact login "
+            f" --tool {tool} "
+            f" --domain {code_artifact_domain} "
+            f" --repository {repository_name} "
+            f" --region {region} "
+        )
 
-        return tags
+        if profile:
+            command += f" --profile {profile}"
 
-    def execute_build(self, docker_file: str, context_path: str, tag: str) -> bool:
+        response = self.__run_command(command)
+        return response.stdout.strip()
+
+    def execute_build(
+        self, docker_file: str, context_path: str, tag: str, build_args: List[str]
+    ) -> bool:
         """
         Issue a docker build
         Args:
@@ -61,14 +77,22 @@ class DockerUtilities:
             bool: _description_
         """
         logger.info("executing build command")
+
         command = self.get_docker_build_command(
-            docker_file_path=docker_file, context_path=context_path, tag=tag
+            docker_file_path=docker_file,
+            context_path=context_path,
+            tag=tag,
+            build_args_list=build_args,
         )
 
         return self.__run_command(command)
 
     def get_docker_build_command(
-        self, docker_file_path: str, context_path: str, tag: str
+        self,
+        docker_file_path: str,
+        context_path: str,
+        tag: str,
+        build_args_list: List[str] | None = None,
     ) -> str:
         """
         Gets the docker build command
@@ -89,15 +113,7 @@ class DockerUtilities:
 
         self.build_tag = tag
 
-        # Extract all environment variables
-        env_vars = os.environ
-
-        # Format environment variables as Docker build arguments
-        # to make this reusable and generic for any Dockerfile we're passing in all
-        # environment variables will be passed as build arguments
-        build_args = " ".join(
-            [f'--build-arg {key}="{value}"' for key, value in env_vars.items()]
-        )
+        build_args = " ".join(build_args_list) if build_args_list else ""
 
         # validate docker file
         if not os.path.exists(docker_file_path):
@@ -135,56 +151,58 @@ class DockerUtilities:
 
         logger.info({"action": "login_command", "command": login_command})
 
-        if tags and self.__run_command(login_command):
+        if tags and self.__run_command(login_command).returncode == 0:
+
             for tag in tags:
+
+                if aws_ecr_uri not in tag:
+                    raise ValueError(
+                        "The tag should be the fully qualified tag including the ecr_uri:tag"
+                    )
+
                 docker_push_command = f"docker push {tag}"
                 logger.info(
                     {"action": "docker_push_command", "command": docker_push_command}
                 )
-                success = self.__run_command(docker_push_command) == 0
+                success = self.__run_command(docker_push_command).returncode == 0
         else:
             success = False
 
         return success
 
-    def __run_command(self, command: str | List[str]) -> bool:
-        result: subprocess.CompletedProcess[str] | None = None
-        try:
-            commands: str = ""
-            if isinstance(command, str):
-                commands = command
-            elif isinstance(command, list):
-                commands = " ".join(command)
-            else:
-                # not sure what we have here
-                msg = f"Unknown type: {type(command)} for: {command}"
-                logger.error(msg)
-                raise RuntimeError(msg)
+    def __run_command(
+        self, command: str | list[str], out: Any = None
+    ) -> subprocess.CompletedProcess[str]:
+        # Normalize to a string
+        if isinstance(command, list):
+            cmd_str = " ".join(command)
+        elif isinstance(command, str):
+            cmd_str = command
+        else:
+            msg = f"Unknown command type: {type(command)}"
+            logger.error(msg)
+            raise RuntimeError(msg)
 
-            result = subprocess.run(
-                commands,
-                stdout=None,
-                stderr=None,
-                text=True,
-                check=False,
-                shell=True,
-                env=os.environ,  # pass all current environment vars
-            )
+        logger.debug(f"Running shell command: {cmd_str!r}")
+        result = subprocess.run(
+            cmd_str,
+            stdout=out,
+            stderr=out,
+            text=True,
+            shell=True,
+            env=os.environ,
+        )
 
-            if result.returncode != 0:
-                raise RuntimeError("Error during command execution")
+        if result.returncode != 0:
+            # log both stdout and stderr for debugging
+            logger.error(f"Command failed ({result.returncode}): {cmd_str}")
+            if out:
+                logger.error(f"stdout:\n{result.stdout}")
+                logger.error(f"stderr:\n{result.stderr}")
+            raise RuntimeError(f"Command `{cmd_str}` exited {result.returncode}")
 
-        except subprocess.CalledProcessError as e:
-            logger.error(str(e))
-            raise e
-
-        except Exception as e:  # pylint: disable=w0718
-            logger.error(str(e))
-            raise e
-
-        logger.info(result.returncode)
-
-        return result.returncode == 0
+        # return the trimmed stdout to the caller
+        return result
 
 
 def main():
@@ -219,9 +237,10 @@ def main():
         )
 
     docker: DockerUtilities = DockerUtilities()
-    tags = docker.generate_tags(
-        repo_uri=ecr_uri, primary_tag=tag, branch=branch, version=version
-    )
+    tags = [
+        f"{ecr_uri}:{tag}",
+        f"{ecr_uri}:{version}",
+    ]
     project_root = str(Path(__file__).parents[3])
     docker_file = os.path.join(project_root, docker_file)
     # set up the context to the root directory
