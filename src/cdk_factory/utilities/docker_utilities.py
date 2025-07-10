@@ -23,9 +23,7 @@ class DockerUtilities:
     def get_artifact_auth_token(
         self,
         code_artifact_domain: str,
-        repository_name: str,
         region: str,
-        tool: str = "pip",
         profile: str | None = None,
     ) -> bool:
         command = (

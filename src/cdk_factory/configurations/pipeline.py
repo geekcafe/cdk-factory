@@ -43,35 +43,6 @@ class PipelineConfig:
         deployments.sort(key=lambda x: x.order)
         self._deployments = deployments
 
-    def __load_deployment(self, deployment_name: str):
-        # look for the config at the workload level
-        deployments = self.workload.get("deployments", [])
-
-        workload_level_deployment: dict = {}
-        pipeline_level_deployment: dict = {}
-        resolved_deployment = {}
-
-        if deployments:
-            deployment: dict = {}
-            for deployment in deployments:
-                if deployment.get("name") == deployment_name:
-                    workload_level_deployment = deployment
-                    break
-
-        # now check for one in our pipelinel level
-        for deployment in self.pipeline.get("deployments", []):
-            if deployment.get("name") == deployment_name:
-                pipeline_level_deployment = deployment
-                break
-
-        # merge the two dictionaries
-        # start witht workload
-        resolved_deployment.update(workload_level_deployment)
-        # now merge the overrides
-        resolved_deployment.update(pipeline_level_deployment)
-
-        return resolved_deployment
-
     @property
     def deployments(self) -> List[DeploymentConfig]:
         """
