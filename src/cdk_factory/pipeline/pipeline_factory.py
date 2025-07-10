@@ -99,7 +99,7 @@ class PipelineFactoryStack(cdk.Stack):
             # stacks can be added to a deployment wave
             if deployment.enabled:
 
-                self._setup_deployment_stages(deployment=deployment, **self.kwargs)
+                self._setup_deployment_stages(deployment=deployment)
             else:
                 print(
                     f"\t🚨 Deployment for Environment: {deployment.environment} "

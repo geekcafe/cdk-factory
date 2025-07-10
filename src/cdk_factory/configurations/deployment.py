@@ -123,6 +123,10 @@ class DeploymentConfig:
         return self.__deployment["name"]
 
     @property
+    def description(self) -> str | None:
+        return self.__deployment.get("description")
+
+    @property
     def mode(self):
         """
         Returns the deployment mode
