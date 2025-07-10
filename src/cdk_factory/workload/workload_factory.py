@@ -148,6 +148,7 @@ class WorkloadFactory:
             outdir=self.outdir,
             workload=self.workload,
             cdk_config=self.cdk_config,
+            description=deployment.description,
         )
 
         factory.build()
