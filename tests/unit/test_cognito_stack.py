@@ -96,3 +96,10 @@ def test_cognito_stack_full_config():
     assert user_pool.stack.cognito_config.self_sign_up_enabled is False
     assert user_pool.stack.cognito_config.password_policy.get("min_length") == 12
     assert user_pool.stack.cognito_config.mfa == "OPTIONAL"
+    assert user_pool.stack.cognito_config.mfa_second_factor.get("sms") is True
+    assert user_pool.stack.cognito_config.mfa_second_factor.get("otp") is True
+    assert user_pool.stack.cognito_config.account_recovery == "EMAIL_ONLY"
+    assert user_pool.stack.cognito_config.deletion_protection is True
+    assert user_pool.stack.cognito_config.device_tracking is None
+    assert user_pool.stack.cognito_config.email is None
+    assert user_pool.stack.cognito_config.enable_sms_role is None
