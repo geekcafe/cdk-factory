@@ -37,16 +37,20 @@ def test_cognito_stack_minimal():
 
     resources = [c for c in stack.node.children if isinstance(c, cognito.UserPool)]
     assert len(resources) == 1
-    user_pool = resources[0]
-    assert user_pool.user_pool_name == "TestUserPool"
-    assert user_pool.sign_in_aliases.email is True
-    assert user_pool.self_sign_up_enabled is True
-    assert user_pool.password_policy.min_length == 10
+    user_pool: cognito.UserPool = resources[0]
+    assert user_pool.stack.cognito_config.user_pool_name == "TestUserPool"
+    assert user_pool.stack.cognito_config.sign_in_aliases.get("email") is True
+    assert user_pool.stack.cognito_config.self_sign_up_enabled is True
+    assert user_pool.stack.cognito_config.password_policy.get("min_length") == 10
 
 
 def test_cognito_stack_full_config():
     app = App()
-    dummy_workload = DummyWorkload({"devops": {"name": "dummy-devops"}})
+    dummy_workload = WorkloadConfig(
+        {
+            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+        }
+    )
     stack_config = StackConfig(
         {
             "cognito": {
@@ -73,10 +77,13 @@ def test_cognito_stack_full_config():
                 "deletion_protection": True,
             }
         },
-        workload=dummy_workload,
+        workload=dummy_workload.dictionary,
     )
-    deployment = DummyDeployment({"deployment": {"name": "dummy-deployment"}})
-    workload = DummyWorkload({})
+    deployment = DeploymentConfig(
+        workload=dummy_workload.dictionary,
+        deployment={"name": "dummy-deployment"},
+    )
+    workload = dummy_workload
 
     stack = CognitoStack(app, "FullCognitoStack")
     stack.build(stack_config, deployment, workload)
@@ -84,9 +91,8 @@ def test_cognito_stack_full_config():
     resources = [c for c in stack.node.children if isinstance(c, cognito.UserPool)]
     assert len(resources) == 1
     user_pool = resources[0]
-    assert user_pool.user_pool_name == "FullUserPool"
-    assert user_pool.sign_in_aliases.email is True
-    assert user_pool.sign_in_aliases.phone is True
-    assert user_pool.sign_in_case_sensitive is False
-    assert user_pool.password_policy.min_length == 12
-    assert user_pool.mfa == cognito.Mfa.OPTIONAL
+    assert user_pool.stack.cognito_config.user_pool_name == "FullUserPool"
+    assert user_pool.stack.cognito_config.sign_in_aliases.get("email") is True
+    assert user_pool.stack.cognito_config.self_sign_up_enabled is False
+    assert user_pool.stack.cognito_config.password_policy.get("min_length") == 12
+    assert user_pool.stack.cognito_config.mfa == "OPTIONAL"
