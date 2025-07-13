@@ -11,7 +11,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.ecr import ECRConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.constructs.ecr.ecr_construct import ECRConstruct
-from cdk_factory.stack.istack import IStack
+from cdk_factory.interfaces.istack import IStack
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 

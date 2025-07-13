@@ -7,8 +7,7 @@ import configparser
 from pathlib import Path
 from shutil import which
 from typing import List
-
-
+import json
 
 VENV = ".venv"
 
@@ -35,10 +34,94 @@ def print_header(msg):
 
 
 class ProjectSetup:
+    CA_CONFIG = Path("setup.json")
+
     def __init__(self):
         self._use_poetry: bool = False
         self._package_name: str = ""
         self.__exit_notes: List[str] = []
+
+        self.ca_settings = {}
+        if self.CA_CONFIG.exists():
+            try:
+                self.ca_settings = json.loads(self.CA_CONFIG.read_text())
+                print_info(f"🔒 Loaded CodeArtifact settings from {self.CA_CONFIG}")
+            except json.JSONDecodeError:
+                print_error(f"Could not parse {self.CA_CONFIG}; ignoring it.")
+
+    def _maybe_setup_codeartifact(self)-> bool:
+        # if we've already got settings, ask to reuse
+        if self.ca_settings:
+            reuse = (
+                input("Reuse saved CodeArtifact settings? (Y/n): ").strip().lower()
+                or "y"
+            )
+            if reuse != "y":
+                self.ca_settings = {}
+
+        if not self.ca_settings:
+            ans = input("📦 Configure AWS CodeArtifact? (y/N): ").strip().lower()
+            if ans != "y":
+                return False
+            # prompt and store
+            self.ca_settings = {
+                "tool": input("   Tool (pip/poetry) [pip]: ").strip().lower() or "pip",
+                "domain": input("   Domain name: ").strip(),
+                "repository": input("   Repository name: ").strip(),
+                "region": input("   AWS region [us-east-1]: ").strip() or "us-east-1",
+                "profile": input("   AWS CLI profile (optional): ").strip() or None,
+            }
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_success(f"Saved CodeArtifact settings to {self.CA_CONFIG}")
+
+        # build aws CLI command
+        if which("aws") is None:
+            print_error("AWS CLI not found; cannot configure CodeArtifact.")
+            sys.exit(1)
+
+        cmd = [
+            "aws",
+            "codeartifact",
+            "login",
+            "--tool",
+            self.ca_settings["tool"],
+            "--domain",
+            self.ca_settings["domain"],
+            "--repository",
+            self.ca_settings["repository"],
+            "--region",
+            self.ca_settings["region"],
+        ]
+        if self.ca_settings.get("profile"):
+            cmd += ["--profile", self.ca_settings["profile"]]
+
+        print_info(f"→ aws codeartifact login {' '.join(cmd[3:])}")
+        try:
+            # subprocess.run(cmd, check=True)
+            # ensure our virtualenv’s pip is picked up
+            env = os.environ.copy()
+            venv_bin = os.path.abspath(f"{VENV}/bin")
+            if os.path.isdir(venv_bin):
+                env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+            subprocess.run(cmd, check=True, env=env)
+
+            print_success("CodeArtifact login succeeded.")
+            return True
+        except subprocess.CalledProcessError as e:
+            print_error(f"CodeArtifact login failed: {e}")
+            sys.exit(1)
+
+    def _run_with_ca_retry(self, func, *args, **kwargs):
+        """Run an install function, on auth failure re-login once."""
+        try:
+            return func(*args, **kwargs)
+        except subprocess.CalledProcessError as e:
+            # if "401" in str(e) or "Unauthorized" in str(e) or "No matching distribution found for" in str(e):
+            print_info("Detected auth or package not found error.")
+            if self._maybe_setup_codeartifact():
+                return func(*args, **kwargs)
+            else:
+                raise
 
     def _detect_platform(self):
         sysname = os.uname().sysname
@@ -70,7 +153,9 @@ class ProjectSetup:
             self._use_poetry = False
             print_info("Defaulting to pip project from requirements.txt.")
         else:
-            pip_or_poetry = input("📦 Do you want to use pip or poetry? (default: pip): ") or "pip"
+            pip_or_poetry = (
+                input("📦 Do you want to use pip or poetry? (default: pip): ") or "pip"
+            )
             self._use_poetry = pip_or_poetry.lower() == "poetry"
 
         return os_type
@@ -117,7 +202,9 @@ class ProjectSetup:
         self._package_name = self._get_default_package_name()
         package_name_input = input(f"Package name (default: {self._package_name}): ")
         if package_name_input:
-            self._package_name = package_name_input.replace(" ", "-").lower().replace("-", "_")
+            self._package_name = (
+                package_name_input.replace(" ", "-").lower().replace("-", "_")
+            )
 
         package_version = input("Package version (default: 0.1.0): ") or "0.1.0"
         package_description = input("Package description: ")
@@ -125,7 +212,9 @@ class ProjectSetup:
         author_email = self._get_git_config("user.email") or "developer@example.com"
 
         author_name = input(f"Author name (default: {author_name}): ") or author_name
-        author_email = input(f"Author email (default: {author_email}): ") or author_email
+        author_email = (
+            input(f"Author email (default: {author_email}): ") or author_email
+        )
 
         src_package_path = Path(f"src/{self._package_name}")
         src_package_path.mkdir(parents=True, exist_ok=True)
@@ -191,7 +280,9 @@ class ProjectSetup:
 
     def _get_git_config(self, key: str) -> str:
         try:
-            result = subprocess.run(["git", "config", "--get", key], capture_output=True, text=True)
+            result = subprocess.run(
+                ["git", "config", "--get", key], capture_output=True, text=True
+            )
             if result.returncode == 0:
                 return result.stdout.strip()
         except Exception:
@@ -199,11 +290,18 @@ class ProjectSetup:
         return None
 
     def _strip_content(self, content: str) -> str:
-        return "\n".join(line.strip().replace("\t", "") for line in content.split("\n") if line.strip())
+        return "\n".join(
+            line.strip().replace("\t", "")
+            for line in content.split("\n")
+            if line.strip()
+        )
 
     def _setup_requirements(self):
         self._write_if_missing("requirements.txt", "# project requirements")
-        self._write_if_missing("requirements.dev.txt", self._strip_content(self._dev_requirements_content()))
+        self._write_if_missing(
+            "requirements.dev.txt",
+            self._strip_content(self._dev_requirements_content()),
+        )
 
     def _write_if_missing(self, filename: str, content: str):
         if not os.path.exists(filename):
@@ -216,6 +314,7 @@ class ProjectSetup:
 
     def _dev_requirements_content(self) -> str:
         return """
+            # dev and testing requirements
             pytest
             mypy
             types-python-dateutil
@@ -235,22 +334,43 @@ class ProjectSetup:
         self.print_env_info()
         print("\n🎉 Setup complete!")
         if not self._use_poetry:
-            print(f"➡️  Run 'source {VENV}/bin/activate' to activate the virtual environment.")
+            print(
+                f"➡️  Run 'source {VENV}/bin/activate' to activate the virtual environment."
+            )
 
     def _setup_pip(self):
-        
+
         print(f"🐍 Setting up Python virtual environment at {VENV}...")
         try:
             subprocess.run(["python3", "-m", "venv", VENV], check=True)
             self._create_pip_conf()
-            subprocess.run([f"{VENV}/bin/pip", "install", "--upgrade", "pip"], check=True)
+            subprocess.run(
+                [f"{VENV}/bin/pip", "install", "--upgrade", "pip"], check=True
+            )
+
+            self._run_with_ca_retry(
+                subprocess.run,
+                [f"{VENV}/bin/pip", "install", "--upgrade", "pip"],
+                check=True,
+            )
+
+            self._setup_requirements()
 
             for req_file in self.get_list_of_requirements_files():
                 print(f"🔗 Installing packages from {req_file}...")
-                subprocess.run([f"{VENV}/bin/pip", "install", "-r", req_file, "--upgrade"], check=True)
+                self._run_with_ca_retry(
+                    subprocess.run,
+                    [f"{VENV}/bin/pip", "install", "-r", req_file, "--upgrade"],
+                    check=True,
+                )
 
             print("🔗 Installing local package in editable mode...")
-            subprocess.run([f"{VENV}/bin/pip", "install", "-e", "."], check=True)
+            self._run_with_ca_retry(
+                subprocess.run,
+                [f"{VENV}/bin/pip", "install", "-e", "."],
+                check=True,
+            )
+
         except subprocess.CalledProcessError as e:
             print_error(f"pip setup failed: {e}")
             sys.exit(1)
@@ -272,28 +392,36 @@ class ProjectSetup:
             file.write(self._strip_content(content))
         print_success("pip.conf created.")
 
-    def _setup_poetry(self):        
-        
+    def _setup_poetry(self):
+
         print("📚  Using Poetry for environment setup...")
         try:
             if which("poetry") is None:
                 print("⬇️ Installing Poetry...")
-                subprocess.run("curl -sSL https://install.python-poetry.org | python3 -", shell=True, check=True)
-                os.environ["PATH"] = f"{os.path.expanduser('~')}/.local/bin:" + os.environ["PATH"]
+                subprocess.run(
+                    "curl -sSL https://install.python-poetry.org | python3 -",
+                    shell=True,
+                    check=True,
+                )
+                os.environ["PATH"] = (
+                    f"{os.path.expanduser('~')}/.local/bin:" + os.environ["PATH"]
+                )
 
-            result = subprocess.run(["poetry", "--version"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["poetry", "--version"], capture_output=True, text=True
+            )
             if result.returncode != 0:
                 print_error("Poetry installation failed.")
                 sys.exit(1)
             print_success(result.stdout.strip())
 
             print("🔧 Creating virtual environment with Poetry...")
-            subprocess.run(["poetry", "install"], check=True)
+            self._run_with_ca_retry(subprocess.run, ["poetry", "install"], check=True)
+
+            # subprocess.run(["poetry", "install"], check=True)
         except subprocess.CalledProcessError as e:
             print_error(f"Poetry setup failed: {e}")
             sys.exit(1)
-
-
 
     def _setup_poetry(self):
         print("📚  Using Poetry for environment setup...")
@@ -304,13 +432,16 @@ class ProjectSetup:
                     ["poetry", "--version"], capture_output=True, text=True, check=True
                 )
                 version = result.stdout.strip()
-                self.__exit_notes.append(f"✅ Poetry already installed ({version}), skipping installer.")
+                self.__exit_notes.append(
+                    f"✅ Poetry already installed ({version}), skipping installer."
+                )
             else:
                 # 2) Install Poetry
                 print("⬇️ Installing Poetry…")
                 subprocess.run(
                     "curl -sSL https://install.python-poetry.org | python3 -",
-                    shell=True, check=True
+                    shell=True,
+                    check=True,
                 )
 
                 # make it available right now
@@ -326,7 +457,9 @@ class ProjectSetup:
                         f'export PATH="{poetry_bin}:$PATH"\n'
                         "# <<< poetry installer <<<\n"
                     )
-                    self.__exit_notes.append(f"✍️  Appending Poetry to PATH in {rc_file}")
+                    self.__exit_notes.append(
+                        f"✍️  Appending Poetry to PATH in {rc_file}"
+                    )
                     with open(rc_file, "a") as f:
                         f.write(export_line)
                     self.__exit_notes.append(f"👌  Added to {rc_file}.")
@@ -338,7 +471,7 @@ class ProjectSetup:
                 else:
                     self.__exit_notes.append("⚠️  Couldn't detect bash/zsh shell.")
                     self.__exit_notes.append(
-                        f"Please add to your shell profile manually:\n    export PATH=\"{poetry_bin}:$PATH\""
+                        f'Please add to your shell profile manually:\n    export PATH="{poetry_bin}:$PATH"'
                     )
                     self.__exit_notes.append(
                         "🔄 Then reload your shell (e.g. exec $SHELL -l)."
@@ -362,10 +495,12 @@ class ProjectSetup:
             print(f"❌ Poetry setup failed: {e}")
             sys.exit(1)
 
-
-
     def get_list_of_requirements_files(self) -> List[str]:
-        return [f for f in os.listdir(Path(__file__).parent) if f.startswith("requirements") and f.endswith(".txt")]
+        return [
+            f
+            for f in os.listdir(Path(__file__).parent)
+            if f.startswith("requirements") and f.endswith(".txt")
+        ]
 
     def print_env_info(self):
         print_header("Python Environment Info")
@@ -373,7 +508,9 @@ class ProjectSetup:
         print(f"🐍 Python Executable  : {sys.executable}")
         print(f"📂 sys.prefix         : {sys.prefix}")
         print(f"📂 Base Prefix        : {getattr(sys, 'base_prefix', sys.prefix)}")
-        site_packages = site.getsitepackages()[0] if hasattr(site, 'getsitepackages') else 'N/A'
+        site_packages = (
+            site.getsitepackages()[0] if hasattr(site, "getsitepackages") else "N/A"
+        )
         print(f"🧠 site-packages path : {site_packages}")
         in_venv = self.is_virtual_environment()
         print(f"✅ In Virtual Env     : {'Yes' if in_venv else 'No'}")

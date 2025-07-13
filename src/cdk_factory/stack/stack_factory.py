@@ -6,7 +6,7 @@ MIT License.  See Project Root for the license information.
 
 from typing import Type
 
-from cdk_factory.stack.istack import IStack
+from cdk_factory.interfaces.istack import IStack
 from cdk_factory.stack.stack_module_loader import ModuleLoader
 from cdk_factory.stack.stack_module_registry import modules
 

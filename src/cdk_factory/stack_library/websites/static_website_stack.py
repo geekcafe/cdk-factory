@@ -21,7 +21,7 @@ from cdk_factory.constructs.cloudfront.cloudfront_distribution_construct import 
     CloudFrontDistributionConstruct,
 )
 from cdk_factory.constructs.s3_buckets.s3_bucket_construct import S3BucketConstruct
-from cdk_factory.stack.istack import IStack
+from cdk_factory.interfaces.istack import IStack
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 

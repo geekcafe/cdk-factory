@@ -34,7 +34,7 @@ from cdk_factory.configurations.resources.lambda_function import (
 
 from cdk_factory.utilities.docker_utilities import DockerUtilities
 from cdk_factory.stack.stack_module_registry import register_stack
-from cdk_factory.stack.istack import IStack
+from cdk_factory.interfaces.istack import IStack
 from cdk_factory.configurations.resources.lambda_triggers import LambdaTriggersConfig
 
 logger = Logger(__name__)

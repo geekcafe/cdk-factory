@@ -11,7 +11,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.s3 import S3BucketConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.constructs.s3_buckets.s3_bucket_construct import S3BucketConstruct
-from cdk_factory.stack.istack import IStack
+from cdk_factory.interfaces.istack import IStack
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 

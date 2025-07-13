@@ -6,7 +6,7 @@ MIT License.  See Project Root for the license information.
 
 from typing import Dict, Type
 
-from cdk_factory.stack.istack import IStack
+from cdk_factory.interfaces.istack import IStack
 
 
 class Modules:
