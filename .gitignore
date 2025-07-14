@@ -180,3 +180,13 @@ cdk.out
 # backup and local files
 *.backup.json
 .dynamic_*_config.json
+.dynamic_config_min.json
+.env.cdk
+.env.cdk*
+.env
+.env.local
+.env.test
+.env.dev
+.env.prod
+.env.sandbox
+

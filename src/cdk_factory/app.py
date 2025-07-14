@@ -4,6 +4,7 @@ Geek Cafe, LLC
 Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
+import os
 from pathlib import Path
 import aws_cdk
 from aws_cdk.cx_api import CloudAssembly
@@ -42,8 +43,6 @@ class CdkAppFactory:
             CloudAssembly: CDK CloudAssembly
         """
 
-        print("config_path", self.config_path)
-
         if not paths:
             paths = []
 
@@ -59,6 +58,11 @@ class CdkAppFactory:
             runtime_directory=self.runtime_directory,
         )
 
+        print("config_path", self.config_path)
+        if not self.config_path:
+            raise Exception("No configuration file provided")
+        if not os.path.exists(self.config_path):
+            raise Exception("Configuration file does not exist: " + self.config_path)
         workload: WorkloadFactory = WorkloadFactory(
             app=self.app,
             config_path=self.config_path,

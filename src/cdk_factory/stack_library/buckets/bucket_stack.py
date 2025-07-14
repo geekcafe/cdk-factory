@@ -18,6 +18,7 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
+@register_stack("bucket_library_module")
 @register_stack("bucket_stack")
 class S3BucketStack(IStack):
     """

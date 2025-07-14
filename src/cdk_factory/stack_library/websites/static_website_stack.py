@@ -28,6 +28,7 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
+@register_stack("website_library_module")
 @register_stack("static_website_stack")
 class StaticWebSiteStack(IStack):
     """

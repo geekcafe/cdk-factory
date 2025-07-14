@@ -1,0 +1,102 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{CDK_CONFIG_PATH}}",
+        "env_var_name": "CDK_CONFIG_PATH",
+        "cdk_parameter_name": "CdkConfigPath"
+      },
+      {
+        "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+        "value": "../../samples/cognito/commands/cdk_synth.sh",
+        "cdk_parameter_name": "CdkSynthCommandFile"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT_NUMBER",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+        "env_var_name": "DEVOPS_AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_REGION}}",
+        "env_var_name": "DEVOPS_REGION",
+        "cdk_parameter_name": "AccountRegion"
+      },
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
+      }
+    ]
+  },
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "General info about this app/workload",
+    "devops": {
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}",
+      "code_repository": {
+        "name": "{{CODE_REPOSITORY_NAME}}",
+        "type": "connector_arn",
+        "connector_arn": "{{CODE_REPOSITORY_CONNECTOR_ARN}}"
+      },
+      "commands": [
+        {
+          "name": "cdk_synth",
+          "commands": [],
+          "file": "{{CDK_SYNTH_COMMAND_FILE}}"
+        }
+      ]
+    },
+    "stacks": [
+      {
+        "name": "cognito",
+        "module": "cognito_stack",
+        "enabled": true,
+        "cognito": {
+          "user_pool_name": "SampleUserPool",
+          "self_sign_up_enabled": true,
+          "sign_in_aliases": {
+            "username": true,
+            "email": true
+          },
+          "auto_verify": {
+            "email": true
+          },
+          "mfa": "OPTIONAL",
+          "password_policy": {
+            "min_length": 8,
+            "require_lowercase": true,
+            "require_uppercase": true,
+            "require_digits": true,
+            "require_symbols": false
+          },
+          "removal_policy": "DESTROY",
+          "account_recovery": "EMAIL_ONLY"
+        }
+      }
+    ],
+    "deployments": [
+      {
+        "name": "dev",
+        "environment": "dev",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": [
+          "cognito"
+        ],
+        "enabled": true
+      }
+    ]
+  }
+}

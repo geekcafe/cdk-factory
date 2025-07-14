@@ -19,6 +19,7 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
+@register_stack("cognito_library_module")
 @register_stack("cognito_stack")
 class CognitoStack(IStack):
     """

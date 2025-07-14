@@ -1,0 +1,128 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{CDK_CONFIG_PATH}}",
+        "env_var_name": "CDK_CONFIG_PATH",
+        "cdk_parameter_name": "CdkConfigPath"
+      },
+      {
+        "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+        "value": "../../samples/api-gateway/commands/cdk_synth.sh",
+        "cdk_parameter_name": "CdkSynthCommandFile"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT_NUMBER",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+        "env_var_name": "DEVOPS_AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_REGION}}",
+        "env_var_name": "DEVOPS_REGION",
+        "cdk_parameter_name": "AccountRegion"
+      },
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
+      },
+      {
+        "placeholder": "{{API_GATEWAY_NAME}}",
+        "env_var_name": "API_GATEWAY_NAME",
+        "cdk_parameter_name": "ApiGatewayName"
+      },
+      {
+        "placeholder": "{{DEPLOYED_USER_POOL_ARN}}",
+        "env_var_name": "DEPLOYED_USER_POOL_ARN",
+        "cdk_parameter_name": "DeployedUserPoolArn"
+      }
+    ]
+  },
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "General info about this app/workload",
+    "devops": {
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}",
+      "code_repository": {
+        "name": "{{CODE_REPOSITORY_NAME}}",
+        "type": "connector_arn",
+        "connector_arn": "{{CODE_REPOSITORY_CONNECTOR_ARN}}"
+      },
+      "commands": [
+        {
+          "name": "cdk_synth",
+          "commands": [],
+          "file": "{{CDK_SYNTH_COMMAND_FILE}}"
+        }
+      ]
+    },
+    "stacks": [
+      {
+        "name": "api-gateway-{{ENVIRONMENT}}",
+        "module": "api_gateway_library_module",
+        "enabled": true,
+        "api_gateway": {
+          "rest_api_name": "SampleApiGateway",
+          "description": "API Gateway with Cognito Authorizer and CORS",
+          "cognito_authorizer": {
+            "user_pool_arn": "{{DEPLOYED_USER_POOL_ARN}}",
+            "authorizer_name": "SampleCognitoAuthorizer"
+          },
+          "routes": [
+            {
+              "path": "/secure",
+              "method": "GET",
+              "lambda_code_path": "../../src/cdk_factory/lambdas/health_handler.py",
+              "cors": {
+                "methods": [
+                  "GET"
+                ],
+                "origins": [
+                  "*"
+                ]
+              }
+            },
+            {
+              "path": "/public",
+              "method": "GET",
+              "lambda_code_path": "../../src/cdk_factory/lambdas/health_handler.py",
+              "authorization_type": "NONE",
+              "cors": {
+                "methods": [
+                  "GET"
+                ],
+                "origins": [
+                  "*"
+                ]
+              }
+            }
+          ]
+        }        
+      }
+    ],
+    "deployments": [
+      {
+        "name": "dev",
+        "environment": "dev",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": [
+          "api-gateway-{{ENVIRONMENT}}"
+        ],
+        "enabled": true
+      }
+    ]
+  }
+}

@@ -204,7 +204,7 @@ class CdkConfig:
             raise ValueError("cdk_context is None")
 
         value = self.cdk_context.get(cdk_parameter_name)
-
+        print(f"Value for {cdk_parameter_name}: {value}")
         if static_value is not None:
             value = static_value
         elif environment_variable_name is not None and not value:

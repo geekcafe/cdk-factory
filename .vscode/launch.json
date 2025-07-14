@@ -113,6 +113,32 @@
             "envFile": "${workspaceFolder}/samples/docker_build/.env"
         },
         {
+            "name": "CDK Synth: API Gateway",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cdk_factory/app.py",
+            "console": "integratedTerminal",    
+            "justMyCode": false,       
+            "env": {                
+                "ENVIRONMENT": "dev",
+                "DEBUG_MODE": "True",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/src:${workspaceFolder}/src/cdk_factory",
+                "RUN_INTEGRATION_TESTS": "True",
+                "CDK_CONFIG_PATH" : "../../samples/api-gateway/config_min.json",
+                "CDK_WORKLOAD_NAME": "sandbox-api-gateway-test",
+                "API_GATEWAY_NAME": "sandbox-api-gateway-test"             ,
+                "DEPLOYED_USER_POOL_ARN": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_123456789",
+                "AWS_ACCOUNT_NUMBER": "123456789012",
+                "AWS_ACCOUNT_REGION": "us-east-1",
+                "DEVOPS_AWS_ACCOUNT": "123456789012",
+                "DEVOPS_AWS_REGION": "us-east-1",
+                "DEVOPS_REGION": "us-east-1",
+                
+                
+            },
+            "envFile": "${workspaceFolder}/samples/api-gateway/.env"
+        },
+        {
             "name": "Build & Deploy Artifacts",
             "type": "debugpy",
             "request": "launch",

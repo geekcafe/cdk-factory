@@ -1,0 +1,25 @@
+{
+  "api_gateway": {
+    "rest_api_name": "SampleApiGateway",
+    "description": "API Gateway with Cognito Authorizer and CORS",
+    "cognito_authorizer": {
+      "user_pool_arn": "REPLACE_WITH_DEPLOYED_USER_POOL_ARN",
+      "authorizer_name": "SampleCognitoAuthorizer"
+    },
+    "routes": [
+      {
+        "path": "/secure",
+        "method": "GET",
+        "lambda_code_path": "./src/cdk_factory/lambdas/health_handler.py",
+        "cors": {"methods": ["GET"], "origins": ["*"]}
+      },
+      {
+        "path": "/public",
+        "method": "GET",
+        "lambda_code_path": "./src/cdk_factory/lambdas/health_handler.py",
+        "authorization_type": "NONE",
+        "cors": {"methods": ["GET"], "origins": ["*"]}
+      }
+    ]
+  }
+}

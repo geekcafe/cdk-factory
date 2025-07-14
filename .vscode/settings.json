@@ -26,9 +26,11 @@
         "editor.defaultFormatter": "ms-python.black-formatter",
     },
     "cSpell.words": [
+        "apigatewayv",
         "codeconnections",
         "geekcafe",
-        "istack"
+        "istack",
+        "mebibytes"
     ],
     
 }

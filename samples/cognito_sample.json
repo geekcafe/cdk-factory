@@ -1,0 +1,18 @@
+{
+  "cognito": {
+    "user_pool_name": "SampleUserPool",
+    "self_sign_up_enabled": true,
+    "sign_in_aliases": {"username": true, "email": true},
+    "auto_verify": {"email": true},
+    "mfa": "OPTIONAL",
+    "password_policy": {
+      "min_length": 8,
+      "require_lowercase": true,
+      "require_uppercase": true,
+      "require_digits": true,
+      "require_symbols": false
+    },
+    "removal_policy": "DESTROY",
+    "account_recovery": "EMAIL_ONLY"
+  }
+}

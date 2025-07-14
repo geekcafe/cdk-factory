@@ -18,6 +18,7 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
+@register_stack("ecr_library_module")
 @register_stack("ecr_stack")
 class ECRStack(IStack):
     """
