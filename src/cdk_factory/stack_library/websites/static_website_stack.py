@@ -197,7 +197,7 @@ class StaticWebSiteStack(IStack):
         )
 
     def __get_version_number(self, assets_path: str) -> str:
-        version = "0.0.5"
+        version = "0.0.1.ckd.factory"
 
         # look for a version file
         version_file = os.path.join(Path(assets_path), "version.txt")
