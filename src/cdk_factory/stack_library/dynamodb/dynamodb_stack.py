@@ -29,7 +29,7 @@ class DynamoDBStack(IStack):
         self.stack_config = None
         self.deployment = None
         self.workload = None
-        self.table = None
+        self.table: dynamodb.TableV2 | None = None
 
     def build(self, stack_config, deployment, workload) -> None:
         self.stack_config = stack_config
@@ -38,8 +38,7 @@ class DynamoDBStack(IStack):
         from cdk_factory.configurations.resources.dynamodb import DynamoDBConfig
 
         self.db_config = DynamoDBConfig(
-            stack_config.dictionary.get("dynamodb", {}),
-            deployment
+            stack_config.dictionary.get("dynamodb", {}), deployment
         )
 
         # Determine if we're using an existing table or creating a new one
@@ -51,68 +50,83 @@ class DynamoDBStack(IStack):
     def _import_existing_table(self) -> None:
         """Import an existing DynamoDB table"""
         table_name = self.db_config.name
-        
+
         logger.info(f"Importing existing DynamoDB table: {table_name}")
-        
+
         self.table = dynamodb.Table.from_table_name(
-            self,
-            id=f"{table_name}-imported",
-            table_name=table_name
+            self, id=f"{table_name}-imported", table_name=table_name
         )
 
     def _create_new_table(self) -> None:
         """Create a new DynamoDB table with the specified configuration"""
         table_name = self.db_config.name
-        
+
         # Define table properties
+        removal_policy = (
+            cdk.RemovalPolicy.DESTROY
+            if "dev" in deployment.environment
+            else cdk.RemovalPolicy.RETAIN
+        )
+
+        if deployment.dynamodb.enable_delete_protection:
+            removal_policy = cdk.RETAIN
+
         props = {
             "table_name": table_name,
             "partition_key": dynamodb.Attribute(
-                name="id",
-                type=dynamodb.AttributeType.STRING
+                name="pk", type=dynamodb.AttributeType.STRING
+            ),
+            "sort_key": dynamodb.Attribute(
+                name="sk", type=dynamodb.AttributeType.STRING
             ),
             "billing_mode": dynamodb.BillingMode.PAY_PER_REQUEST,
             "deletion_protection": self.db_config.enable_delete_protection,
             "point_in_time_recovery": self.db_config.point_in_time_recovery,
+            "removal_policy": removal_policy,
         }
-        
-        # Add replica regions if specified
-        replica_regions = self.db_config.replica_regions
-        if replica_regions:
-            props["replication_regions"] = replica_regions
-            logger.info(f"Configuring table {table_name} with replicas in: {', '.join(replica_regions)}")
-        
+
         # Create the table
         logger.info(f"Creating DynamoDB table: {table_name}")
-        self.table = dynamodb.Table(
-            self,
-            id=table_name,
-            **props
-        )
-        
+        self.table = dynamodb.TableV2(self, id=table_name, **props)
+
         # Add GSIs if configured
-        self._configure_gsis()
-        
-    def _configure_gsis(self) -> None:
+        self._configure_gsi()
+        # add replicas if configured
+        self._configure_replicas()
+
+    def _configure_replicas(self) -> None:
+        """Configure replicas if specified in the config"""
+        if not self.table or self.db_config.use_existing:
+            return
+
+        replica_regions = self.db_config.replica_regions
+        if replica_regions:
+            logger.info(
+                f"Configuring table {self.db_config.name} with replicas in: {', '.join(replica_regions)}"
+            )
+            for region in replica_regions:
+                self.table.add_replica(region)
+
+    def _configure_gsi(self) -> None:
         """Configure Global Secondary Indexes if specified in the config"""
         if not self.table or self.db_config.use_existing:
             return
-            
-        # In a real implementation, you would read GSI configurations from the config
-        # For now, we'll just log the GSI count from the config
+
+        # TODO: allow for custom GSI configuration
         gsi_count = self.db_config.gsi_count
         if gsi_count > 0:
-            logger.info(f"Table {self.db_config.name} is configured to support up to {gsi_count} GSIs")
-            
-        # Example of how to add a GSI (commented out as it would need actual config data)
-        # self.table.add_global_secondary_index(
-        #     index_name="example-gsi",
-        #     partition_key=dynamodb.Attribute(
-        #         name="gsi_pk",
-        #         type=dynamodb.AttributeType.STRING
-        #     ),
-        #     sort_key=dynamodb.Attribute(
-        #         name="gsi_sk",
-        #         type=dynamodb.AttributeType.STRING
-        #     )
-        # )
+            logger.info(
+                f"Table {self.db_config.name} is configured to support up to {gsi_count} GSIs"
+            )
+
+        for i in range(gsi_count):
+            self.table.add_global_secondary_index(
+                index_name=f"gsi{i}",
+                partition_key=dynamodb.Attribute(
+                    name=f"gsi{i}_pk", type=dynamodb.AttributeType.STRING
+                ),
+                sort_key=dynamodb.Attribute(
+                    name=f"gsi{i}_sk", type=dynamodb.AttributeType.STRING
+                ),
+                projection_type=dynamodb.ProjectionType.ALL,
+            )
