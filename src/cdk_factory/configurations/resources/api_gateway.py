@@ -6,17 +6,19 @@ MIT License. See Project Root for license information.
 
 from typing import Any
 
+
 class ApiGatewayConfig:
     """
     API Gateway Configuration - supports all major RestApi settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
+
     def __init__(self, config: dict) -> None:
         self.__config = config or {}
 
     @property
-    def rest_api_name(self) -> str | None:
-        return self.__config.get("rest_api_name")
+    def api_gateway_name(self) -> str | None:
+        return self.__config.get("api_gateway_name")
 
     @property
     def description(self) -> str | None:

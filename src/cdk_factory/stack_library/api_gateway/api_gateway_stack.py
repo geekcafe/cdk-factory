@@ -48,7 +48,7 @@ class ApiGatewayStack(IStack):
         api_type = self.api_config.api_type
         self.api = None
         api_id = deployment.build_resource_name(
-            self.api_config.rest_api_name or "api-gateway"
+            self.api_config.api_gateway_name or "api-gateway"
         )
 
         # Prepare Lambda function for health route or user-provided code
@@ -87,7 +87,7 @@ class ApiGatewayStack(IStack):
 
                 min_compression_size = Size.mebibytes(min_compression_size)
             kwargs = {
-                "rest_api_name": self.api_config.rest_api_name,
+                "api_gateway_name": self.api_config.api_gateway_name,
                 "description": self.api_config.description,
                 "deploy": self.api_config.deploy,
                 "deploy_options": self.api_config.deploy_options,
@@ -115,7 +115,7 @@ class ApiGatewayStack(IStack):
                 id=api_id,
                 **kwargs,
             )
-            logger.info(f"Created API Gateway: {self.api.rest_api_name}")
+            logger.info(f"Created API Gateway: {self.api.api_gateway_name}")
             # Add routes
             # Cognito authorizer setup
             authorizer = None
@@ -185,7 +185,7 @@ class ApiGatewayStack(IStack):
             self.api = api_gateway_v2.HttpApi(
                 self,
                 id=api_id,
-                api_name=self.api_config.rest_api_name,
+                api_name=self.api_config.api_gateway_name,
                 description=self.api_config.description,
             )
             logger.info(f"Created HTTP API Gateway: {self.api.api_name}")

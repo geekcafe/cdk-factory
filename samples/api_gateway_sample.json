@@ -1,6 +1,6 @@
 {
   "api_gateway": {
-    "rest_api_name": "SampleApiGateway",
+    "api_gateway_name": "SampleApiGateway",
     "description": "API Gateway with Cognito Authorizer and CORS",
     "cognito_authorizer": {
       "user_pool_arn": "REPLACE_WITH_DEPLOYED_USER_POOL_ARN",
