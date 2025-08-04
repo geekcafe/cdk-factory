@@ -1,0 +1,13 @@
+{
+  "python_paths": [
+    "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/bin/python3.13"
+  ],
+  "repositories": {
+    "pypi": {
+      "type": "pypi",
+      "enabled": true,
+      "url": "https://pypi.org/simple",
+      "trusted": true
+    }
+  }
+}
