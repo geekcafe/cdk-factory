@@ -12,10 +12,15 @@ from cdk_factory.interfaces.istack import IStack
 from aws_lambda_powertools import Logger
 from cdk_factory.stack.stack_module_registry import register_stack
 from typing import List, Dict, Any, Optional
+from cdk_factory.workload.workload_factory import WorkloadConfig
+from cdk_factory.configurations.stack import StackConfig
+from cdk_factory.configurations.deployment import DeploymentConfig
+from cdk_factory.configurations.resources.dynamodb import DynamoDBConfig
 
 logger = Logger(service="DynamoDBStack")
 
 
+@register_stack("dynamodb_stack")
 @register_stack("dynamodb_library_module")
 class DynamoDBStack(IStack):
     """
@@ -25,17 +30,21 @@ class DynamoDBStack(IStack):
 
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
-        self.db_config = None
-        self.stack_config = None
-        self.deployment = None
-        self.workload = None
+        self.db_config: DynamoDBConfig | None = None
+        self.stack_config: StackConfig | None = None
+        self.deployment: DeploymentConfig | None = None
+        self.workload: WorkloadConfig | None = None
         self.table: dynamodb.TableV2 | None = None
 
-    def build(self, stack_config, deployment, workload) -> None:
+    def build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
-        from cdk_factory.configurations.resources.dynamodb import DynamoDBConfig
 
         self.db_config = DynamoDBConfig(
             stack_config.dictionary.get("dynamodb", {}), deployment
@@ -64,11 +73,11 @@ class DynamoDBStack(IStack):
         # Define table properties
         removal_policy = (
             cdk.RemovalPolicy.DESTROY
-            if "dev" in deployment.environment
+            if "dev" in self.deployment.environment
             else cdk.RemovalPolicy.RETAIN
         )
 
-        if deployment.dynamodb.enable_delete_protection:
+        if self.db_config.enable_delete_protection:
             removal_policy = cdk.RETAIN
 
         props = {
