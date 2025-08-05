@@ -53,7 +53,7 @@ class ApiGatewayStack(IStack):
 
         # Prepare Lambda function for health route or user-provided code
         def create_lambda(lambda_path=None, id_suffix="health"):
-            path = Path(__file__).parents[3]
+            path = Path(__file__).parents[2]
 
             code_path = lambda_path or os.path.join(path, "lambdas/health_handler.py")
 
@@ -87,7 +87,7 @@ class ApiGatewayStack(IStack):
 
                 min_compression_size = Size.mebibytes(min_compression_size)
             kwargs = {
-                "api_gateway_name": self.api_config.api_gateway_name,
+                "rest_api_name": self.api_config.api_gateway_name,
                 "description": self.api_config.description,
                 "deploy": self.api_config.deploy,
                 "deploy_options": self.api_config.deploy_options,
@@ -115,7 +115,7 @@ class ApiGatewayStack(IStack):
                 id=api_id,
                 **kwargs,
             )
-            logger.info(f"Created API Gateway: {self.api.api_gateway_name}")
+            logger.info(f"Created API Gateway: {self.api.rest_api_name}")
             # Add routes
             # Cognito authorizer setup
             authorizer = None

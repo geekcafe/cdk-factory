@@ -36,7 +36,7 @@ def test_api_gateway_stack_minimal():
     resources = [c for c in stack.node.children if isinstance(c, apigateway.RestApi)]
     assert len(resources) == 1
     api: apigateway.RestApi = resources[0]
-    assert api.api_gateway_name == "TestApi"
+    assert api.rest_api_name == "TestApi"
     assert api.stack.api_config.description == "Minimal API Gateway"
 
 
@@ -74,7 +74,7 @@ def test_api_gateway_stack_full_config():
     resources = [c for c in stack.node.children if isinstance(c, apigateway.RestApi)]
     assert len(resources) == 1
     api: apigateway.RestApi = resources[0]
-    assert api.api_gateway_name == "FullApi"
+    assert api.rest_api_name == "FullApi"
     assert api.stack.api_config.description == "Full config API Gateway"
     assert api.stack.api_config.deploy is False
     assert api.stack.api_config.endpoint_types[0] == "EDGE"

@@ -78,7 +78,7 @@ class DynamoDBStack(IStack):
         )
 
         if self.db_config.enable_delete_protection:
-            removal_policy = cdk.RETAIN
+            removal_policy = cdk.RemovalPolicy.RETAIN
 
         props = {
             "table_name": table_name,
@@ -88,7 +88,7 @@ class DynamoDBStack(IStack):
             "sort_key": dynamodb.Attribute(
                 name="sk", type=dynamodb.AttributeType.STRING
             ),
-            "billing_mode": dynamodb.BillingMode.PAY_PER_REQUEST,
+            "billing": dynamodb.Billing.on_demand(),
             "deletion_protection": self.db_config.enable_delete_protection,
             "point_in_time_recovery": self.db_config.point_in_time_recovery,
             "removal_policy": removal_policy,
@@ -114,7 +114,7 @@ class DynamoDBStack(IStack):
                 f"Configuring table {self.db_config.name} with replicas in: {', '.join(replica_regions)}"
             )
             for region in replica_regions:
-                self.table.add_replica(region)
+                self.table.add_replica(region=region)
 
     def _configure_gsi(self) -> None:
         """Configure Global Secondary Indexes if specified in the config"""
