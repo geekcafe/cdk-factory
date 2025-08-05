@@ -279,7 +279,7 @@ class ProjectSetup:
             if result.returncode == 0:
                 for line in result.stdout.splitlines():
                     if "index-url" in line:
-                        url = line.split("=", 1)[1].strip()
+                        url = line.split("index-url", 1)[1].strip()
                         ca_repo["url"] = url
                         break
 
@@ -332,72 +332,7 @@ class ProjectSetup:
         
         return ""
 
-    def _run_with_ca_retry(self, func, *args, **kwargs):
-        """Run an install function, on auth failure or known repo warning, re-login once."""
-        # Always capture output so we can inspect for warnings
-        if 'capture_output' not in kwargs and 'stdout' not in kwargs and 'stderr' not in kwargs:
-            kwargs['capture_output'] = True
-            kwargs['text'] = True
-
-        try:
-            result = func(*args, **kwargs)
-            # Check if result has stdout/stderr (for subprocess.run)
-            output = ''
-            if hasattr(result, 'stdout') and result.stdout:
-                output += result.stdout
-            if hasattr(result, 'stderr') and result.stderr:
-                output += result.stderr
-                
-            # Check for package not found errors first
-            if self._output_has_package_not_found(output):
-                # Extract package name from the error message
-                package_name = self._extract_package_name_from_error(output)
-                if package_name:
-                    print_error(f"Package not found: {package_name}")
-                    print_info("This appears to be a missing package error, not an authentication issue.")
-                    print_info("Check that the package name is correct and available in the configured repositories.")
-                else:
-                    print_error("Package not found error detected.")
-                return result  # Return the original result with the error
-                
-            # Check for authentication errors
-            elif self._output_has_auth_error(output):
-                print_info("Detected repository authentication warning, attempting login...")
-                if self._handle_repo_auth_error(output):
-                    # Retry once after login
-                    result2 = func(*args, **kwargs)
-                    return result2
-                else:
-                    raise RuntimeError("Repository login failed after authentication warning.")
-            return result
-        except subprocess.CalledProcessError as e:
-            error_output = str(e)
-            if hasattr(e, 'output') and e.output:
-                error_output += str(e.output)
-            if hasattr(e, 'stderr') and e.stderr:
-                error_output += str(e.stderr)
-                
-            # Check for package not found errors first
-            if self._output_has_package_not_found(error_output):
-                # Extract package name from the error message
-                package_name = self._extract_package_name_from_error(error_output)
-                if package_name:
-                    print_error(f"Package not found: {package_name}")
-                    print_info("This appears to be a missing package error, not an authentication issue.")
-                    print_info("Check that the package name is correct and available in the configured repositories.")
-                else:
-                    print_error("Package not found error detected.")
-                raise  # Re-raise the original error
-                
-            # Check for authentication errors
-            elif self._output_has_auth_error(error_output):
-                print_info("Detected repository authentication error.")
-                if self._handle_repo_auth_error(error_output):
-                    return func(*args, **kwargs)
-                else:
-                    raise
-            else:
-                raise
+    # Note: _run_with_ca_retry functionality has been merged into _run_pip_with_progress
 
     def _handle_repo_auth_error(self, output: str) -> bool:
         """Dispatch to the correct repository login/setup method based on output."""
@@ -1226,33 +1161,79 @@ class ProjectSetup:
             }
         
         # Execute pip command and get results
-        result = execute_pip_command()
-        return_code = result["return_code"]
-        packages_installed = result["packages_installed"]
-        full_output = result["full_output"]
-        
-        # Check for authentication errors
-        if return_code != 0 and self._output_has_auth_error(full_output):
-            print_info("Detected repository authentication error.")
-            if self._handle_repo_auth_error(full_output):
-                print_info("Authentication refreshed. Retrying pip command...")
-                # Retry the command after authentication
-                retry_result = execute_pip_command()
-                return_code = retry_result["return_code"]
-                packages_installed = retry_result["packages_installed"]
-        
-        # Process final result
-        if return_code == 0:
-            if packages_installed:
-                package_list = ", ".join(packages_installed[:3])  # Show first 3 packages
-                if len(packages_installed) > 3:
-                    package_list += f" and {len(packages_installed) - 3} more"
-                print_success(f"Installed {package_list}")
+        try:
+            result = execute_pip_command()
+            return_code = result["return_code"]
+            packages_installed = result["packages_installed"]
+            full_output = result["full_output"]
+            
+            # Check for package not found errors first
+            if return_code != 0 and self._output_has_package_not_found(full_output):
+                package_name = self._extract_package_name_from_error(full_output)
+                if package_name:
+                    print_error(f"Package not found: {package_name}")
+                    print_info("This appears to be a missing package error, not an authentication issue.")
+                    print_info("Check that the package name is correct and available in the configured repositories.")
+                    
+                    # Ask if user wants to configure additional repositories
+                    setup_repos = input("Would you like to configure additional package repositories? (y/N): ").strip().lower()
+                    if setup_repos == "y":
+                        self._setup_repositories()
+                        print_info(f"Retrying installation of {package_name}...")
+                        # Retry the command after setting up repositories
+                        retry_result = execute_pip_command()
+                        return_code = retry_result["return_code"]
+                        packages_installed = retry_result["packages_installed"]
+                        full_output = retry_result["full_output"]
+                        
+                        # Process the retry result
+                        if return_code == 0:
+                            if packages_installed:
+                                package_list = ", ".join(packages_installed[:3])
+                                if len(packages_installed) > 3:
+                                    package_list += f" and {len(packages_installed) - 3} more"
+                                print_success(f"Successfully installed {package_list} after repository setup")
+                                return True
+                        else:
+                            print_error(f"Package {package_name} still not found after repository setup")
+                else:
+                    print_error("Package not found error detected.")
+                    print_info("You may need to configure additional package repositories.")
+                    setup_repos = input("Would you like to configure additional package repositories? (y/N): ").strip().lower()
+                    if setup_repos == "y":
+                        self._setup_repositories()
+                return False
+                
+            # Check for authentication errors
+            elif return_code != 0 and self._output_has_auth_error(full_output):
+                print_info("Detected repository authentication error.")
+                if self._handle_repo_auth_error(full_output):
+                    print_info("Authentication refreshed. Retrying pip command...")
+                    # Retry the command after authentication
+                    retry_result = execute_pip_command()
+                    return_code = retry_result["return_code"]
+                    packages_installed = retry_result["packages_installed"]
+                    full_output = retry_result["full_output"]
+                else:
+                    print_error("Repository login failed after authentication warning.")
+                    return False
+            
+            # Process final result
+            if return_code == 0:
+                if packages_installed:
+                    package_list = ", ".join(packages_installed[:3])  # Show first 3 packages
+                    if len(packages_installed) > 3:
+                        package_list += f" and {len(packages_installed) - 3} more"
+                    print_success(f"Installed {package_list}")
+                else:
+                    print_success("Command completed successfully")
+                return True
             else:
-                print_success(f"{description.replace('Installing packages from ', 'Installed packages from ')}")
-            return True
-        else:
-            print_error(f"Failed to install packages: {description}")
+                print_error(f"Command failed with return code {return_code}")
+                return False
+                
+        except Exception as e:
+            print_error(f"Error executing pip command: {e}")
             return False
 
     def _run_pip_command_with_progress(self, pip_args: List[str], description: str):
@@ -1339,6 +1320,11 @@ break-system-packages = true
                 self._store_python_interpreter_path()
             else:
                 print_info(f"Virtual environment {VENV} already exists")
+            
+            # Configure package repositories before installing packages
+            self._setup_repositories()
+            
+            # Create pip.conf with repository settings
             self._create_pip_conf()
             
             # Upgrade pip with progress indication
