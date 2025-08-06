@@ -58,6 +58,13 @@ class StackConfig:
         return value
 
     @property
+    def kwargs(self) -> dict:
+        """
+        Returns the kwargs
+        """
+        return self.__stack.get("kwargs", {})
+
+    @property
     def enabled(self) -> bool:
         """
         Returns if the stack is enabled

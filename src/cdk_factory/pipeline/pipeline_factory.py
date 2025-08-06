@@ -269,10 +269,14 @@ class PipelineFactoryStack(cdk.Stack):
                 print(
                     f"\t\t 👉 Adding stack: {stack.name} to Stage: {stage_config.name}"
                 )
+                kwargs = {}
+                if stack.kwargs:
+                    kwargs = stack.kwargs
                 module = factory.load_module(
                     module_name=stack.module,
                     scope=pipeline_stage,
                     id=stack.name,
+                    **kwargs,
                 )
                 module.build(
                     stack_config=stack,

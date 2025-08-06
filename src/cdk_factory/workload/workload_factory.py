@@ -108,11 +108,15 @@ class WorkloadFactory:
             )
         stack: StackConfig
         factory: StackFactory = StackFactory()
+
         for stack in deployment.stacks:
             if stack.enabled:
+                kwargs = {}
+                if stack.kwargs:
+                    kwargs = stack.kwargs
                 print(f"building stack: {stack.name}")
                 module = factory.load_module(
-                    module_name=stack.module, scope=self.app, id=stack.name
+                    module_name=stack.module, scope=self.app, id=stack.name, **kwargs
                 )
                 module.build(
                     stack_config=stack, deployment=deployment, workload=self.workload

@@ -24,6 +24,7 @@ class StackFactory:
         module_name: str,
         scope,
         id: str,  # pylint: disable=redefined-builtin
+        **kwargs,
     ) -> IStack:
         """Loads a particular module"""
         # print(f"loading module: {module_name}")
@@ -31,6 +32,6 @@ class StackFactory:
         if not stack_class:
             raise ValueError(f"Failed to load module: {module_name}")
 
-        module = stack_class(scope=scope, id=id)
+        module = stack_class(scope=scope, id=id, **kwargs)
 
         return module
