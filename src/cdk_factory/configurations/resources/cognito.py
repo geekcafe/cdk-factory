@@ -4,6 +4,8 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+from typing import Dict, Any
+
 
 class CognitoConfig:
     """
@@ -206,3 +208,12 @@ class CognitoConfig:
         return bool(self.__config.get("deletion_protection", False))
 
     # Add more properties as needed for all UserPool options
+    @property
+    def cfn_export_user_pool_id(self) -> bool:
+        """Whether to export the user pool id (default: False)"""
+        return bool(self.__config.get("cfn_export_user_pool_id", False))
+
+    @property
+    def ssm(self) -> Dict[str, Any]:
+        """Whether to export the user pool name (default: False)"""
+        return self.__config.get("ssm", {})

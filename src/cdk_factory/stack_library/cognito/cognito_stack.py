@@ -8,7 +8,7 @@ import aws_cdk as cdk
 from aws_cdk import aws_cognito as cognito
 from constructs import Construct
 from aws_lambda_powertools import Logger
-
+from aws_cdk import aws_ssm as ssm
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.cognito import CognitoConfig
 from cdk_factory.configurations.stack import StackConfig
@@ -130,3 +130,52 @@ class CognitoStack(IStack):
             **kwargs,
         )
         logger.info(f"Created Cognito User Pool: {user_pool.user_pool_id}")
+
+        self._setup_dependencies()
+        self._ssm_export(user_pool)
+
+    def _setup_dependencies(self):
+        if self.stack_config.dependencies:
+            for dependency in self.stack_config.dependencies:
+                self.add_dependency(self.deployment.build_resource_name(dependency))
+
+    def _ssm_export(self, user_pool: cognito.UserPool):
+        # save to ssm parameter store
+
+        self._ssm_export_item(
+            id="UserPoolId",
+            value=user_pool.user_pool_id,
+            key="user_pool_id_path",
+            description="User Pool ID for Cognito User Pool",
+        )
+
+        self._ssm_export_item(
+            id="UserPoolName",
+            value=self.cognito_config.user_pool_name,
+            key="user_pool_name_path",
+            description="User Pool Name for Cognito User Pool",
+        )
+
+        self._ssm_export_item(
+            id="UserPoolArn",
+            value=user_pool.user_pool_arn,
+            key="user_pool_arn_path",
+            description="User Pool ARN for Cognito User Pool",
+        )
+
+    def _ssm_export_item(self, id: str, value: str, key: str, description: str):
+
+        parameter_name = self.cognito_config.ssm.get(key, None)
+        if not parameter_name:
+            return
+
+        if not parameter_name.startswith("/"):
+            parameter_name = f"/{parameter_name}"
+
+        ssm.StringParameter(
+            scope=self,
+            id=id,
+            string_value=value,
+            parameter_name=parameter_name,
+            description=description,
+        )

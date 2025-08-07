@@ -60,6 +60,26 @@ def test_api_gateway_stack_full_config():
                 "fail_on_warnings": True,
                 "retain_deployments": True,
                 "min_compression_size": 512,
+                "cognito_authorizer": {
+                    "user_pool_arn_ssm_path": "/dev/cdk-factory/cognito/user-pool-arn",
+                    "authorizer_name": "CognitoAuthorizer",
+                    "identity_source": "method.request.header.Authorization",
+                },
+                "routes": [
+                    {
+                        "path": "/app/health",
+                        "method": "GET",
+                        "handler": "app.lambda_handler",
+                        "cors": {"methods": ["GET"], "origins": ["*"]},
+                    },
+                    {
+                        "path": "/health",
+                        "method": "GET",
+                        "handler": "app.lambda_handler",
+                        "authorization_type": "NONE",
+                        "cors": {"methods": ["GET"], "origins": ["*"]},
+                    },
+                ],
             }
         },
         workload=dummy_workload.dictionary,

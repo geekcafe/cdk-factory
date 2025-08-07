@@ -75,6 +75,11 @@ def test_cognito_stack_full_config():
                 "mfa_second_factor": {"sms": True, "otp": True},
                 "account_recovery": "EMAIL_ONLY",
                 "deletion_protection": True,
+                "ssm": {
+                    "user_pool_arn_path": "dev/workload/cognito/user-pool-arn",
+                    "user_pool_id_path": "dev/workload/cognito/user-pool-id",
+                    "user_pool_name_path": "dev/workload/cognito/user-pool-name",
+                },
             }
         },
         workload=dummy_workload.dictionary,
