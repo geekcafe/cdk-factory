@@ -6,6 +6,7 @@ MIT License.  See Project Root for the license information.
 
 from pathlib import Path
 import os
+import json
 from typing import List, Dict, Any
 import aws_cdk as cdk
 from aws_cdk import aws_apigateway as apigateway
@@ -21,6 +22,11 @@ from cdk_factory.configurations.resources.api_gateway import ApiGatewayConfig
 from aws_cdk import aws_apigatewayv2 as api_gateway_v2
 from aws_cdk import aws_apigatewayv2_integrations as integrations
 from aws_cdk import aws_ssm as ssm
+from aws_cdk import aws_route53 as route53
+from aws_cdk import aws_route53_targets
+from aws_cdk import aws_certificatemanager as acm
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_logs as logs
 
 logger = Logger(service="ApiGatewayStack")
 
@@ -39,7 +45,6 @@ class ApiGatewayStack(IStack):
         self.stack_config = None
         self.deployment = None
         self.workload = None
-        self.api = None
 
     def build(self, stack_config, deployment, workload) -> None:
         self.stack_config = stack_config
@@ -59,9 +64,12 @@ class ApiGatewayStack(IStack):
             {"path": "/health", "method": "GET", "lambda_code_path": None}
         ]
         if api_type == "HTTP":
-            self._create_http_api(api_id, routes)
+            api = self._create_http_api(api_id, routes)
+            # TODO: Add custom domain support for HTTP API
+            # self.__setup_custom_domain(api)
         elif api_type == "REST":
-            self._create_rest_api(api_id, routes)
+            api = self._create_rest_api(api_id, routes)
+            self.__setup_custom_domain(api)
         else:
             raise ValueError(f"Unsupported api_type: {api_type}")
 
@@ -81,7 +89,7 @@ class ApiGatewayStack(IStack):
             "rest_api_name": self.api_config.api_gateway_name,
             "description": self.api_config.description,
             "deploy": self.api_config.deploy,
-            "deploy_options": self.api_config.deploy_options,
+            "deploy_options": self._deploy_options(),
             "endpoint_types": endpoint_types,
             "api_key_source_type": self.api_config.api_key_source_type,
             "binary_media_types": self.api_config.binary_media_types,
@@ -101,12 +109,12 @@ class ApiGatewayStack(IStack):
             "cloud_watch_role_removal_policy": self.api_config.cloud_watch_role_removal_policy,
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
-        self.api = apigateway.RestApi(
+        api = apigateway.RestApi(
             self,
             id=api_id,
             **kwargs,
         )
-        logger.info(f"Created API Gateway: {self.api.rest_api_name}")
+        logger.info(f"Created API Gateway: {api.rest_api_name}")
         # Add routes
         # Cognito authorizer setup
         authorizer = None
@@ -153,9 +161,9 @@ class ApiGatewayStack(IStack):
 
             route_path = route["path"]
             resource = (
-                self.api.root.resource_for_path(route_path)
+                api.root.resource_for_path(route_path)
                 if route_path != "/"
-                else self.api.root
+                else api.root
             )
             authorization_type = route.get("authorization_type")
             if authorizer and authorization_type != "NONE":
@@ -183,16 +191,18 @@ class ApiGatewayStack(IStack):
                 origins_list=origins,
             )
 
+        return api
+
     def _create_http_api(self, api_id: str, routes: List[Dict[str, Any]]):
         # HTTP API (v2)
 
-        self.api = api_gateway_v2.HttpApi(
+        api = api_gateway_v2.HttpApi(
             self,
             id=api_id,
             api_name=self.api_config.api_gateway_name,
             description=self.api_config.description,
         )
-        logger.info(f"Created HTTP API Gateway: {self.api.api_name}")
+        logger.info(f"Created HTTP API Gateway: {api.api_name}")
         # Add routes
         for route in routes:
             lambda_fn = self.create_lambda(
@@ -202,7 +212,7 @@ class ApiGatewayStack(IStack):
                 handler=route.get("handler"),
             )
             route_path = route["path"]
-            self.api.add_routes(
+            api.add_routes(
                 path=route_path,
                 methods=[api_gateway_v2.HttpMethod[route["method"].upper()]],
                 integration=integrations.LambdaProxyIntegration(handler=lambda_fn),
@@ -230,3 +240,155 @@ class ApiGatewayStack(IStack):
             code=_lambda.Code.from_asset(os.path.dirname(code_path)),
             timeout=cdk.Duration.seconds(10),
         )
+
+    def _setup_log_role(self) -> iam.Role:
+        log_role = iam.Role(
+            self,
+            "ApiGatewayCloudWatchRole",
+            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+                )
+            ],
+        )
+        return log_role
+
+    def _setup_log_group(self) -> logs.LogGroup:
+        log_group = logs.LogGroup(
+            self,
+            "ApiGatewayLogGroup",
+            # don't add the log name, it totally blows up on secondary / redeploys
+            # deleting a stack doesn't get rid of the logs and then it conflicts with
+            # a new deployment
+            # log_group_name=f"/aws/apigateway/{log_name}/access-logs",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            retention=logs.RetentionDays.ONE_MONTH,  # Adjust retention as needed
+        )
+
+        log_group.grant_write(iam.ServicePrincipal("apigateway.amazonaws.com"))
+        log_role = self._setup_log_role()
+        log_group.grant_write(log_role)
+        return log_group
+
+    def _get_log_format(self) -> apigateway.AccessLogFormat:
+        access_log_format = apigateway.AccessLogFormat.custom(
+            json.dumps(
+                {
+                    "requestId": "$context.requestId",
+                    "extendedRequestId": "$context.extendedRequestId",
+                    "method": "$context.httpMethod",
+                    "route": "$context.resourcePath",
+                    "status": "$context.status",
+                    "requestBody": "$input.body",
+                    "responseBody": "$context.responseLength",
+                    "headers": "$context.requestHeaders",
+                    "requestContext": "$context.requestContext",
+                }
+            )
+        )
+
+        return access_log_format
+
+    def _deploy_options(self) -> apigateway.StageOptions:
+        options = apigateway.StageOptions(
+            access_log_destination=apigateway.LogGroupLogDestination(
+                self._setup_log_group()
+            ),
+            access_log_format=self._get_log_format(),
+            stage_name=self.api_config.deploy_options.get(
+                "stage_name", "prod"
+            ),  # Ensure this matches your intended deployment stage name
+            logging_level=apigateway.MethodLoggingLevel.ERROR,  # Enables CloudWatch logging for all methods
+            data_trace_enabled=self.api_config.deploy_options.get(
+                "data_trace_enabled", False
+            ),  # Includes detailed request/response data in logs
+            metrics_enabled=self.api_config.deploy_options.get(
+                "metrics_enabled", False
+            ),  # Optionally enable detailed CloudWatch metrics (additional costs)
+            tracing_enabled=self.api_config.deploy_options.get("tracing_enabled", True),
+        )
+        return options
+
+    def __setup_custom_domain(self, api: apigateway.RestApi):
+        record_name = self.api_config.hosted_zone.get("record_name", None)
+
+        if not record_name:
+            return
+
+        hosted_zone_id = self.api_config.hosted_zone.get("id", None)
+
+        if not hosted_zone_id:
+            raise ValueError(
+                "Hosted zone id is required, when you specify a hosted zone record name"
+            )
+
+        hosted_zone_name = self.api_config.hosted_zone.get("name", None)
+        if not hosted_zone_name:
+            raise ValueError(
+                "Hosted zone name is required, when you specify a hosted zone record name"
+            )
+
+        hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+            self,
+            "HostedZone",
+            hosted_zone_id=hosted_zone_id,
+            zone_name=hosted_zone_name,
+        )
+
+        certificate: acm.Certificate | None = None
+        # either get or create the cert
+        if self.api_config.ssl_cert_arn:
+            certificate = acm.Certificate.from_certificate_arn(
+                self,
+                "ApiCertificate",
+                self.api_config.ssl_cert_arn,
+            )
+        else:
+            certificate = acm.Certificate(
+                self,
+                id="ApiCertificate",
+                domain_name=record_name,
+                validation=acm.CertificateValidation.from_dns(hosted_zone=hosted_zone),
+            )
+
+        if certificate:
+            # API Gateway custom domain
+            api_gateway_domain_resource = apigateway.DomainName(
+                self,
+                "ApiCustomDomain",
+                domain_name=record_name,
+                certificate=certificate,
+            )
+
+            # Base path mapping - root path to your stage
+            apigateway.BasePathMapping(
+                self,
+                "ApiBasePathMapping",
+                domain_name=api_gateway_domain_resource,
+                rest_api=api,
+                stage=api.deployment_stage,
+                base_path="",  # Root path
+            )
+
+            # A Record
+            route53.ARecord(
+                self,
+                "ARecordApi",
+                zone=hosted_zone,
+                record_name=record_name,
+                target=route53.RecordTarget.from_alias(
+                    aws_route53_targets.ApiGatewayDomain(api_gateway_domain_resource)
+                ),
+            )
+
+            # AAAA Record
+            route53.AaaaRecord(
+                self,
+                "AAAARecordApi",
+                zone=hosted_zone,
+                record_name=record_name,
+                target=route53.RecordTarget.from_alias(
+                    aws_route53_targets.ApiGatewayDomain(api_gateway_domain_resource)
+                ),
+            )

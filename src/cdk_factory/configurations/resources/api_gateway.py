@@ -29,8 +29,8 @@ class ApiGatewayConfig:
         return self.__config.get("deploy", True)
 
     @property
-    def deploy_options(self) -> dict | None:
-        return self.__config.get("deploy_options")
+    def deploy_options(self) -> dict:
+        return self.__config.get("deploy_options", {})
 
     @property
     def endpoint_types(self) -> list[str] | None:
@@ -116,3 +116,10 @@ class ApiGatewayConfig:
         return self.__config.get("cognito_authorizer")
 
     # Add more properties as needed for all RestApi/HttpApi options
+    @property
+    def hosted_zone(self) -> dict:
+        return self.__config.get("hosted_zone", {})
+
+    @property
+    def ssl_cert_arn(self) -> str | None:
+        return self.__config.get("ssl_cert_arn")

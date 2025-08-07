@@ -52,7 +52,7 @@ def test_api_gateway_stack_full_config():
             "api_gateway": {
                 "api_gateway_name": "FullApi",
                 "description": "Full config API Gateway",
-                "deploy": False,
+                # "deploy": False,
                 "endpoint_types": ["EDGE"],  # Use string to test enum conversion
                 "binary_media_types": ["application/octet-stream"],
                 "cloud_watch_role": False,
@@ -80,6 +80,11 @@ def test_api_gateway_stack_full_config():
                         "cors": {"methods": ["GET"], "origins": ["*"]},
                     },
                 ],
+                "hosted_zone": {
+                    "record_name": "api.example.com",
+                    "id": "Z12345678901234567890",
+                    "name": "example.com",
+                },
             }
         },
         workload=dummy_workload.dictionary,
@@ -96,7 +101,7 @@ def test_api_gateway_stack_full_config():
     api: apigateway.RestApi = resources[0]
     assert api.rest_api_name == "FullApi"
     assert api.stack.api_config.description == "Full config API Gateway"
-    assert api.stack.api_config.deploy is False
+    assert api.stack.api_config.deploy is True
     assert api.stack.api_config.endpoint_types[0] == "EDGE"
     assert api.stack.api_config.binary_media_types == ["application/octet-stream"]
     assert api.stack.api_config.cloud_watch_role is False

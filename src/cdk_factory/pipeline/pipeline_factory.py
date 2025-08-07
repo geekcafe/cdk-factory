@@ -188,9 +188,8 @@ class PipelineFactoryStack(cdk.Stack):
         # add the stages to a pipeline
         for stage in self.pipeline.stages:
             print(f"\t 👉 Prepping stage: {stage.name}")
-            pipeline_stage = PipelineStage(
-                self, f"{deployment.name}-{stage.name}", **kwargs
-            )
+            pipeline_stage = PipelineStage(self, stage.name, **kwargs)
+
             self.__setup_stacks(
                 stage_config=stage, pipeline_stage=pipeline_stage, deployment=deployment
             )
