@@ -142,11 +142,14 @@ class CognitoStack(IStack):
                 name = custom_attribute.get("name")
                 if "custom:" not in name:
                     name = f"custom:{name}"
-                attributes[name] = cognito.UserPoolAttribute(
-                    name=name,
+
+                # Use StringAttribute for custom attributes (most common type)
+                # In a more complete implementation, we could support different attribute types
+                # based on a 'type' field in the custom_attribute dict
+                attributes[name] = cognito.StringAttribute(
                     mutable=custom_attribute.get("mutable", True),
-                    max_length=custom_attribute.get("max_length", None),
-                    min_length=custom_attribute.get("min_length", None),
+                    max_len=custom_attribute.get("max_length", None),
+                    min_len=custom_attribute.get("min_length", None),
                 )
         return attributes
 
