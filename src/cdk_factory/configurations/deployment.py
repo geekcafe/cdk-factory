@@ -24,7 +24,6 @@ class DeploymentConfig:
         self.__workload: dict = workload
         self.__deployment: dict = deployment
         self.__pipeline: dict = {}
-        # self.__resources: Resources | None = None
         self.__stacks: List[StackConfig] = []
         self.__load()
 
@@ -64,9 +63,19 @@ class DeploymentConfig:
         if pipeline_name is None:
             return
 
+        p = self.deployment.get("pipeline")
+        if isinstance(p, dict):
+            # this instance we are defining the pipeline at the deployment level
+            # basically inline (which is typically the preferred way to do it)
+            self.__pipeline = p
+            return
+
+        # if we defined the pipeline with a name, then we should look at a list
+        # of pipelines defined at the workload level and select the correct one
+        # they must match the name defined at the deployment level
         pipelines = self.workload.get("pipelines", [])
         pipeline: dict = {}
-        # find the defined pipeline
+        # find the defined pipeline from our list of pipelines
         for pipeline in pipelines:
             if pipeline.get("name") == pipeline_name:
                 self.__pipeline = pipeline
@@ -86,14 +95,6 @@ class DeploymentConfig:
     @property
     def config(self) -> Dict[str, Any]:
         return self.__deployment
-
-    # @property
-    # def resources(self) -> Resources:
-    #     """Deployment Resources"""
-    #     if self.__resources is None:
-    #         self.__resources = Resources(self.__deployment.get("resources", {}))
-
-    #     return self.__resources
 
     @property
     def stacks(self) -> List[StackConfig]:
@@ -122,7 +123,7 @@ class DeploymentConfig:
         elif isinstance(pipeline, str):
             return pipeline
         else:
-            raise ValueError("Pipeline must be a dictionary or string")
+            raise ValueError("Pipeline must be a dictionary or string or None")
 
     @property
     def name(self):
@@ -146,18 +147,11 @@ class DeploymentConfig:
         return self.__deployment["mode"]
 
     @property
-    def stack_name(self):
-        """
-        Returns the pipeline stack_name
-        """
-        return self.__pipeline.get("name")
-
-    @property
     def branch(self):
         """
         Returns the pipeline branch
         """
-        return self.__pipeline.get("branch")
+        return self.pipeline.get("branch")
 
     @property
     def manual_approval(self) -> bool:
