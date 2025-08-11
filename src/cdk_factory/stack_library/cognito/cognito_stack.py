@@ -66,7 +66,7 @@ class CognitoStack(IStack):
                 if self.cognito_config.auto_verify
                 else None
             ),
-            "custom_attributes": self.cognito_config.custom_attributes,
+            "custom_attributes": self._setup_custom_attributes(),
             "custom_sender_kms_key": self.cognito_config.custom_sender_kms_key,
             "custom_threat_protection_mode": self.cognito_config.custom_threat_protection_mode,
             "deletion_protection": self.cognito_config.deletion_protection,
@@ -131,13 +131,24 @@ class CognitoStack(IStack):
         )
         logger.info(f"Created Cognito User Pool: {user_pool.user_pool_id}")
 
-        self._setup_dependencies()
         self._ssm_export(user_pool)
 
-    def _setup_dependencies(self):
-        if self.stack_config.dependencies:
-            for dependency in self.stack_config.dependencies:
-                self.add_dependency(self.deployment.build_resource_name(dependency))
+    def _setup_custom_attributes(self):
+        attributes = {}
+        if self.cognito_config.custom_attributes:
+            for custom_attribute in self.cognito_config.custom_attributes:
+                if not custom_attribute.get("name"):
+                    raise ValueError("Custom attribute name is required")
+                name = custom_attribute.get("name")
+                if "custom:" not in name:
+                    name = f"custom:{name}"
+                attributes[name] = cognito.UserPoolAttribute(
+                    name=name,
+                    mutable=custom_attribute.get("mutable", True),
+                    max_length=custom_attribute.get("max_length", None),
+                    min_length=custom_attribute.get("min_length", None),
+                )
+        return attributes
 
     def _ssm_export(self, user_pool: cognito.UserPool):
         # save to ssm parameter store
