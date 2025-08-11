@@ -30,7 +30,8 @@
         "codeconnections",
         "geekcafe",
         "istack",
-        "mebibytes"
+        "mebibytes",
+        "aws_certificatemanager"
     ],
     
 }

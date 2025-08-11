@@ -6,6 +6,7 @@ from cdk_factory.configurations.resources.cognito import CognitoConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.workload.workload_factory import WorkloadConfig
+from unittest.mock import patch, MagicMock
 
 
 def test_cognito_stack_minimal():
@@ -108,3 +109,132 @@ def test_cognito_stack_full_config():
     assert user_pool.stack.cognito_config.device_tracking is None
     assert user_pool.stack.cognito_config.email is None
     assert user_pool.stack.cognito_config.enable_sms_role is None
+
+
+def test_cognito_stack_custom_attributes():
+    """Test that custom attributes are correctly set up in the CognitoStack."""
+    app = App()
+    dummy_workload = WorkloadConfig(
+        {
+            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+        }
+    )
+    
+    # Define custom attributes for testing
+    custom_attributes = [
+        {
+            "name": "company",  # Should be prefixed with custom:
+            "mutable": True,
+            "max_length": 100,
+            "min_length": 1
+        },
+        {
+            "name": "custom:role",  # Already has custom: prefix
+            "mutable": False,
+            "max_length": 50
+        },
+        {
+            "name": "department",  # Only name specified, other values should use defaults
+        }
+    ]
+    
+    stack_config = StackConfig(
+        {
+            "cognito": {
+                "user_pool_name": "CustomAttributesPool",
+                "custom_attributes": custom_attributes
+            }
+        },
+        workload=dummy_workload.dictionary,
+    )
+
+    dc = DeploymentConfig(
+        workload=dummy_workload.dictionary,
+        deployment={"name": "dummy-deployment"},
+    )
+
+    # Create the stack and build it
+    stack = CognitoStack(app, "CustomAttributesStack")
+    
+    # Use patch to capture the UserPoolAttribute creation
+    with patch('aws_cdk.aws_cognito.UserPoolAttribute') as mock_user_pool_attribute:
+        # Set up the mock to return a MagicMock when instantiated
+        mock_instance = MagicMock()
+        mock_user_pool_attribute.return_value = mock_instance
+        
+        # Build the stack
+        stack.build(stack_config, dc, dummy_workload)
+        
+        # Verify the custom attributes were set up correctly
+        # The _setup_custom_attributes method should have been called during build
+        attributes = stack._setup_custom_attributes()
+        
+        # Check that we have the expected number of attributes
+        assert len(attributes) == 3
+        
+        # Check that the first attribute was set up correctly with custom: prefix added
+        assert "custom:company" in attributes
+        mock_user_pool_attribute.assert_any_call(
+            name="custom:company",
+            mutable=True,
+            max_length=100,
+            min_length=1
+        )
+        
+        # Check that the second attribute kept its existing custom: prefix
+        assert "custom:role" in attributes
+        mock_user_pool_attribute.assert_any_call(
+            name="custom:role",
+            mutable=False,
+            max_length=50,
+            min_length=None
+        )
+        
+        # Check that the third attribute uses default values
+        assert "custom:department" in attributes
+        mock_user_pool_attribute.assert_any_call(
+            name="custom:department",
+            mutable=True,
+            max_length=None,
+            min_length=None
+        )
+
+
+def test_cognito_stack_custom_attributes_validation():
+    """Test that custom attributes validation works correctly."""
+    app = App()
+    dummy_workload = WorkloadConfig(
+        {
+            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+        }
+    )
+    
+    # Define invalid custom attributes (missing name)
+    invalid_custom_attributes = [
+        {
+            "mutable": True,
+            "max_length": 100
+        }
+    ]
+    
+    stack_config = StackConfig(
+        {
+            "cognito": {
+                "user_pool_name": "InvalidAttributesPool",
+                "custom_attributes": invalid_custom_attributes
+            }
+        },
+        workload=dummy_workload.dictionary,
+    )
+
+    dc = DeploymentConfig(
+        workload=dummy_workload.dictionary,
+        deployment={"name": "dummy-deployment"},
+    )
+
+    # Create the stack
+    stack = CognitoStack(app, "InvalidAttributesStack")
+    
+    # The build should raise a ValueError because the custom attribute is missing a name
+    with pytest.raises(ValueError, match="Custom attribute name is required"):
+        stack.build(stack_config, dc, dummy_workload)

@@ -113,7 +113,16 @@ class DeploymentConfig:
     @property
     def pipeline_name(self) -> str | None:
         """Returns the pipeline name defined at the deployment level"""
-        return self.__deployment.get("pipeline")
+        pipeline = self.__deployment.get("pipeline")
+        if not pipeline:
+            return None
+
+        if isinstance(pipeline, dict):
+            return pipeline.get("name")
+        elif isinstance(pipeline, str):
+            return pipeline
+        else:
+            raise ValueError("Pipeline must be a dictionary or string")
 
     @property
     def name(self):

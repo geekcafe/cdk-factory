@@ -52,9 +52,33 @@ class CognitoConfig:
         return self.__config.get("auto_verify")
 
     @property
-    def custom_attributes(self) -> dict | None:
-        """Custom attributes for the user pool"""
-        return self.__config.get("custom_attributes")
+    def custom_attributes(self) -> list | None:
+        """
+        Custom attributes for the user pool
+        Structure:
+            [{
+                "name": "custom_attribute_name",
+                "mutable": True,
+                "max_length": 2048,
+                "min_length": 0
+            }]
+        Example:
+            [
+                {
+                    "name": "custom_attribute_name",
+                    "mutable": True,
+                    "max_length": 2048,
+                    "min_length": 0
+                }
+            ]
+        Only Name is required.  All other fields are optional. Mutable defaults to True.
+        Returns:
+            list: List of custom attributes
+        """
+        attributes = self.__config.get("custom_attributes")
+        if not attributes:
+            return None
+        return attributes
 
     @property
     def custom_sender_kms_key(self):

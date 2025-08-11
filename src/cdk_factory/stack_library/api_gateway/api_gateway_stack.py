@@ -27,6 +27,7 @@ from aws_cdk import aws_route53_targets
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
+from cdk_factory.utilities.file_operations import FileOperations
 
 logger = Logger(service="ApiGatewayStack")
 
@@ -47,6 +48,9 @@ class ApiGatewayStack(IStack):
         self.workload = None
 
     def build(self, stack_config, deployment, workload) -> None:
+        self._build(stack_config, deployment, workload)
+
+    def _build(self, stack_config, deployment, workload) -> None:
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
@@ -230,7 +234,9 @@ class ApiGatewayStack(IStack):
         code_path = lambda_path or os.path.join(path, "lambdas/health_handler.py")
         handler = handler or "health_handler.lambda_handler"
         if not os.path.exists(code_path):
-            raise Exception(f"Lambda code path does not exist: {code_path}")
+            code_path = FileOperations.find_file(self.workload.paths, code_path)
+            if not os.path.exists(code_path):
+                raise Exception(f"Lambda code path does not exist: {code_path}")
         return _lambda.Function(
             self,
             f"{api_id}-lambda-{id_suffix}",

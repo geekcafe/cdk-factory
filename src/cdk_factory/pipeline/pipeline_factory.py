@@ -24,6 +24,7 @@ from cdk_factory.stack.stack_factory import StackFactory
 from cdk_factory.workload.workload_factory import WorkloadConfig
 from cdk_factory.configurations.cdk_config import CdkConfig
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
+from cdk_factory.interfaces.istack import IStack
 
 logger = Logger()
 
@@ -260,28 +261,50 @@ class PipelineFactoryStack(cdk.Stack):
         pipeline_stage: PipelineStage,
         deployment: DeploymentConfig,
     ):
-        stack: StackConfig
+        stack_config: StackConfig
         factory: StackFactory = StackFactory()
         # add the stacks to the stage_config
-        for stack in stage_config.stacks:
-            if stack.enabled:
+        cf_stacks: List[IStack] = []
+        for stack_config in stage_config.stacks:
+            if stack_config.enabled:
                 print(
-                    f"\t\t 👉 Adding stack: {stack.name} to Stage: {stage_config.name}"
+                    f"\t\t 👉 Adding stack_config: {stack_config.name} to Stage: {stage_config.name}"
                 )
                 kwargs = {}
-                if stack.kwargs:
-                    kwargs = stack.kwargs
-                module = factory.load_module(
-                    module_name=stack.module,
+                if stack_config.kwargs:
+                    kwargs = stack_config.kwargs
+                else:
+                    kwargs["stack_name"] = stack_config.name
+
+                cf_stack = factory.load_module(
+                    module_name=stack_config.module,
                     scope=pipeline_stage,
-                    id=stack.name,
+                    id=stack_config.name,
                     **kwargs,
                 )
-                module.build(
-                    stack_config=stack,
+                cf_stack.build(
+                    stack_config=stack_config,
                     deployment=deployment,
                     workload=self.workload,
                 )
+                stack = {
+                    "stack": cf_stack,
+                    "stack_config": stack_config,
+                    "stack_name": stack_config.name,
+                }
+                cf_stacks.append(stack)
+
+        # TODO: add dependencies
+        for cf_stack in cf_stacks:
+            if cf_stack["stack_config"].dependencies:
+                for dependency in cf_stack["stack_config"].dependencies:
+                    # get the stack from the cf_stacks list
+                    for stack in cf_stacks:
+                        if stack["stack_config"].name == dependency:
+                            cf_stack["stack"].add_dependency(stack["stack"])
+                            break
+
+        return cf_stacks
 
     def _get_wave(self, wave_name: str) -> pipelines.Wave:
 

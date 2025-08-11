@@ -79,11 +79,11 @@ class FileOperations:
     def listdir(
         directory_path: str,
         include_full_path: bool = True,
-        include_subirectories: bool = True,
+        include_subdirectories: bool = True,
     ):
         files: List[str] = []
 
-        if include_subirectories:
+        if include_subdirectories:
             for root, _, filenames in os.walk(directory_path):
                 for file in filenames:
                     file_path = os.path.join(root, file)
@@ -169,15 +169,15 @@ class FileOperations:
     def get_file_extension(file_name, include_dot=False):
         logger.debug(f"getting extension for {file_name}")
         # get the last part of a string after a period .
-        extention = os.path.splitext(file_name)[1]
-        logger.debug(f"extention is {extention}")
+        extension = os.path.splitext(file_name)[1]
+        logger.debug(f"extension is {extension}")
 
         if not include_dot:
-            if str(extention).startswith("."):
-                extention = str(extention).removeprefix(".")
-                logger.debug(f"extension after prefix removal: {extention}")
+            if str(extension).startswith("."):
+                extension = str(extension).removeprefix(".")
+                logger.debug(f"extension after prefix removal: {extension}")
 
-        return extention
+        return extension
 
     @staticmethod
     def get_file_name_from_path(path):
@@ -247,7 +247,7 @@ class FileOperations:
             if not directory_path:
                 directory_path = str(Path(file_path).parent)
 
-            # remove the direcory path, and leave the file path along with
+            # remove the directory path, and leave the file path along with
             # an archive root
             zip_file.archive_path = (
                 f"{archive_root}{file_path.replace(str(directory_path), '')}"
@@ -259,3 +259,12 @@ class FileOperations:
             zip_file.archive_path = zip_file.archive_path.removeprefix("/")
 
         return zip_file
+
+    @staticmethod
+    def find_file(directories: List[str], file_name: str) -> str | None:
+        for directory in directories:
+            file_path = os.path.join(directory, file_name)
+            if os.path.exists(file_path):
+                return file_path
+
+        return None
