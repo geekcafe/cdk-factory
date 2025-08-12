@@ -135,7 +135,7 @@ class LambdaFunctionUtilities:
         log_group = logs.LogGroup(
             scope=scope,
             id=f"{id}-log-group",
-            # adding a -log to it since they were orginally autocreated
+            # adding a -log to it since they were originally autocreated
             # log_group_name=f"/aws/lambda/{log_name}",
             # todo: get from config
             retention=logs.RetentionDays.ONE_MONTH,
@@ -167,6 +167,7 @@ class LambdaFunctionUtilities:
             timeout=lambda_config.timeout,
             tracing=lambda_config.tracing,
             log_group=log_group,
+            reserved_concurrent_executions=lambda_config.reserved_concurrent_executions,
         )
 
         # not sure if we need to do this or if setting the log_group about will take care of it

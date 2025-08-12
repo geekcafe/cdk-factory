@@ -185,11 +185,38 @@ class LambdaFunctionConfig:
         return 128
 
     @property
+    def reserved_concurrent_executions(self) -> int | None:
+        """
+        Reserved Concurrent Executions: (sets both the max and min number of concurrent instances)
+
+        This sets both the maximum and minimum number of concurrent instances
+        allocated to your function. When a function has reserved concurrency,
+        no other function can use that concurrency. Reserved concurrency is useful
+        for ensuring that your most critical functions always have enough concurrency
+        to handle incoming requests.
+
+        Additionally, reserved concurrency can be used for limiting concurrency to
+        prevent overwhelming downstream resources, like database connections.
+
+        Reserved concurrency acts as both a lower and upper bound - it reserves the
+        specified capacity exclusively for your function while also preventing it
+        from scaling beyond that limit. Configuring reserved concurrency for a
+        function incurs no additional charges.
+
+        """
+        if self.__config and isinstance(self.__config, dict):
+            value = self.__config.get("reserved_concurrent_executions")
+            if value:
+                return int(value)
+
+        return None
+
+    @property
     def runtime(self) -> aws_lambda.Runtime:
         """Runtime"""
         if self.__config and isinstance(self.__config, dict):
             runtime = self.__config.get("runtime")
-            # at somepoint we'll need to covert this to a cdk runtime
+            # at some point we'll need to covert this to a cdk runtime
             if runtime:
                 runtime = ResourceMapping.get_runtime(runtime)
                 return runtime
