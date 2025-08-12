@@ -119,7 +119,7 @@ class LambdaStack(IStack):
                     lambda_config=function_config
                 )
 
-            # newer more flexible, were a function can be a consumer
+            # newer more flexible, where a function can be a consumer
             # and a producer
             if function_config.sqs.queues:
                 for queue in function_config.sqs.queues:
