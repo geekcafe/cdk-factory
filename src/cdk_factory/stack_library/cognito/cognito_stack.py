@@ -140,8 +140,8 @@ class CognitoStack(IStack):
                 if not custom_attribute.get("name"):
                     raise ValueError("Custom attribute name is required")
                 name = custom_attribute.get("name")
-                if "custom:" not in name:
-                    name = f"custom:{name}"
+                if "custom:" in name:
+                    name = name.replace("custom:", "")
 
                 # Use StringAttribute for custom attributes (most common type)
                 # In a more complete implementation, we could support different attribute types

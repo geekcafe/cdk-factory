@@ -119,30 +119,26 @@ def test_cognito_stack_custom_attributes():
             "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
         }
     )
-    
+
     # Define custom attributes for testing
     custom_attributes = [
         {
-            "name": "company",  # Should be prefixed with custom:
+            "name": "company",  # :
             "mutable": True,
             "max_length": 100,
-            "min_length": 1
+            "min_length": 1,
         },
-        {
-            "name": "custom:role",  # Already has custom: prefix
-            "mutable": False,
-            "max_length": 50
-        },
+        {"name": "role", "mutable": False, "max_length": 50},  # Already has prefix
         {
             "name": "department",  # Only name specified, other values should use defaults
-        }
+        },
     ]
-    
+
     stack_config = StackConfig(
         {
             "cognito": {
                 "user_pool_name": "CustomAttributesPool",
-                "custom_attributes": custom_attributes
+                "custom_attributes": custom_attributes,
             }
         },
         workload=dummy_workload.dictionary,
@@ -155,32 +151,32 @@ def test_cognito_stack_custom_attributes():
 
     # Create the stack and build it
     stack = CognitoStack(app, "CustomAttributesStack")
-    
+
     # Build the stack
     stack.build(stack_config, dc, dummy_workload)
-    
+
     # Verify the custom attributes were set up correctly
     # The _setup_custom_attributes method should have been called during build
     attributes = stack._setup_custom_attributes()
-    
+
     # Check that we have the expected number of attributes
     assert len(attributes) == 3
-    
-    # Check that the first attribute was set up correctly with custom: prefix added
-    assert "custom:company" in attributes
-    company_attr = attributes["custom:company"]
+
+    # Check that the first attribute was set up correctly
+    assert "company" in attributes
+    company_attr = attributes["company"]
     assert isinstance(company_attr, cognito.StringAttribute)
     # StringAttribute properties are not directly accessible in the test
     # We can only verify the attribute was created with the correct type
-    
-    # Check that the second attribute kept its existing custom: prefix
-    assert "custom:role" in attributes
-    role_attr = attributes["custom:role"]
+
+    # Check that the second attribute was set up correctly
+    assert "role" in attributes
+    role_attr = attributes["role"]
     assert isinstance(role_attr, cognito.StringAttribute)
-    
+
     # Check that the third attribute uses default values
-    assert "custom:department" in attributes
-    dept_attr = attributes["custom:department"]
+    assert "department" in attributes
+    dept_attr = attributes["department"]
     assert isinstance(dept_attr, cognito.StringAttribute)
 
 
@@ -192,20 +188,15 @@ def test_cognito_stack_custom_attributes_validation():
             "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
         }
     )
-    
+
     # Define invalid custom attributes (missing name)
-    invalid_custom_attributes = [
-        {
-            "mutable": True,
-            "max_length": 100
-        }
-    ]
-    
+    invalid_custom_attributes = [{"mutable": True, "max_length": 100}]
+
     stack_config = StackConfig(
         {
             "cognito": {
                 "user_pool_name": "InvalidAttributesPool",
-                "custom_attributes": invalid_custom_attributes
+                "custom_attributes": invalid_custom_attributes,
             }
         },
         workload=dummy_workload.dictionary,
@@ -218,7 +209,7 @@ def test_cognito_stack_custom_attributes_validation():
 
     # Create the stack
     stack = CognitoStack(app, "InvalidAttributesStack")
-    
+
     # The build should raise a ValueError because the custom attribute is missing a name
     try:
         stack.build(stack_config, dc, dummy_workload)
