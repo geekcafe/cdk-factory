@@ -143,6 +143,7 @@ class StaticWebSiteStack(IStack):
             aliases=aliases,
             source_bucket_sub_directory=version,
             certificate=certificate,
+            stack_config=stack_config,
         )
 
         # Deploy website assets to S3 under a versioned key prefix.
@@ -205,6 +206,7 @@ class StaticWebSiteStack(IStack):
             with open(version_file, "r", encoding="utf-8") as file:
                 version = file.read().strip()
         else:
-            logger.warning("No version file found. Using default version: %s", version)
+            message = f"No version file found at {version_file}. Using default version: {version}"
+            logger.warning(message)
 
         return version

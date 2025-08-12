@@ -7,6 +7,7 @@ from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
+from cdk_factory.configurations.stack import StackConfig
 
 
 class CloudFrontDistributionConstruct(Construct):
@@ -25,6 +26,7 @@ class CloudFrontDistributionConstruct(Construct):
         source_bucket_sub_directory: str | None = None,
         certificate: acm.Certificate | None = None,
         restrict_to_known_hosts: bool = True,
+        stack_config: StackConfig | None = None,
     ):
         super().__init__(scope=scope, id=id)
         self.source_bucket: s3.IBucket = source_bucket
@@ -35,6 +37,7 @@ class CloudFrontDistributionConstruct(Construct):
         self.certificate = certificate
         self.restrict_to_known_hosts = restrict_to_known_hosts
         self.use_oac: bool = True
+        self.stack_config = stack_config
         self.__setup()
         self.create()
 
@@ -122,22 +125,7 @@ class CloudFrontDistributionConstruct(Construct):
                 function_associations=self.__get_function_associations(),
             ),
             default_root_object="index.html",
-            error_responses=[
-                cloudfront.ErrorResponse(
-                    http_status=404,  # For 404 errors
-                    response_page_path="/404.html",  # Redirect to index.html
-                    response_http_status=200,  # Return a 200 status code
-                    ttl=Duration.seconds(
-                        0
-                    ),  # Optional: reduce caching time for error responses
-                ),
-                cloudfront.ErrorResponse(
-                    http_status=403,  # Also handle 403 Forbidden errors in the same way
-                    response_page_path="/403.html",
-                    response_http_status=200,
-                    ttl=Duration.seconds(0),
-                ),
-            ],
+            error_responses=self._error_responses(),
         )
 
         self.__update_bucket_policy(distribution)
@@ -145,6 +133,47 @@ class CloudFrontDistributionConstruct(Construct):
         self.distribution = distribution
 
         return distribution
+
+    def _error_responses(self) -> List[cloudfront.ErrorResponse]:
+        """
+        Get the error responses for the distribution
+
+        Returns:
+            List[cloudfront.ErrorResponse]: list of error responses
+        """
+        error_responses = []
+
+        if self.stack_config and isinstance(self.stack_config, StackConfig):
+            cloudfront_error_responses = self.stack_config.dictionary.get(
+                "cloudfront", {}
+            ).get("error_responses", [])
+
+            for error_response in cloudfront_error_responses:
+
+                http_status = error_response.get("http_status")
+                response_page_path = error_response.get("response_page_path")
+                response_http_status = error_response.get("response_http_status")
+                ttl = Duration.seconds(error_response.get("ttl", 0))
+
+                if (
+                    not http_status
+                    or not response_page_path
+                    or not response_http_status
+                ):
+                    raise ValueError(
+                        "http_status, response_page_path, and response_http_status are required "
+                        "in stack.cloudfront.error_responses. Check your stack config"
+                    )
+                error_responses.append(
+                    cloudfront.ErrorResponse(
+                        http_status=http_status,
+                        response_page_path=response_page_path,
+                        response_http_status=response_http_status,
+                        ttl=ttl,
+                    )
+                )
+
+        return error_responses
 
     def __get_function_associations(self) -> List[cloudfront.FunctionAssociation]:
         """
