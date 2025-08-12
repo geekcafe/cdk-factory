@@ -153,7 +153,7 @@ class CloudFrontDistributionConstruct(Construct):
                 http_status = error_response.get("http_status")
                 response_page_path = error_response.get("response_page_path")
                 response_http_status = error_response.get("response_http_status")
-                ttl = Duration.seconds(error_response.get("ttl", 0))
+                ttl = Duration.seconds(int(error_response.get("ttl", 0)))
 
                 if (
                     not http_status
@@ -166,9 +166,9 @@ class CloudFrontDistributionConstruct(Construct):
                     )
                 error_responses.append(
                     cloudfront.ErrorResponse(
-                        http_status=http_status,
+                        http_status=int(http_status),
                         response_page_path=response_page_path,
-                        response_http_status=response_http_status,
+                        response_http_status=int(response_http_status),
                         ttl=ttl,
                     )
                 )
