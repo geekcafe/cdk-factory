@@ -63,7 +63,7 @@ class DeploymentConfig:
         if pipeline_name is None:
             return
 
-        p = self.deployment.get("pipeline")
+        p = self.__deployment.get("pipeline")
         if isinstance(p, dict):
             # this instance we are defining the pipeline at the deployment level
             # basically inline (which is typically the preferred way to do it)
