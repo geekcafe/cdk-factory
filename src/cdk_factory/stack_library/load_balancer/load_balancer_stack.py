@@ -71,7 +71,7 @@ class LoadBalancerStack(IStack):
         # Add outputs
         self._add_outputs(lb_name)
 
-    def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancer:
+    def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancerV2:
         """Create a Load Balancer with the specified configuration"""
         vpc = self._get_vpc()
         
