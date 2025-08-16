@@ -1,0 +1,62 @@
+{
+  "deployment": {
+    "name": "my-app",
+    "environment": "dev",
+    "region": "us-west-2"
+  },
+  "stacks": {
+    "vpc": {
+      "name": "network",
+      "vpc": {
+        "name": "main-vpc",
+        "cidr": "10.0.0.0/16",
+        "max_azs": 3,
+        "public_subnets": true,
+        "private_subnets": true,
+        "isolated_subnets": false,
+        "nat_gateways": {
+          "count": 1
+        },
+        "enable_s3_endpoint": true,
+        "ssm_exports": {
+          "vpc_id_path": "/my-app/dev/vpc/id",
+          "vpc_cidr_path": "/my-app/dev/vpc/cidr",
+          "public_subnet_ids_path": "/my-app/dev/vpc/public-subnet-ids",
+          "private_subnet_ids_path": "/my-app/dev/vpc/private-subnet-ids"
+        }
+      }
+    },
+    "cognito": {
+      "name": "auth",
+      "cognito": {
+        "user_pool_name": "my-app-users",
+        "auto_verify_attributes": ["email"],
+        "ssm_exports": {
+          "user_pool_id_path": "/my-app/dev/cognito/user-pool-id",
+          "user_pool_arn_path": "/my-app/dev/cognito/user-pool-arn",
+          "user_pool_name_path": "/my-app/dev/cognito/user-pool-name"
+        }
+      }
+    },
+    "api_gateway": {
+      "name": "api",
+      "api_gateway": {
+        "name": "my-app-api",
+        "description": "API for my application",
+        "cors": true,
+        "auth": {
+          "type": "cognito",
+          "ssm_imports": {
+            "user_pool_arn_path": "/my-app/dev/cognito/user-pool-arn"
+          }
+        },
+        "vpc": {
+          "ssm_imports": {
+            "vpc_id_path": "/my-app/dev/vpc/id",
+            "subnet_ids_path": "/my-app/dev/vpc/private-subnet-ids"
+          }
+        }
+      }
+    }
+  }
+}

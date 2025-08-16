@@ -15,6 +15,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.vpc import VpcConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.ssm_parameter_mixin import SsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -23,7 +24,7 @@ logger = Logger(service="VpcStack")
 
 @register_stack("vpc_library_module")
 @register_stack("vpc_stack")
-class VpcStack(IStack):
+class VpcStack(IStack, SsmParameterMixin):
     """
     Reusable stack for AWS VPC.
     Supports creating VPCs with customizable CIDR blocks, subnets, and networking components.
@@ -187,3 +188,35 @@ class VpcStack(IStack):
                     value=",".join([subnet.subnet_id for subnet in self.vpc.isolated_subnets]),
                     export_name=f"{self.deployment.build_resource_name(vpc_name)}-isolated-subnets"
                 )
+            
+            # Export SSM parameters if configured
+            self._export_ssm_parameters(vpc_name)
+            
+    def _export_ssm_parameters(self, vpc_name: str) -> None:
+        """Export VPC resources to SSM Parameter Store if configured"""
+        if not self.vpc:
+            return
+            
+        # Create a dictionary of VPC resources to export
+        vpc_resources = {
+            'vpc_id': self.vpc.vpc_id,
+            'vpc_cidr': self.vpc.vpc_cidr_block,
+        }
+        
+        # Add subnet IDs as comma-separated lists
+        if self.vpc.public_subnets:
+            vpc_resources['public_subnet_ids'] = ','.join([subnet.subnet_id for subnet in self.vpc.public_subnets])
+            
+        if self.vpc.private_subnets:
+            vpc_resources['private_subnet_ids'] = ','.join([subnet.subnet_id for subnet in self.vpc.private_subnets])
+            
+        if hasattr(self.vpc, 'isolated_subnets') and self.vpc.isolated_subnets:
+            vpc_resources['isolated_subnet_ids'] = ','.join([subnet.subnet_id for subnet in self.vpc.isolated_subnets])
+        
+        # Use the new clearer method for exporting resources to SSM
+        self.export_resource_to_ssm(
+            scope=self,
+            resource_values=vpc_resources,
+            config=self.vpc_config,
+            resource_name=vpc_name
+        )
