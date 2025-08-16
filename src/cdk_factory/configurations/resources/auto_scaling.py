@@ -1,0 +1,136 @@
+"""
+AutoScalingConfig - supports EC2 Auto Scaling Group settings for AWS CDK.
+Maintainers: Eric Wilson
+MIT License. See Project Root for license information.
+"""
+
+from typing import Any, Dict, List, Optional
+
+
+class AutoScalingConfig:
+    """
+    Auto Scaling Group Configuration - supports EC2 Auto Scaling Group settings.
+    Each property reads from the config dict and provides a sensible default if not set.
+    """
+
+    def __init__(self, config: dict = None, deployment=None) -> None:
+        self.__config = config or {}
+        self.__deployment = deployment
+
+    @property
+    def name(self) -> str:
+        """Auto Scaling Group name"""
+        return self.__config.get("name", "asg")
+
+    @property
+    def instance_type(self) -> str:
+        """EC2 instance type"""
+        return self.__config.get("instance_type", "t3.small")
+
+    @property
+    def min_capacity(self) -> int:
+        """Minimum capacity of the Auto Scaling Group"""
+        return self.__config.get("min_capacity", 2)
+
+    @property
+    def max_capacity(self) -> int:
+        """Maximum capacity of the Auto Scaling Group"""
+        return self.__config.get("max_capacity", 6)
+
+    @property
+    def desired_capacity(self) -> int:
+        """Desired capacity of the Auto Scaling Group"""
+        return self.__config.get("desired_capacity", 2)
+
+    @property
+    def subnet_group_name(self) -> str:
+        """Subnet group name for instance placement"""
+        return self.__config.get("subnet_group_name", "app")
+
+    @property
+    def health_check_type(self) -> str:
+        """Health check type (EC2 or ELB)"""
+        return self.__config.get("health_check_type", "ELB")
+
+    @property
+    def health_check_grace_period(self) -> int:
+        """Health check grace period in seconds"""
+        return self.__config.get("health_check_grace_period", 300)
+
+    @property
+    def cooldown(self) -> int:
+        """Cooldown period in seconds"""
+        return self.__config.get("cooldown", 300)
+
+    @property
+    def termination_policies(self) -> List[str]:
+        """Termination policies"""
+        return self.__config.get("termination_policies", ["Default"])
+
+    @property
+    def update_policy(self) -> Dict[str, Any]:
+        """Update policy configuration"""
+        return self.__config.get("update_policy", {
+            "min_instances_in_service": 1,
+            "max_batch_size": 1,
+            "pause_time": 300
+        })
+
+    @property
+    def user_data_commands(self) -> List[str]:
+        """User data commands to run on instance launch"""
+        return self.__config.get("user_data_commands", [])
+
+    @property
+    def security_group_ids(self) -> List[str]:
+        """Security group IDs for the instances"""
+        return self.__config.get("security_group_ids", [])
+
+    @property
+    def managed_policies(self) -> List[str]:
+        """Managed policies to attach to the instance role"""
+        return self.__config.get("managed_policies", [
+            "AmazonEC2ContainerRegistryReadOnly",
+            "AmazonSSMManagedInstanceCore",
+            "CloudWatchAgentServerPolicy"
+        ])
+
+    @property
+    def ami_id(self) -> Optional[str]:
+        """Custom AMI ID (if not using latest Amazon Linux)"""
+        return self.__config.get("ami_id")
+
+    @property
+    def ami_type(self) -> str:
+        """AMI type if not using custom AMI"""
+        return self.__config.get("ami_type", "amazon-linux-2023")
+
+    @property
+    def detailed_monitoring(self) -> bool:
+        """Whether to enable detailed monitoring"""
+        return self.__config.get("detailed_monitoring", True)
+
+    @property
+    def block_devices(self) -> List[Dict[str, Any]]:
+        """Block device mappings"""
+        return self.__config.get("block_devices", [])
+
+    @property
+    def scaling_policies(self) -> List[Dict[str, Any]]:
+        """Scaling policies"""
+        return self.__config.get("scaling_policies", [])
+
+    @property
+    def scheduled_actions(self) -> List[Dict[str, Any]]:
+        """Scheduled actions"""
+        return self.__config.get("scheduled_actions", [])
+
+    @property
+    def container_config(self) -> Dict[str, Any]:
+        """Container configuration for Docker-based deployments"""
+        return self.__config.get("container_config", {})
+
+    @property
+    def tags(self) -> Dict[str, str]:
+        """Tags to apply to the Auto Scaling Group"""
+        return self.__config.get("tags", {})

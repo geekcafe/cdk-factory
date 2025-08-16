@@ -60,7 +60,7 @@ class StackStandards:
 
     @staticmethod
     def nag_auto_resources(scope: Construct):
-        """NAG Resources Supression"""
+        """NAG Resources Suppression"""
 
         StackStandards.nag_auto_resource_by_id(
             scope, "BucketNotificationsHandler050a0587b7544547bf325f094a3db834"
@@ -68,7 +68,7 @@ class StackStandards:
 
     @staticmethod
     def nag_auto_resource_by_id(scope: Construct, resource_id: str) -> None:
-        """NAG Resources Supression"""
+        """NAG Resources Suppression"""
         try:
             # StackStandards.list_node_ids(scope)
             construct = StackStandards.find_construct(

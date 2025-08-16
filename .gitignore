@@ -190,3 +190,5 @@ cdk.out
 .env.prod
 .env.sandbox
 
+# Local configuration
+.pysetup.json
