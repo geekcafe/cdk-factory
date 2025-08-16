@@ -30,8 +30,12 @@ class VpcOnlyStack(Stack):
         deployment_name = self.node.try_get_context("deployment_name") or "dev"
         deployment = DeploymentConfig({"name": deployment_name})
         
-        # Create workload configuration
-        workload = WorkloadConfig({"name": "vpc-only"})
+        # Create workload configuration with custom SSM prefix template
+        workload = WorkloadConfig({
+            "name": "vpc-only",
+            # Define a custom SSM parameter prefix template at the workload level
+            "ssm_prefix_template": "/{environment}/{resource_type}/{attribute}"
+        })
         workload_factory = WorkloadFactory(self, workload, deployment)
         
         # Create VPC
@@ -44,6 +48,13 @@ class VpcOnlyStack(Stack):
             "tags": {
                 "Component": "VPC-Only",
                 "Environment": deployment_name
+            },
+            # Define SSM parameters to export - simplified paths that will use the template
+            "ssm_exports": {
+                "vpc_id_path": "id",
+                "vpc_cidr_path": "cidr",
+                "public_subnet_ids_path": "public-subnet-ids",
+                "private_subnet_ids_path": "private-subnet-ids"
             }
         }
         vpc_stack_config = StackConfig({"vpc": vpc_config})
@@ -62,19 +73,23 @@ class SecurityGroupOnlyStack(Stack):
         deployment_name = self.node.try_get_context("deployment_name") or "dev"
         deployment = DeploymentConfig({"name": deployment_name})
         
-        # Create workload configuration
-        workload = WorkloadConfig({"name": "sg-only"})
+        # Create workload configuration with a different SSM prefix template
+        workload = WorkloadConfig({
+            "name": "sg-only",
+            # Define a different SSM parameter prefix template that uses workload name
+            "ssm_prefix_template": "/{environment}/{workload_name}/{resource_type}/{attribute}"
+        })
         workload_factory = WorkloadFactory(self, workload, deployment)
         
-        # Get VPC ID from context
+        # Get VPC ID from context or SSM parameter
         vpc_id = self.node.try_get_context("vpc_id")
-        if not vpc_id:
-            raise ValueError("vpc_id context parameter is required")
+        # If not provided via context, we'll use SSM parameter in the security group config
         
         # Create Security Group
         sg_config = {
             "name": "web-sg",
             "description": "Web server security group",
+            # Use direct vpc_id if provided via context, otherwise it will be imported from SSM
             "vpc_id": vpc_id,
             "allow_all_outbound": True,
             "ingress_rules": [
@@ -97,7 +112,17 @@ class SecurityGroupOnlyStack(Stack):
             "tags": {
                 "Component": "SG-Only",
                 "Environment": deployment_name
-            }
+            },
+            # Define SSM parameters to import - using simplified paths with the template
+            "ssm_imports": {
+                "vpc_id_path": "id"
+            },
+            # Define SSM parameters to export - using simplified paths with the template
+            "ssm_exports": {
+                "security_group_id_path": "id"
+            },
+            # Override the SSM prefix template at the resource level for exports only
+            "ssm_prefix_template": "/{environment}/security-groups/{resource_name}/{attribute}"
         }
         sg_stack_config = StackConfig({"security_group": sg_config})
         sg_stack = SecurityGroupStack(self, "SecurityGroupStack")
@@ -115,18 +140,22 @@ class DatabaseOnlyStack(Stack):
         deployment_name = self.node.try_get_context("deployment_name") or "dev"
         deployment = DeploymentConfig({"name": deployment_name})
         
-        # Create workload configuration
-        workload = WorkloadConfig({"name": "db-only"})
+        # Create workload configuration with a custom delimiter in the SSM prefix template
+        workload = WorkloadConfig({
+            "name": "db-only",
+            # Define a custom SSM parameter prefix template with dashes instead of slashes
+            "ssm_prefix_template": "/{environment}-{resource_type}-{attribute}"
+        })
         workload_factory = WorkloadFactory(self, workload, deployment)
         
-        # Get context parameters
+        # Get context parameters (optional now with SSM)
         vpc_id = self.node.try_get_context("vpc_id")
         security_group_id = self.node.try_get_context("security_group_id")
         db_name = self.node.try_get_context("db_name") or "testdb"
         db_username = self.node.try_get_context("db_username") or "admin"
         
-        if not vpc_id or not security_group_id:
-            raise ValueError("vpc_id and security_group_id context parameters are required")
+        # No need to raise an error if vpc_id or security_group_id are not provided
+        # as they will be imported from SSM parameters
         
         # Create RDS Instance
         rds_config = {
@@ -141,14 +170,32 @@ class DatabaseOnlyStack(Stack):
             "storage_encrypted": True,
             "multi_az": False,
             "subnet_group_name": "isolated",
-            "security_group_ids": [security_group_id],
+            # Use direct security_group_ids if provided via context
+            "security_group_ids": [security_group_id] if security_group_id else None,
+            # Use direct vpc_id if provided via context
+            "vpc_id": vpc_id,
             "deletion_protection": False,
             "backup_retention": 7,
             "removal_policy": "destroy",
             "tags": {
                 "Component": "DB-Only",
                 "Environment": deployment_name
-            }
+            },
+            # Define SSM parameters to import - using simplified paths with the template
+            # Note: We need to use full paths for imports from stacks with different prefix templates
+            "ssm_imports": {
+                "vpc_id_path": f"/{deployment_name}/vpc/id",  # From VPC stack with /{environment}/{resource_type}/{attribute}
+                "security_group_id_path": f"/{deployment_name}/security-groups/web-sg/id"  # From SG stack with custom prefix
+            },
+            # Define SSM parameters to export - using simplified paths with the template
+            "ssm_exports": {
+                "db_instance_endpoint_path": "endpoint",
+                "db_instance_id_path": "id",
+                "db_secret_arn_path": "secret-arn",
+                "db_name_path": "name"
+            },
+            # Override the resource type for this specific resource
+            "ssm_resource_type": "database"
         }
         rds_stack_config = StackConfig({"rds": rds_config})
         rds_stack = RdsStack(self, "RdsStack")

@@ -1,0 +1,14 @@
+{
+  "ecr": {
+    "name": "sample-ecr-repo",
+    "image_scan_on_push": true,
+    "empty_on_delete": false,
+    "auto_delete_untagged_images_in_days": 30,
+    "ssm_prefix_template": "/{environment}/{workload_name}/repositories/{resource_name}/{attribute}",
+    "ssm_exports": {
+      "name_path": "name",
+      "uri_path": "uri",
+      "arn_path": "arn"
+    }
+  }
+}

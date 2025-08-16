@@ -15,6 +15,7 @@ class ECRConfig:
     ) -> None:
         self.__config = config
         self.__deployment = deployment
+        self.__ssm_prefix_template = config.get("ssm_prefix_template", None)
 
     @property
     def name(self) -> str:
@@ -115,3 +116,77 @@ class ECRConfig:
         if not value:
             raise RuntimeError("Region is not defined")
         return value
+        
+    @property
+    def ssm_exports(self) -> dict:
+        """Get SSM parameter paths for exporting values"""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("ssm_exports", {})
+        return {}
+        
+    @property
+    def ssm_imports(self) -> dict:
+        """Get SSM parameter paths for importing values"""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("ssm_imports", {})
+        return {}
+        
+    @property
+    def ssm_parameters(self) -> dict:
+        """Get legacy SSM parameter paths (for backward compatibility)"""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("ssm_parameters", {})
+        return {}
+        
+    def format_ssm_path(self, path: str, resource_type: str, resource_name: str, attribute: str, context: dict = None) -> str:
+        """Format an SSM parameter path using the configured template
+        
+        Args:
+            path: The path or attribute name to format
+            resource_type: The type of resource (e.g., 'ecr')
+            resource_name: The name of the resource
+            attribute: The attribute name (e.g., 'name', 'uri', 'arn')
+            context: Additional context variables for template formatting
+            
+        Returns:
+            Formatted SSM parameter path
+        """
+        # If path starts with '/', it's already a full path
+        if path.startswith('/'):
+            return path
+            
+        # Get the template from config, or use deployment default
+        template = self.__ssm_prefix_template
+        
+        # If no template is defined at the resource level, check if deployment has one
+        if not template and self.__deployment:
+            # This would need to be implemented in DeploymentConfig
+            if hasattr(self.__deployment, 'ssm_prefix_template'):
+                template = self.__deployment.ssm_prefix_template
+                
+        # If still no template, use the default format
+        if not template:
+            return self.__deployment.get_ssm_parameter_name(resource_type, resource_name, attribute)
+            
+        # Format the template with available variables
+        context = context or {}
+        format_vars = {
+            'deployment_name': self.__deployment.name if self.__deployment else '',
+            'environment': self.__deployment.environment if self.__deployment else '',
+            'workload_name': self.__deployment.workload_name if self.__deployment else '',
+            'resource_type': resource_type,
+            'resource_name': resource_name,
+            'attribute': path,  # Use the path as the attribute if it's a simple name
+        }
+        
+        # Add any additional context variables
+        format_vars.update(context)
+        
+        # Format the template
+        formatted_path = template.format(**format_vars)
+        
+        # Ensure the path starts with '/'
+        if not formatted_path.startswith('/'):
+            formatted_path = f'/{formatted_path}'
+            
+        return formatted_path

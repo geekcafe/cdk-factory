@@ -115,25 +115,62 @@ The SSM parameter paths are defined in the configuration JSON under two distinct
 1. `ssm_exports`: Parameters that this stack will publish to SSM
 2. `ssm_imports`: Parameters that this stack will consume from SSM
 
-Each key in these dictionaries should follow the pattern `{attribute_name}_path` and the value should be the SSM parameter path.
+Each key in these dictionaries should follow the pattern `{attribute_name}_path` and the value can be either:
+- A full SSM parameter path (starting with `/`)
+- A simple attribute name that will be formatted using a template
 
-Example configuration for a VPC stack that exports values:
+### Configurable SSM Parameter Prefixes
+
+The framework now supports configurable SSM parameter prefixes through templates. This allows you to customize how SSM parameter paths are constructed without hardcoding the full paths.
+
+#### Template Configuration
+
+You can define an SSM parameter prefix template at different levels:
+
+1. **Workload Level**: In the `WorkloadConfig`
+2. **Stack Level**: In the `StackConfig`
+3. **Resource Level**: In the resource configuration
+
+The template uses a format string with variables that will be replaced at runtime:
+
+```json
+{
+  "ssm_prefix_template": "/{environment}/{resource_type}/{attribute}"
+}
+```
+
+Available template variables:
+- `{deployment_name}` - The name of the deployment
+- `{environment}` - The environment name
+- `{workload_name}` - The name of the workload
+- `{resource_type}` - The type of resource (e.g., vpc, security-group)
+- `{resource_name}` - The name of the resource
+- `{attribute}` - The attribute name
+
+#### Simplified Path Configuration
+
+With templates, you can use simplified attribute names in your exports and imports:
 
 ```json
 {
   "vpc": {
     "name": "main-vpc",
     "cidr": "10.0.0.0/16",
+    "ssm_prefix_template": "/{environment}/{resource_type}/{attribute}",
     "ssm_exports": {
-      "vpc_id_path": "/my-app/dev/vpc/id",
-      "vpc_cidr_path": "/my-app/dev/vpc/cidr",
-      "public_subnet_ids_path": "/my-app/dev/vpc/public-subnet-ids"
+      "vpc_id_path": "id",
+      "vpc_cidr_path": "cidr",
+      "public_subnet_ids_path": "public-subnet-ids"
     }
   }
 }
 ```
 
-Example configuration for an API Gateway stack that imports values:
+In this example, the `vpc_id_path` value of `"id"` will be expanded to `/dev/vpc/id` (assuming environment is "dev").
+
+#### Full Path Override
+
+If you need to use a specific path that doesn't follow the template, you can still provide a full path (starting with `/`):
 
 ```json
 {
@@ -142,15 +179,16 @@ Example configuration for an API Gateway stack that imports values:
     "vpc": {
       "ssm_imports": {
         "vpc_id_path": "/my-app/dev/vpc/id",
-        "subnet_ids_path": "/my-app/dev/vpc/private-subnet-ids"
+        "subnet_ids_path": "private-subnet-ids"
       }
     }
   }
 }
 ```
 
+In this example, `vpc_id_path` uses a full path that will be used as-is, while `subnet_ids_path` will be formatted using the template.
+
 For backward compatibility, the `ssm_parameters` dictionary is still supported and will be treated as both exports and imports.
-```
 
 ## Usage Pattern
 

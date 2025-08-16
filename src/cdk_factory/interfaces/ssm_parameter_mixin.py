@@ -155,6 +155,8 @@ class SsmParameterMixin:
         resource_values: Dict[str, Any],
         config: Any,  # Should be a BaseConfig subclass
         resource_name: str,
+        resource_type: str = None,
+        context: Dict[str, Any] = None,
     ) -> Dict[str, ssm.StringParameter]:
         """
         Export resource attributes to SSM Parameter Store based on configuration.
@@ -167,6 +169,8 @@ class SsmParameterMixin:
             resource_values: Dictionary of resource values to export
             config: Configuration object with ssm_exports or ssm_parameters
             resource_name: Name of the resource (used as prefix for parameter IDs)
+            resource_type: Type of the resource (e.g., 'vpc', 'security-group')
+            context: Additional context variables for template formatting
             
         Returns:
             Dictionary of created SSM parameters
@@ -181,10 +185,30 @@ class SsmParameterMixin:
         # Export all resources to SSM if paths are configured
         if ssm_config:
             logger.info(f"Exporting resources to SSM: {list(ssm_config.keys())}")
+            
+            # Format the SSM paths using the template if available
+            formatted_ssm_config = {}
+            for key, path in ssm_config.items():
+                # Extract the attribute name from the key (remove _path suffix)
+                attr_name = key[:-5] if key.endswith('_path') else key
+                
+                # If config has format_ssm_path method, use it to format the path
+                if hasattr(config, 'format_ssm_path') and resource_type:
+                    formatted_path = config.format_ssm_path(
+                        path=path,
+                        resource_type=resource_type,
+                        resource_name=resource_name,
+                        attribute=attr_name,
+                        context=context
+                    )
+                    formatted_ssm_config[key] = formatted_path
+                else:
+                    formatted_ssm_config[key] = path
+            
             return self.export_ssm_parameters_from_config(
                 scope=scope,
                 config_dict=resource_values,
-                ssm_config=ssm_config,
+                ssm_config=formatted_ssm_config,
                 prefix=f"{resource_name}-"
             )
         else:
@@ -196,6 +220,8 @@ class SsmParameterMixin:
         scope: Construct,
         config: Any,  # Should be a BaseConfig subclass
         resource_name: str,
+        resource_type: str = None,
+        context: Dict[str, Any] = None,
     ) -> Dict[str, str]:
         """
         Import resource attributes from SSM Parameter Store based on configuration.
@@ -207,6 +233,8 @@ class SsmParameterMixin:
             scope: The CDK construct scope
             config: Configuration object with ssm_imports or ssm_parameters
             resource_name: Name of the resource (used as prefix for parameter IDs)
+            resource_type: Type of the resource (e.g., 'vpc', 'security-group')
+            context: Additional context variables for template formatting
             
         Returns:
             Dictionary of imported SSM parameter values
@@ -225,12 +253,27 @@ class SsmParameterMixin:
             for key, path in ssm_config.items():
                 if not path:
                     continue
+                
+                # Extract the attribute name from the key (remove _path suffix)
+                attr_name = key[:-5] if key.endswith('_path') else key
+                
+                # Format the SSM path using the template if available
+                if hasattr(config, 'format_ssm_path') and resource_type:
+                    formatted_path = config.format_ssm_path(
+                        path=path,
+                        resource_type=resource_type,
+                        resource_name=resource_name,
+                        attribute=attr_name,
+                        context=context
+                    )
+                else:
+                    formatted_path = path
                     
                 id_name = f"{resource_name}-{key.replace('_', '')}-Import"
                 value = self.import_ssm_parameter(
                     scope=scope,
                     id=id_name,
-                    parameter_name=path
+                    parameter_name=formatted_path
                 )
                 
                 if value:

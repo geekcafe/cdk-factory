@@ -4,7 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
-from typing import cast
+from typing import cast, Dict
 from aws_cdk import Duration, RemovalPolicy, aws_ecr
 from aws_cdk import CfnResource
 from aws_cdk import aws_iam as iam
@@ -14,11 +14,12 @@ from constructs import Construct, IConstruct
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
 from cdk_factory.configurations.resources.ecr import ECRConfig as ECR
 from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
+from cdk_factory.interfaces.ssm_parameter_mixin import SsmParameterMixin
 
 logger = Logger(__name__)
 
 
-class ECRConstruct(Construct):
+class ECRConstruct(Construct, SsmParameterMixin):
     def __init__(
         self,
         scope: Construct,
@@ -71,68 +72,37 @@ class ECRConstruct(Construct):
     def __create_parameter_store_values(self):
         """
         Stores the ecr info in the parameter store for consumption in
-        other cdk stacks.
+        other cdk stacks using the SsmParameterMixin.
 
-        I tried storing this a JSON, but since it's a token being passed around
-        I was having a dificult time consuming it on other places.
+        This method uses the new configurable SSM parameter prefix system.
         """
-
-        parameter_name = self.deployment.get_ssm_parameter_name(
-            "ecr", self.ecr_name, "name"
-        )
-        name_param = ssm.StringParameter(
+        # Create a dictionary of resource values to export
+        resource_values = {
+            "name": self.ecr.repository_name,
+            "uri": self.ecr.repository_uri,
+            "arn": self.ecr.repository_arn
+        }
+        
+        # Use the export_resource_to_ssm method from SsmParameterMixin
+        params = self.export_resource_to_ssm(
             scope=self,
-            id=self.deployment.build_resource_name(f"{self.ecr_name}-ssm-ecr-name"),
-            parameter_name=parameter_name,
-            string_value=self.ecr.repository_name,
-            description=f"{self.ecr_name} - Name Used for CDK deployments",
+            resource_values=resource_values,
+            config=self.repo,  # Pass the ECRConfig object which has ssm_exports
+            resource_name=self.ecr_name,
+            resource_type="ecr",
+            context={
+                "deployment_name": self.deployment.name,
+                "environment": self.deployment.environment,
+                "workload_name": self.deployment.workload_name
+            }
         )
-
-        # Ensure the SSM parameter creation depends on the ECR repository creation
-        if name_param.node.default_child and isinstance(
-            name_param.node.default_child, CfnResource
-        ):
-            name_param.node.default_child.add_dependency(
-                cast(CfnResource, self.ecr.node.default_child)
-            )
-
-        parameter_name = self.deployment.get_ssm_parameter_name(
-            "ecr", self.ecr_name, "uri"
-        )
-        uri_param = ssm.StringParameter(
-            scope=self,
-            id=self.deployment.build_resource_name(f"{self.ecr_name}-ssm-erc-uri"),
-            parameter_name=parameter_name,
-            string_value=self.ecr.repository_uri,
-            description=f"{self.ecr_name} - Uri Used for CDK deployments",
-        )
-
-        # Access the CloudFormation resource of the SSM parameter
-        if uri_param.node.default_child and isinstance(
-            uri_param.node.default_child, CfnResource
-        ):
-            uri_param.node.default_child.add_dependency(
-                cast(CfnResource, self.ecr.node.default_child)
-            )
-
-        parameter_name = self.deployment.get_ssm_parameter_name(
-            "ecr", self.ecr_name, "arn"
-        )
-
-        arn_param = ssm.StringParameter(
-            scope=self,
-            id=self.deployment.build_resource_name(f"{self.ecr_name}-ssm-erc-arn"),
-            parameter_name=parameter_name,
-            string_value=self.ecr.repository_arn,
-            description=f"{self.ecr_name} - Arn Used for CDK deployments",
-        )
-
-        if arn_param.node.default_child and isinstance(
-            arn_param.node.default_child, CfnResource
-        ):
-            arn_param.node.default_child.add_dependency(
-                cast(CfnResource, self.ecr.node.default_child)
-            )
+        
+        # Add dependencies to ensure SSM parameters are created after the ECR repository
+        for param in params.values():
+            if param and param.node.default_child and isinstance(param.node.default_child, CfnResource):
+                param.node.default_child.add_dependency(
+                    cast(CfnResource, self.ecr.node.default_child)
+                )
 
     def __set_life_cycle_rules(self) -> None:
         # ToDo/FixMe: tag_pattern_list is not recognized in the current version in AWS
