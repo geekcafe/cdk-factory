@@ -37,7 +37,7 @@ def print_header(msg):
 
 
 class ProjectSetup:
-    CA_CONFIG = Path("setup.json")
+    CA_CONFIG = Path(".pysetup.json")
     
     # Authentication error patterns to detect in pip output
     AUTH_ERROR_PATTERNS = [
@@ -76,6 +76,9 @@ class ProjectSetup:
                 str(Path.cwd() / VENV / "bin" / "python"),
                 str(Path.cwd() / VENV / "bin" / "python3"),
             ],
+            "setup_prompted": {
+                "gitignore": False  # Track if user has been prompted about gitignore
+            },
             "repositories": {
                 "pypi": {
                     "type": "pypi",
@@ -103,8 +106,13 @@ class ProjectSetup:
             except json.JSONDecodeError:
                 print_error(f"Could not parse {self.CA_CONFIG}; ignoring it.")
 
-    def _setup_repositories(self):
-        """Configure package repositories based on user input."""
+    def _setup_repositories(self, force_prompt=False):
+        """Configure package repositories based on user input.
+        
+        Args:
+            force_prompt: If True, prompt for all repositories even if already configured.
+                         If False, only prompt for repositories that aren't configured yet.
+        """
         print_header("Package Repository Setup")
         print("Let's configure the package repositories you want to use.")
         print("PyPI is enabled by default. You can add additional repositories.")
@@ -120,21 +128,23 @@ class ProjectSetup:
                 "url": "https://pypi.org/simple",
                 "trusted": True
             }
+            # Save the updated settings with PyPI
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
         
         # Ask about each repository type
-        self._maybe_setup_codeartifact()
-        self._maybe_setup_artifactory()
-        self._maybe_setup_nexus()
-        self._maybe_setup_github_packages()
-        self._maybe_setup_azure_artifacts()
-        self._maybe_setup_google_artifact_registry()
-        
-        # Save the updated settings
-        self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
-        print_success(f"Repository configuration saved to {self.CA_CONFIG}")
+        # Each method now saves its own configuration changes
+        self._maybe_setup_codeartifact(force_prompt)
+        self._maybe_setup_artifactory(force_prompt)
+        self._maybe_setup_nexus(force_prompt)
+        self._maybe_setup_github_packages(force_prompt)
+        self._maybe_setup_azure_artifacts(force_prompt)
+        self._maybe_setup_google_artifact_registry(force_prompt)
         
         # Update pip.conf with the repository configuration
+        # This uses the latest configuration from all repository setups
         self._update_pip_conf_with_repos()
+        print_success("Repository configuration complete.")
+
         
     def _update_pip_conf_with_repos(self):
         """Update pip.conf with the configured repositories."""
@@ -190,27 +200,52 @@ class ProjectSetup:
             
         print_success(f"Updated pip.conf with repository configuration")
 
-    def _maybe_setup_codeartifact(self)-> bool:
-        """Configure AWS CodeArtifact repository."""
+    def _maybe_setup_codeartifact(self, force_prompt=False):
+        """Configure AWS CodeArtifact repository.
+        
+        Args:
+            force_prompt: If True, prompt for configuration even if already configured.
+                         If False, use existing configuration without prompting.
+        """
         # Check if CodeArtifact is already configured
         ca_repo = self.ca_settings.get("repositories", {}).get("codeartifact", {})
         
-        if ca_repo:
+        if ca_repo and not force_prompt:
+            # Use existing configuration without prompting
+            print_info("Using existing AWS CodeArtifact configuration.")
+            # Keep the enabled status as is
+        elif ca_repo:
             print_info("AWS CodeArtifact configuration found.")
             reuse = input("Do you want to use AWS CodeArtifact? (Y/n): ").strip().lower() or "y"
             if reuse != "y":
                 # Disable the repository but keep the settings
                 ca_repo["enabled"] = False
                 self.ca_settings["repositories"]["codeartifact"] = ca_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("AWS CodeArtifact disabled and saved to configuration.")
                 return False
             else:
                 # Enable the repository
                 ca_repo["enabled"] = True
                 self.ca_settings["repositories"]["codeartifact"] = ca_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("AWS CodeArtifact enabled and saved to configuration.")
         else:
             # Ask if user wants to configure CodeArtifact
-            ans = input("📦 Configure AWS CodeArtifact? (y/N): ").strip().lower()
+            ans = input("☁️ Configure AWS CodeArtifact? (y/N): ").strip().lower()
             if ans != "y":
+                # Add a disabled entry to repositories
+                if "repositories" not in self.ca_settings:
+                    self.ca_settings["repositories"] = {}
+                self.ca_settings["repositories"]["codeartifact"] = {
+                    "type": "codeartifact",
+                    "enabled": False
+                }
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("AWS CodeArtifact disabled and saved to configuration.")
                 return False
                 
             # Initialize CodeArtifact repository settings
@@ -218,10 +253,11 @@ class ProjectSetup:
                 "type": "codeartifact",
                 "enabled": True,
                 "tool": input("   Tool (pip/poetry) [pip]: ").strip().lower() or "pip",
-                "domain": input("   Domain name: ").strip(),
-                "repository": input("   Repository name: ").strip(),
-                "region": input("   AWS region [us-east-1]: ").strip() or "us-east-1",
-                "profile": input("   AWS CLI profile (optional): ").strip() or None,
+                "domain": input("   Domain: ").strip(),
+                "domain_owner": input("   Domain Owner (AWS Account ID, or press Enter if same as current account): ").strip(),
+                "repository": input("   Repository Name: ").strip(),
+                "region": input("   AWS Region: ").strip() or "us-east-1",
+                "profile": input("   AWS Profile (optional): ").strip() or None,
                 "trusted": True
             }
             
@@ -229,6 +265,9 @@ class ProjectSetup:
             if "repositories" not in self.ca_settings:
                 self.ca_settings["repositories"] = {}
             self.ca_settings["repositories"]["codeartifact"] = ca_repo
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info("AWS CodeArtifact configuration saved.")
 
         # If enabled, perform login
         if ca_repo.get("enabled", False):
@@ -248,9 +287,9 @@ class ProjectSetup:
             "codeartifact",
             "login",
             "--tool",
-            ca_repo["tool"],
+            "pip",
             "--domain",
-            ca_repo["domain"],
+            ca_repo["domain"],            
             "--repository",
             ca_repo["repository"],
             "--region",
@@ -337,43 +376,73 @@ class ProjectSetup:
     def _handle_repo_auth_error(self, output: str) -> bool:
         """Dispatch to the correct repository login/setup method based on output."""
         out = output.lower()
+        # When handling auth errors, we always want to force prompting
+        # since we need to re-authenticate
+        force_prompt = True
+        
         if ".codeartifact" in out or "codeartifact" in out:
-            return self._maybe_setup_codeartifact()
+            return self._maybe_setup_codeartifact(force_prompt)
         elif "artifactory" in out:
-            return self._maybe_setup_artifactory()
+            return self._maybe_setup_artifactory(force_prompt)
         elif "nexus" in out:
-            return self._maybe_setup_nexus()
+            return self._maybe_setup_nexus(force_prompt)
         elif "github.com" in out or "ghcr.io" in out or "github packages" in out:
-            return self._maybe_setup_github_packages()
+            return self._maybe_setup_github_packages(force_prompt)
         elif "azure" in out or "pkgs.dev.azure.com" in out:
-            return self._maybe_setup_azure_artifacts()
+            return self._maybe_setup_azure_artifacts(force_prompt)
         elif "pkg.dev" in out or "artifact registry" in out or "gcp" in out:
-            return self._maybe_setup_google_artifact_registry()
+            return self._maybe_setup_google_artifact_registry(force_prompt)
         else:
             print_info("No known repository type detected in output; skipping custom login.")
             return False
 
-    def _maybe_setup_artifactory(self) -> bool:
-        """Configure JFrog Artifactory repository."""
+    def _maybe_setup_artifactory(self, force_prompt=False) -> bool:
+        """Configure JFrog Artifactory repository.
+        
+        Args:
+            force_prompt: If True, prompt for configuration even if already configured.
+                         If False, use existing configuration without prompting.
+        """
         # Check if Artifactory is already configured
         art_repo = self.ca_settings.get("repositories", {}).get("artifactory", {})
         
-        if art_repo:
+        if art_repo and not force_prompt:
+            # Use existing configuration without prompting
+            print_info("Using existing Artifactory configuration.")
+            # Keep the enabled status as is
+        elif art_repo:
+            # Configuration exists but we're forcing a prompt
             print_info("Artifactory configuration found.")
             reuse = input("Do you want to use Artifactory? (Y/n): ").strip().lower() or "y"
             if reuse != "y":
                 # Disable the repository but keep the settings
                 art_repo["enabled"] = False
                 self.ca_settings["repositories"]["artifactory"] = art_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Artifactory disabled and saved to configuration.")
                 return False
             else:
                 # Enable the repository
                 art_repo["enabled"] = True
                 self.ca_settings["repositories"]["artifactory"] = art_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Artifactory enabled and saved to configuration.")
         else:
-            # Ask if user wants to configure Artifactory
+            # No configuration exists, ask if user wants to configure Artifactory
             ans = input("📦 Configure JFrog Artifactory? (y/N): ").strip().lower()
             if ans != "y":
+                # Add a disabled entry to repositories
+                if "repositories" not in self.ca_settings:
+                    self.ca_settings["repositories"] = {}
+                self.ca_settings["repositories"]["artifactory"] = {
+                    "type": "artifactory",
+                    "enabled": False
+                }
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Artifactory disabled and saved to configuration.")
                 return False
                 
             # Initialize Artifactory repository settings
@@ -390,6 +459,9 @@ class ProjectSetup:
             if "repositories" not in self.ca_settings:
                 self.ca_settings["repositories"] = {}
             self.ca_settings["repositories"]["artifactory"] = art_repo
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info("Artifactory configuration saved.")
 
         # If enabled, perform login
         if art_repo.get("enabled", False):
@@ -440,27 +512,52 @@ class ProjectSetup:
             print_error(f"Artifactory login failed: {e}")
             return False
 
-    def _maybe_setup_nexus(self) -> bool:
-        """Configure Sonatype Nexus repository."""
+    def _maybe_setup_nexus(self, force_prompt=False) -> bool:
+        """Configure Sonatype Nexus repository.
+        
+        Args:
+            force_prompt: If True, prompt for configuration even if already configured.
+                         If False, use existing configuration without prompting.
+        """
         # Check if Nexus is already configured
         nexus_repo = self.ca_settings.get("repositories", {}).get("nexus", {})
         
-        if nexus_repo:
+        if nexus_repo and not force_prompt:
+            # Use existing configuration without prompting
+            print_info("Using existing Nexus configuration.")
+            # Keep the enabled status as is
+        elif nexus_repo:
             print_info("Nexus configuration found.")
             reuse = input("Do you want to use Nexus? (Y/n): ").strip().lower() or "y"
             if reuse != "y":
                 # Disable the repository but keep the settings
                 nexus_repo["enabled"] = False
                 self.ca_settings["repositories"]["nexus"] = nexus_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Nexus disabled and saved to configuration.")
                 return False
             else:
                 # Enable the repository
                 nexus_repo["enabled"] = True
                 self.ca_settings["repositories"]["nexus"] = nexus_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Nexus enabled and saved to configuration.")
         else:
             # Ask if user wants to configure Nexus
-            ans = input("📦 Configure Sonatype Nexus? (y/N): ").strip().lower()
+            ans = input("🔄 Configure Sonatype Nexus? (y/N): ").strip().lower()
             if ans != "y":
+                # Add a disabled entry to repositories
+                if "repositories" not in self.ca_settings:
+                    self.ca_settings["repositories"] = {}
+                self.ca_settings["repositories"]["nexus"] = {
+                    "type": "nexus",
+                    "enabled": False
+                }
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Nexus disabled and saved to configuration.")
                 return False
                 
             # Initialize Nexus repository settings
@@ -477,6 +574,9 @@ class ProjectSetup:
             if "repositories" not in self.ca_settings:
                 self.ca_settings["repositories"] = {}
             self.ca_settings["repositories"]["nexus"] = nexus_repo
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info("Nexus configuration saved.")
 
         # If enabled, perform login
         if nexus_repo.get("enabled", False):
@@ -527,42 +627,75 @@ class ProjectSetup:
             print_error(f"Nexus login failed: {e}")
             return False
 
-    def _maybe_setup_github_packages(self) -> bool:
-        """Configure GitHub Packages repository."""
+    def _maybe_setup_github_packages(self, force_prompt=False) -> bool:
+        """Configure GitHub Packages repository.
+        
+        Args:
+            force_prompt: If True, prompt for configuration even if already configured.
+                         If False, use existing configuration without prompting.
+        """
         # Check if GitHub Packages is already configured
         gh_repo = self.ca_settings.get("repositories", {}).get("github", {})
         
-        if gh_repo:
+        if gh_repo and not force_prompt:
+            # Use existing configuration without prompting
+            print_info("Using existing GitHub Packages configuration.")
+            # Keep the enabled status as is
+        elif gh_repo:
             print_info("GitHub Packages configuration found.")
             reuse = input("Do you want to use GitHub Packages? (Y/n): ").strip().lower() or "y"
             if reuse != "y":
                 # Disable the repository but keep the settings
                 gh_repo["enabled"] = False
                 self.ca_settings["repositories"]["github"] = gh_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("GitHub Packages disabled and saved to configuration.")
                 return False
             else:
                 # Enable the repository
                 gh_repo["enabled"] = True
                 self.ca_settings["repositories"]["github"] = gh_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("GitHub Packages enabled and saved to configuration.")
         else:
             # Ask if user wants to configure GitHub Packages
-            ans = input("📦 Configure GitHub Packages? (y/N): ").strip().lower()
+            ans = input("🐙 Configure GitHub Packages? (y/N): ").strip().lower()
             if ans != "y":
+                # Add a disabled entry to repositories
+                if "repositories" not in self.ca_settings:
+                    self.ca_settings["repositories"] = {}
+                self.ca_settings["repositories"]["github"] = {
+                    "type": "github",
+                    "enabled": False
+                }
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("GitHub Packages disabled and saved to configuration.")
                 return False
                 
             # Initialize GitHub Packages repository settings
             gh_repo = {
                 "type": "github",
                 "enabled": True,
-                "url": input("   Repository URL (e.g. https://pypi.pkg.github.com/OWNER/index): ").strip(),
-                "token": input("   Personal Access Token: ").strip(),
-                "trusted": input("   Trust this host? (Y/n): ").strip().lower() != "n"
+                "url": "https://pypi.pkg.github.com/OWNER/simple/",
+                "username": input("   GitHub Username: ").strip(),
+                "token": input("   GitHub Personal Access Token: ").strip(),
+                "owner": input("   Repository Owner (organization or username): ").strip(),
+                "trusted": True
             }
+            
+            # Update URL with the correct owner
+            gh_repo["url"] = gh_repo["url"].replace("OWNER", gh_repo["owner"])
             
             # Add to repositories
             if "repositories" not in self.ca_settings:
                 self.ca_settings["repositories"] = {}
             self.ca_settings["repositories"]["github"] = gh_repo
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info("GitHub Packages configuration saved.")
 
         # If enabled, perform login
         if gh_repo.get("enabled", False):
@@ -574,6 +707,7 @@ class ProjectSetup:
         try:
             # Create or update pip.conf with credentials
             url = gh_repo["url"]
+            username = gh_repo["username"]
             token = gh_repo["token"]
             
             # Create .netrc file for authentication
@@ -612,43 +746,76 @@ class ProjectSetup:
             print_error(f"GitHub Packages login failed: {e}")
             return False
 
-    def _maybe_setup_azure_artifacts(self) -> bool:
-        """Configure Azure Artifacts repository."""
+    def _maybe_setup_azure_artifacts(self, force_prompt=False) -> bool:
+        """Configure Azure Artifacts repository.
+        
+        Args:
+            force_prompt: If True, prompt for configuration even if already configured.
+                         If False, use existing configuration without prompting.
+        """
         # Check if Azure Artifacts is already configured
         azure_repo = self.ca_settings.get("repositories", {}).get("azure", {})
         
-        if azure_repo:
+        if azure_repo and not force_prompt:
+            # Use existing configuration without prompting
+            print_info("Using existing Azure Artifacts configuration.")
+            # Keep the enabled status as is
+        elif azure_repo:
             print_info("Azure Artifacts configuration found.")
             reuse = input("Do you want to use Azure Artifacts? (Y/n): ").strip().lower() or "y"
             if reuse != "y":
                 # Disable the repository but keep the settings
                 azure_repo["enabled"] = False
                 self.ca_settings["repositories"]["azure"] = azure_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Azure Artifacts disabled and saved to configuration.")
                 return False
             else:
                 # Enable the repository
                 azure_repo["enabled"] = True
                 self.ca_settings["repositories"]["azure"] = azure_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Azure Artifacts enabled and saved to configuration.")
         else:
             # Ask if user wants to configure Azure Artifacts
-            ans = input("📦 Configure Azure Artifacts? (y/N): ").strip().lower()
+            ans = input("☁️ Configure Azure Artifacts? (y/N): ").strip().lower()
             if ans != "y":
+                # Add a disabled entry to repositories
+                if "repositories" not in self.ca_settings:
+                    self.ca_settings["repositories"] = {}
+                self.ca_settings["repositories"]["azure"] = {
+                    "type": "azure",
+                    "enabled": False
+                }
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Azure Artifacts disabled and saved to configuration.")
                 return False
                 
             # Initialize Azure Artifacts repository settings
             azure_repo = {
                 "type": "azure",
                 "enabled": True,
-                "url": input("   Repository URL (e.g. https://pkgs.dev.azure.com/org/project/_packaging/feed/pypi/simple/): ").strip(),
-                "username": input("   Username (usually just 'azure'): ").strip() or "azure",
+                "organization": input("   Azure DevOps Organization: ").strip(),
+                "project": input("   Project Name: ").strip(),
+                "feed": input("   Feed Name: ").strip(),
+                "username": input("   Username (typically just use any string): ").strip() or "azure",
                 "token": input("   Personal Access Token: ").strip(),
-                "trusted": input("   Trust this host? (Y/n): ").strip().lower() != "n"
+                "trusted": True
             }
+            
+            # Build the URL from components
+            azure_repo["url"] = f"https://pkgs.dev.azure.com/{azure_repo['organization']}/{azure_repo['project']}/_packaging/{azure_repo['feed']}/pypi/simple/"
             
             # Add to repositories
             if "repositories" not in self.ca_settings:
                 self.ca_settings["repositories"] = {}
             self.ca_settings["repositories"]["azure"] = azure_repo
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info("Azure Artifacts configuration saved.")
 
         # If enabled, perform login
         if azure_repo.get("enabled", False):
@@ -699,41 +866,74 @@ class ProjectSetup:
             print_error(f"Azure Artifacts login failed: {e}")
             return False
 
-    def _maybe_setup_google_artifact_registry(self) -> bool:
-        """Configure Google Artifact Registry repository."""
+    def _maybe_setup_google_artifact_registry(self, force_prompt=False) -> bool:
+        """Configure Google Artifact Registry repository.
+        
+        Args:
+            force_prompt: If True, prompt for configuration even if already configured.
+                         If False, use existing configuration without prompting.
+        """
         # Check if Google Artifact Registry is already configured
         gcp_repo = self.ca_settings.get("repositories", {}).get("google", {})
         
-        if gcp_repo:
+        if gcp_repo and not force_prompt:
+            # Use existing configuration without prompting
+            print_info("Using existing Google Artifact Registry configuration.")
+            # Keep the enabled status as is
+        elif gcp_repo:
             print_info("Google Artifact Registry configuration found.")
             reuse = input("Do you want to use Google Artifact Registry? (Y/n): ").strip().lower() or "y"
             if reuse != "y":
                 # Disable the repository but keep the settings
                 gcp_repo["enabled"] = False
                 self.ca_settings["repositories"]["google"] = gcp_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Google Artifact Registry disabled and saved to configuration.")
                 return False
             else:
                 # Enable the repository
                 gcp_repo["enabled"] = True
                 self.ca_settings["repositories"]["google"] = gcp_repo
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Google Artifact Registry enabled and saved to configuration.")
         else:
             # Ask if user wants to configure Google Artifact Registry
-            ans = input("📦 Configure Google Artifact Registry? (y/N): ").strip().lower()
+            ans = input("☁️ Configure Google Artifact Registry? (y/N): ").strip().lower()
             if ans != "y":
+                # Add a disabled entry to repositories
+                if "repositories" not in self.ca_settings:
+                    self.ca_settings["repositories"] = {}
+                self.ca_settings["repositories"]["google"] = {
+                    "type": "google",
+                    "enabled": False
+                }
+                # Save the updated settings
+                self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                print_info("Google Artifact Registry disabled and saved to configuration.")
                 return False
                 
             # Initialize Google Artifact Registry repository settings
             gcp_repo = {
                 "type": "google",
                 "enabled": True,
-                "url": input("   Repository URL (e.g. https://us-central1-python.pkg.dev/project-id/repo-name/simple/): ").strip(),
-                "trusted": input("   Trust this host? (Y/n): ").strip().lower() != "n"
+                "project": input("   GCP Project ID: ").strip(),
+                "location": input("   Location (e.g., us-west1): ").strip(),
+                "repository": input("   Repository Name: ").strip(),
+                "trusted": True
             }
+            
+            # Build the URL from components
+            gcp_repo["url"] = f"https://{gcp_repo['location']}-python.pkg.dev/{gcp_repo['project']}/{gcp_repo['repository']}/simple/"
             
             # Add to repositories
             if "repositories" not in self.ca_settings:
                 self.ca_settings["repositories"] = {}
             self.ca_settings["repositories"]["google"] = gcp_repo
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info("Google Artifact Registry configuration saved.")
 
         # If enabled, perform login
         if gcp_repo.get("enabled", False):
@@ -979,11 +1179,20 @@ class ProjectSetup:
             moto
         """
 
-    def setup(self):
+    def setup(self, force_update_sh=False, ci_mode=False):
+        # Check for and fetch the latest pysetup.sh first
+        if self._check_and_fetch_setup_sh(force_update=force_update_sh):
+            # If pysetup.sh was updated, exit and instruct the user to restart
+            sys.exit(0)
+            
         self._detect_platform()
         self._create_pyproject_toml()
         (self._setup_poetry if self._use_poetry else self._setup_pip)()
         self.print_env_info()
+        
+        # Check if .pysetup.json should be excluded from git
+        self._check_gitignore_setup()
+        
         print("\n🎉 Setup complete!")
         if not self._use_poetry:
             print(
@@ -1010,25 +1219,88 @@ class ProjectSetup:
             with open(pip_script, 'r') as f:
                 shebang = f.readline().strip()
                 
-            # Extract the python path from shebang
-            if shebang.startswith('#!'):
-                python_path = shebang[2:]  # Remove #!
+            # Extract the interpreter path from the shebang
+            python_path = shebang[2:] if shebang.startswith('#!') else shebang
+            python_path_obj = Path(python_path)
+            
+            # First check: Does the interpreter path in the shebang actually exist?
+            # This catches project directory renames where the path is now invalid
+            if not python_path_obj.exists() or not os.access(python_path, os.X_OK):
+                print_error(f"Virtual environment interpreter not found:")
+                print(f"   Path in shebang: {python_path}")
+                print("   This usually happens when the project directory was renamed or moved.")
+                return False
                 
-                # Get expected paths from settings
-                expected_paths = self.ca_settings.get("python_paths", [])
-                if not expected_paths:  # Fallback if not found in settings
-                    expected_paths = [
-                        str(Path.cwd() / VENV / "bin" / "python"),
-                        str(Path.cwd() / VENV / "bin" / "python3")
-                    ]
+            # Get expected paths from settings
+            expected_paths = self.ca_settings.get("python_paths", [])
+            
+            # If no paths are stored or we're using the old format, generate default paths
+            if not expected_paths:  
+                # Use absolute paths for the fallback
+                abs_venv_path = Path(VENV).resolve()
+                expected_paths = [
+                    f"#!{str(abs_venv_path / 'bin' / 'python')}",
+                    f"#!{str(abs_venv_path / 'bin' / 'python3')}"
+                ]
                 
-                # Check if the shebang points to the current directory structure
-                if python_path not in expected_paths:
-                    print_error(f"Virtual environment has incorrect path references:")
-                    print(f"   Expected one of: {expected_paths}")
-                    print(f"   Found:           {python_path}")
+                # Also look for specific Python versions
+                bin_dir = abs_venv_path / "bin"
+                if bin_dir.exists():
+                    for item in bin_dir.iterdir():
+                        if item.name.startswith("python3.") and item.is_file() and os.access(item, os.X_OK):
+                            expected_paths.append(f"#!{str(item)}")
+            
+            # Direct match - this should work with the new format
+            if shebang in expected_paths:
+                # Even if there's a match, verify the path exists (handles directory renames)
+                if python_path_obj.exists() and os.access(python_path, os.X_OK):
+                    return True
+                else:
+                    # Path matches but doesn't exist - likely a directory rename
+                    print_error(f"Virtual environment interpreter not found:")
+                    print(f"   Path in shebang: {python_path}")
                     print("   This usually happens when the project directory was renamed or moved.")
                     return False
+                
+            # No direct match, try more flexible matching for compatibility
+            # with both old and new formats
+            
+            # Extract paths from expected_paths (removing #! if present)
+            resolved_expected_paths = [path[2:] if path.startswith('#!') else path for path in expected_paths]
+            
+            # Check if the path matches any expected path
+            if python_path in resolved_expected_paths:
+                # Even if there's a match, verify the path exists
+                if python_path_obj.exists() and os.access(python_path, os.X_OK):
+                    return True
+                else:
+                    # Path matches but doesn't exist - likely a directory rename
+                    print_error(f"Virtual environment interpreter not found:")
+                    print(f"   Path in shebang: {python_path}")
+                    print("   This usually happens when the project directory was renamed or moved.")
+                    return False
+                
+            # Check if the basename matches (most flexible, last resort)
+            python_basename = os.path.basename(python_path)
+            for exp_path in resolved_expected_paths:
+                if os.path.basename(exp_path) == python_basename:
+                    exp_path_obj = Path(exp_path)
+                    if exp_path_obj.exists() and os.access(exp_path, os.X_OK):
+                        # Found a match by basename that exists, update the stored paths for next time
+                        new_shebang = f"#!{exp_path}"
+                        if new_shebang not in expected_paths:
+                            expected_paths.append(new_shebang)
+                            self.ca_settings["python_paths"] = expected_paths
+                            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                            print_info(f"Updated Python interpreter paths in {self.CA_CONFIG}")
+                        return True
+            
+            # If we get here, no valid match was found
+            print_error(f"Virtual environment has incorrect path references:")
+            print(f"   Expected one of: {expected_paths}")
+            print(f"   Found:           {shebang}")
+            print("   This usually happens when the project directory was renamed or moved.")
+            return False
                     
         except (IOError, OSError) as e:
             print_error(f"Could not check virtual environment integrity: {e}")
@@ -1178,7 +1450,7 @@ class ProjectSetup:
                     # Ask if user wants to configure additional repositories
                     setup_repos = input("Would you like to configure additional package repositories? (y/N): ").strip().lower()
                     if setup_repos == "y":
-                        self._setup_repositories()
+                        self._setup_repositories(force_prompt=True)
                         print_info(f"Retrying installation of {package_name}...")
                         # Retry the command after setting up repositories
                         retry_result = execute_pip_command()
@@ -1248,36 +1520,82 @@ class ProjectSetup:
         if not self._run_pip_with_progress(cmd, description):
             raise subprocess.CalledProcessError(1, cmd)
 
+    def _check_gitignore_setup(self):
+        """Check if .pysetup.json should be added to .gitignore and prompt user if needed."""
+        # Check if user has already been prompted about gitignore
+        if not self.ca_settings.get("setup_prompted", {}).get("gitignore", False):
+            print_header("Git Configuration")
+            print(".pysetup.json contains configuration that may be specific to your environment.")
+            print("This can cause issues when working with other developers.")
+            response = input("Would you like to exclude .pysetup.json from git tracking? (Y/n): ").strip().lower() or 'y'
+            
+            # Ensure setup_prompted structure exists
+            if "setup_prompted" not in self.ca_settings:
+                self.ca_settings["setup_prompted"] = {}
+            
+            # Mark that we've prompted the user
+            self.ca_settings["setup_prompted"]["gitignore"] = True
+            
+            if response.startswith('y'):
+                # Add .pysetup.json to .gitignore
+                gitignore_path = Path(".gitignore")
+                
+                # Read existing .gitignore content or create new file
+                if gitignore_path.exists():
+                    content = gitignore_path.read_text()
+                    lines = content.splitlines()
+                    
+                    # Check if .pysetup.json is already in .gitignore
+                    if ".pysetup.json" not in lines:
+                        # Add .pysetup.json to .gitignore
+                        with open(gitignore_path, "a") as f:
+                            if not content.endswith("\n"):
+                                f.write("\n")
+                            f.write("# Local configuration\n.pysetup.json\n")
+                        print_success("Added .pysetup.json to .gitignore")
+                    else:
+                        print_info(".pysetup.json is already in .gitignore")
+                else:
+                    # Create new .gitignore file
+                    with open(gitignore_path, "w") as f:
+                        f.write("# Local configuration\n.pysetup.json\n")
+                    print_success("Created .gitignore and added .pysetup.json")
+            else:
+                print_info(".pysetup.json will be tracked by git")
+                
+            # Save the updated settings
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+    
     def _store_python_interpreter_path(self):
         """Detect and store the actual Python interpreter path in the virtual environment."""
-        venv_path = Path(VENV)
+        venv_path = Path(VENV).resolve()  # Get absolute path to venv
         python_paths = set()  # Use a set to avoid duplicates
         
         # Check for common Python interpreter names
         for python_name in ["python", "python3"]:
             python_path = venv_path / "bin" / python_name
             if python_path.exists():
-                # Get the full absolute path
-                abs_path = str(python_path.resolve())
-                if abs_path not in python_paths:
-                    python_paths.add(abs_path)
-                    print_info(f"Detected Python interpreter: {abs_path}")
+                # Store the absolute path with shebang prefix as it would appear in scripts
+                venv_python_path = f"#!{str(python_path.absolute())}"
+                if venv_python_path not in python_paths:
+                    python_paths.add(venv_python_path)
+                    print_info(f"Detected Python interpreter: {venv_python_path}")
         
         # Also try to find the specific Python version (e.g., python3.10, python3.11)
         bin_dir = venv_path / "bin"
         if bin_dir.exists():
             for item in bin_dir.iterdir():
                 if item.name.startswith("python3.") and item.is_file() and os.access(item, os.X_OK):
-                    abs_path = str(item.resolve())
-                    if abs_path not in python_paths:
-                        python_paths.add(abs_path)
-                        print_info(f"Detected versioned Python interpreter: {abs_path}")
+                    venv_python_path = f"#!{str(item.absolute())}"
+                    if venv_python_path not in python_paths:
+                        python_paths.add(venv_python_path)
+                        print_info(f"Detected versioned Python interpreter: {venv_python_path}")
         
         if python_paths:
-            # Update settings with the detected paths (convert set back to list)
-            self.ca_settings["python_paths"] = list(python_paths)
+            # Update settings with the detected paths (convert set back to list and sort alphabetically)
+            self.ca_settings["python_paths"] = sorted(list(python_paths))
             
-            # Save to setup.json
+            # Save to .pysetup.json
             self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
             print_success(f"Stored Python interpreter paths in {self.CA_CONFIG}")
         else:
@@ -1304,7 +1622,234 @@ break-system-packages = true
 
         print_success("Created pip.conf with break-system-packages enabled")
             
+    def _check_and_fetch_setup_sh(self, force_update=False) -> bool:
+        """Check for and fetch the latest pysetup.sh from repository.
+        
+        Args:
+            force_update: If True, update pysetup.sh regardless of content comparison
+            
+        Returns:
+            bool: True if pysetup.sh was updated, False otherwise
+        """
+        # Get the user's preference for updating pysetup.sh
+        update_preference = self._get_setup_sh_update_preference()
+        
+        if update_preference == "no":
+            print_info("Skipping pysetup.sh update check based on user preference.")
+            return False
+            
+        if update_preference == "interactive":
+            response = input("\nCheck for latest pysetup.sh from repository? [y/N]: ").strip().lower()
+            if response not in ('y', 'yes'):
+                return False
+        
+        print_info("Checking for latest pysetup.sh...")
+        
+        # URL for the latest pysetup.sh
+        setup_sh_url = "https://raw.githubusercontent.com/geekcafe/py-setup-tool/main/pysetup.sh"
+        
+        try:
+            # Fetch the latest pysetup.sh content with retry logic
+            latest_setup_sh_bytes = fetch_url_with_retry(setup_sh_url)
+            latest_setup_sh = latest_setup_sh_bytes.decode('utf-8')
+                
+            # Check if pysetup.sh exists locally
+            setup_sh_path = Path("pysetup.sh")
+            if setup_sh_path.exists():
+                # Compare with current pysetup.sh
+                with open(setup_sh_path, 'r', encoding='utf-8') as f:
+                    current_setup_sh = f.read()
+                    
+                if current_setup_sh == latest_setup_sh and not force_update:
+                    print_info("pysetup.sh is already up to date.")
+                    return False
+                elif force_update:
+                    print_info("Force updating pysetup.sh regardless of content comparison.")
+                else:
+                    # Debug info to help troubleshoot update issues
+                    print_info("Detected differences between local and remote pysetup.sh.")
+                    
+                    # Calculate content length difference
+                    local_len = len(current_setup_sh)
+                    remote_len = len(latest_setup_sh)
+                    print_info(f"Local file size: {local_len} bytes, Remote file size: {remote_len} bytes")
+                    
+                    # Show first difference position
+                    for i, (local_char, remote_char) in enumerate(zip(current_setup_sh, latest_setup_sh)):
+                        if local_char != remote_char:
+                            print_info(f"First difference at position {i}: Local '{local_char}' vs Remote '{remote_char}'")
+                            break
+                    
+                # Backup the current pysetup.sh
+                backup_path = Path("pysetup.sh.bak")
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    f.write(current_setup_sh)
+                print_info(f"Current pysetup.sh backed up to {backup_path}")
+            
+            # Write the latest pysetup.sh
+            with open(setup_sh_path, 'w', encoding='utf-8') as f:
+                f.write(latest_setup_sh)
+                
+            # Make it executable
+            import os
+            os.chmod(setup_sh_path, 0o755)
+            
+            print_success("pysetup.sh has been updated to the latest version.")
+            print("\n⚠️  Please restart the setup process by running:\n    ./pysetup.sh")
+            return True
+            
+        except Exception as e:
+            print_error(f"Failed to fetch or update pysetup.sh: {e}")
+            return False
+    
+    def _get_setup_sh_update_preference(self, force_prompt=False) -> str:
+        """Get the user's preference for pulling the latest pysetup.sh from repository.
+        
+        Args:
+            force_prompt: If True, prompt for preference even if already configured.
+                         If False, use existing preference without prompting.
+                         
+        Returns:
+            str: The pysetup.sh update preference ('yes', 'no', or 'interactive')
+        """
+        # Check if pysetup.sh update preference is already configured
+        update_preference = self.ca_settings.get("setup_sh_update_preference")
+        
+        if update_preference and not force_prompt:
+            # Use existing preference without prompting
+            print_info(f"Using stored pysetup.sh update preference: {update_preference}")
+            return update_preference
+        
+        # Prompt for pysetup.sh update preference
+        print("\n🔄 pysetup.sh Update Preference")
+        print("=" * 45)
+        print("Choose how to handle pysetup.sh updates:")
+        print("  • yes        : Always check for the latest pysetup.sh from repository")
+        print("  • no         : Never check for updates to pysetup.sh")
+        print("  • interactive: Ask each time (default)")
+        print()
+        
+        while True:
+            response = input("pysetup.sh update preference [interactive/yes/no]: ").strip().lower()
+            if response in ('', 'interactive'):
+                update_preference = 'interactive'
+                break
+            elif response in ('yes', 'y'):
+                update_preference = 'yes'
+                break
+            elif response in ('no', 'n'):
+                update_preference = 'no'
+                break
+            else:
+                print_error("Invalid choice. Please enter 'interactive', 'yes', or 'no'.")
+        
+        # Save the preference
+        self.ca_settings["setup_sh_update_preference"] = update_preference
+        self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+        print_success(f"Saved pysetup.sh update preference: {update_preference}")
+        
+        return update_preference
+    
+    def _get_repo_update_preference(self, force_prompt=False) -> str:
+        """Get the user's preference for pulling the latest pysetup.py from repository.
+        
+        Args:
+            force_prompt: If True, prompt for preference even if already configured.
+                         If False, use existing preference without prompting.
+                         
+        Returns:
+            str: The repository update preference ('yes', 'no', or 'interactive')
+        """
+        # Check if repository update preference is already configured
+        update_preference = self.ca_settings.get("repo_update_preference")
+        
+        if update_preference and not force_prompt:
+            # Use existing preference without prompting
+            print_info(f"Using stored repository update preference: {update_preference}")
+            return update_preference
+        
+        # Prompt for repository update preference
+        print("\n🔄 Repository Update Preference")
+        print("=" * 45)
+        print("Choose how to handle repository updates:")
+        print("  • yes        : Always pull the latest pysetup.py from repository")
+        print("  • no         : Never pull the latest pysetup.py")
+        print("  • interactive: Ask each time (default)")
+        print()
+        
+        while True:
+            response = input("Repository update preference [interactive/yes/no]: ").strip().lower()
+            if response in ('', 'interactive'):
+                update_preference = 'interactive'
+                break
+            elif response in ('yes', 'y'):
+                update_preference = 'yes'
+                break
+            elif response in ('no', 'n'):
+                update_preference = 'no'
+                break
+            else:
+                print_error("Invalid choice. Please enter 'interactive', 'yes', or 'no'.")
+        
+        # Save the preference
+        self.ca_settings["repo_update_preference"] = update_preference
+        self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+        print_success(f"Saved repository update preference: {update_preference}")
+        
+        return update_preference
+    
+    def _get_env_action_preference(self, force_prompt=False) -> str:
+        """Get the user's preference for environment action (clean, reuse, upgrade).
+        
+        Args:
+            force_prompt: If True, prompt for preference even if already configured.
+                         If False, use existing preference without prompting.
+                         
+        Returns:
+            str: The environment action preference ('clean', 'reuse', or 'upgrade')
+        """
+        # Check if environment action preference is already configured
+        env_preference = self.ca_settings.get("env_action_preference")
+        
+        if env_preference and not force_prompt:
+            # Use existing preference without prompting
+            print_info(f"Using stored environment action preference: {env_preference}")
+            return env_preference
+        
+        # Prompt for environment action preference
+        print("\n🔧 Environment Action Preference")
+        print("=" * 45)
+        print("Choose how to handle the virtual environment:")
+        print("  • clean  : Remove and recreate the environment if it exists")
+        print("  • reuse  : Keep existing environment and only update if needed")
+        print("  • upgrade: Keep environment but upgrade all packages")
+        print()
+        
+        while True:
+            response = input("Environment action preference [reuse/clean/upgrade]: ").strip().lower()
+            if response in ('', 'reuse'):
+                env_preference = 'reuse'
+                break
+            elif response in ('clean'):
+                env_preference = 'clean'
+                break
+            elif response in ('upgrade'):
+                env_preference = 'upgrade'
+                break
+            else:
+                print_error("Invalid choice. Please enter 'reuse', 'clean', or 'upgrade'.")
+        
+        # Save the preference
+        self.ca_settings["env_action_preference"] = env_preference
+        self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+        print_success(f"Saved environment action preference: {env_preference}")
+        
+        return env_preference
+        
     def _setup_pip(self):
+        # Get environment action preference
+        env_preference = self._get_env_action_preference()
+        
         # Check for virtual environment path integrity issues
         if not self._check_venv_path_integrity():
             if not self._handle_corrupted_venv():
@@ -1312,10 +1857,16 @@ break-system-packages = true
 
         print(f"🐍 Setting up Python virtual environment at {VENV}...")
         try:
-            # Only create venv if it doesn't exist
-            if not Path(VENV).exists():
+            # Handle environment based on preference
+            if env_preference == 'clean' and Path(VENV).exists():
+                import shutil
+                print(f"🗑️  Removing existing virtual environment at {VENV}...")
+                shutil.rmtree(VENV)
+                print_success(f"Removed {VENV}")
                 subprocess.run(["python3", "-m", "venv", VENV], check=True)
-                
+                self._store_python_interpreter_path()
+            elif not Path(VENV).exists():
+                subprocess.run(["python3", "-m", "venv", VENV], check=True)
                 # After creating the venv, detect and store the actual Python path
                 self._store_python_interpreter_path()
             else:
@@ -1337,15 +1888,21 @@ break-system-packages = true
 
             # Install from requirements files with progress indication
             for req_file in self.get_list_of_requirements_files():
+                # Add --upgrade flag if preference is 'upgrade'
+                upgrade_flag = "--upgrade" if env_preference == "upgrade" else ""
+                pip_args = ["install", "-r", req_file]
+                if upgrade_flag:
+                    pip_args.append(upgrade_flag)
+                    
                 self._run_pip_command_with_progress(
-                    ["install", "-r", req_file, "--upgrade"],
-                    f"Installing packages from {req_file}"
+                    pip_args,
+                    f"Installing packages from {req_file}{' (with upgrade)' if upgrade_flag else ''}"
                 )
 
             # Install local package in editable mode with progress indication
             self._run_pip_command_with_progress(
-                ["install", "-e", "."],
-                "Installing local package in editable mode"
+                ["install", "-e", "."] + (["--upgrade"] if env_preference == "upgrade" else []),
+                f"Installing local package in editable mode{' (with upgrade)' if env_preference == 'upgrade' else ''}"
             )
 
         except subprocess.CalledProcessError as e:
@@ -1455,9 +2012,49 @@ break-system-packages = true
         return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 
 
+def fetch_url_with_retry(url, max_retries=3, retry_delay=2):
+    """Fetch URL content with retry logic."""
+    import urllib.request
+    import socket
+    import time
+    
+    # Add cache-busting query parameter with current timestamp to avoid caching issues
+    cache_buster = int(time.time())
+    url_with_cache_buster = f"{url}?_cb={cache_buster}"
+    
+    for attempt in range(max_retries):
+        try:
+            # Create a request with headers that prevent caching
+            request = urllib.request.Request(
+                url_with_cache_buster,
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.read()
+        except (urllib.error.URLError, socket.timeout) as e:
+            if attempt < max_retries - 1:
+                print_warning(f"Network error: {e}. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                raise Exception(f"Failed to fetch {url} after {max_retries} attempts: {e}")
+
+
 def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Python project setup tool")
+    parser.add_argument("--force-update-sh", action="store_true", help="Force update pysetup.sh regardless of content comparison")
+    parser.add_argument("--ci", action="store_true", help="Run in CI mode (non-interactive)")
+    
+    args = parser.parse_args()
+    
     ps = ProjectSetup()
-    ps.setup()
+    ps.setup(force_update_sh=args.force_update_sh, ci_mode=args.ci)
 
 
 if __name__ == "__main__":
