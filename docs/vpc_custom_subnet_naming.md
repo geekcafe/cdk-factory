@@ -85,13 +85,13 @@ This configuration will create 2 NAT Gateways, one in each availability zone.
 When using custom subnet names, the AWS resources will be named according to the pattern:
 
 ```
-{deployment-name}/Deploy/{vpc-name}/{subnet-name}{index}
+{deployment-name}/<stage-name>/{vpc-name}/{vpc-name}/{subnet-name}{index}
 ```
 
 For example, with the subnet configuration above, you might see resources named:
-- `my-app-dev-pipeline/Deploy/my-app-dev-vpc/web-tier1`
-- `my-app-dev-pipeline/Deploy/my-app-dev-vpc/app-tier1`
-- `my-app-dev-pipeline/Deploy/my-app-dev-vpc/data-tier1`
+- `my-app-dev-pipeline/Deploy/my-app-dev-vpc/my-app-dev-vpc/custom-subnet-vpc/web-tier1`
+- `my-app-dev-pipeline/Deploy/my-app-dev-vpc/my-app-dev-vpc/custom-subnet-vpc/app-tier1`
+- `my-app-dev-pipeline/Deploy/my-app-dev-vpc/my-app-dev-vpc/custom-subnet-vpc/data-tier1`
 
 
 These naming patterns make it easier to identify the purpose of each resource in your AWS Console and CloudFormation templates.
