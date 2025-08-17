@@ -57,19 +57,18 @@ Here's an example of a VPC configuration with custom subnet names:
 
 This configuration will create subnets with names like "web-tier1", "app-tier1", and "data-tier1" instead of the default "publicSubnet1", "privateSubnet1", and "isolatedSubnet1".
 
-### Custom NAT Gateway Names
+### NAT Gateway Configuration
 
-Here's an example of a VPC configuration with custom NAT Gateway names:
+You can configure the number of NAT Gateways to be created:
 
 ```json
 {
   "vpc": {
-    "name": "custom-natgw-vpc",
+    "name": "natgw-vpc",
     "cidr": "10.0.0.0/16",
     "max_azs": 2,
     "public_subnets": true,
     "private_subnets": true,
-    "nat_gateway_name": "egress-gateway",
     "nat_gateways": {
       "count": 2
     }
@@ -77,7 +76,7 @@ Here's an example of a VPC configuration with custom NAT Gateway names:
 }
 ```
 
-This configuration will create NAT Gateways with the name "egress-gateway" instead of the default "NatGateway".
+This configuration will create 2 NAT Gateways, one in each availability zone.
 
 ## Impact on Resource Naming
 
@@ -94,16 +93,5 @@ For example, with the subnet configuration above, you might see resources named:
 - `my-app-dev-pipeline/Deploy/my-app-dev-vpc/app-tier1`
 - `my-app-dev-pipeline/Deploy/my-app-dev-vpc/data-tier1`
 
-### NAT Gateway Naming
-
-When using custom NAT Gateway names, the AWS resources will be named according to the pattern:
-
-```
-{nat-gateway-name}{index}
-```
-
-For example, with the NAT Gateway configuration above, you might see resources named:
-- `egress-gateway1`
-- `egress-gateway2`
 
 These naming patterns make it easier to identify the purpose of each resource in your AWS Console and CloudFormation templates.

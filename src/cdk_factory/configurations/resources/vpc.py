@@ -79,11 +79,6 @@ class VpcConfig(BaseConfig):
         return self.get("nat_gateways", {"count": 1})
 
     @property
-    def nat_gateway_name(self) -> str:
-        """Custom name for NAT gateways"""
-        return self.get("nat_gateway_name", "nat-egress-gateway")
-
-    @property
     def enable_s3_endpoint(self) -> bool:
         """Whether to enable S3 gateway endpoint"""
         return self.get("enable_s3_endpoint", True)

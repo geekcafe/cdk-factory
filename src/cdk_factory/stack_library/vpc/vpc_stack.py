@@ -73,10 +73,6 @@ class VpcStack(IStack, SsmParameterMixin):
             cidr=self.vpc_config.cidr,
             max_azs=self.vpc_config.max_azs,
             nat_gateways=nat_gateway_count,
-            nat_gateway_provider=ec2.NatProvider.gateway(
-                # Use custom NAT gateway name if specified
-                gateway_name_tag=self.vpc_config.nat_gateway_name
-            ),
             subnet_configuration=subnet_configuration,
             enable_dns_hostnames=self.vpc_config.enable_dns_hostnames,
             enable_dns_support=self.vpc_config.enable_dns_support,
