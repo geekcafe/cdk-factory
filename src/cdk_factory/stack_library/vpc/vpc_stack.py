@@ -73,6 +73,10 @@ class VpcStack(IStack, SsmParameterMixin):
             cidr=self.vpc_config.cidr,
             max_azs=self.vpc_config.max_azs,
             nat_gateways=nat_gateway_count,
+            nat_gateway_provider=ec2.NatProvider.gateway(
+                # Use custom NAT gateway name if specified
+                gateway_name_tag=self.vpc_config.nat_gateway_name
+            ),
             subnet_configuration=subnet_configuration,
             enable_dns_hostnames=self.vpc_config.enable_dns_hostnames,
             enable_dns_support=self.vpc_config.enable_dns_support,
@@ -101,7 +105,7 @@ class VpcStack(IStack, SsmParameterMixin):
         if self.vpc_config.public_subnets:
             subnet_configs.append(
                 ec2.SubnetConfiguration(
-                    name="public",
+                    name=self.vpc_config.public_subnet_name,
                     subnet_type=ec2.SubnetType.PUBLIC,
                     cidr_mask=self.vpc_config.public_subnet_mask
                 )
@@ -111,7 +115,7 @@ class VpcStack(IStack, SsmParameterMixin):
         if self.vpc_config.private_subnets:
             subnet_configs.append(
                 ec2.SubnetConfiguration(
-                    name="private",
+                    name=self.vpc_config.private_subnet_name,
                     subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
                     cidr_mask=self.vpc_config.private_subnet_mask
                 )
@@ -121,7 +125,7 @@ class VpcStack(IStack, SsmParameterMixin):
         if self.vpc_config.isolated_subnets:
             subnet_configs.append(
                 ec2.SubnetConfiguration(
-                    name="isolated",
+                    name=self.vpc_config.isolated_subnet_name,
                     subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
                     cidr_mask=self.vpc_config.isolated_subnet_mask
                 )

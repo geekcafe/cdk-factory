@@ -1,0 +1,99 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{CDK_CONFIG_PATH}}",
+        "env_var_name": "CDK_CONFIG_PATH",
+        "cdk_parameter_name": "CdkConfigPath"
+      },
+      {
+        "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+        "value": "../../samples/vpc_custom_natgw/commands/cdk_synth.sh",
+        "cdk_parameter_name": "CdkSynthCommandFile"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT_NUMBER",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+        "env_var_name": "DEVOPS_AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_REGION}}",
+        "env_var_name": "DEVOPS_REGION",
+        "cdk_parameter_name": "AccountRegion"
+      },
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
+      }
+    ]
+  },
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "VPC with custom NAT Gateway names",
+    "devops": {
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}",
+      "commands": [
+        {
+          "name": "cdk_synth",
+          "commands": [],
+          "file": "{{CDK_SYNTH_COMMAND_FILE}}"
+        }
+      ]
+    },
+    "stacks": [
+      {
+        "name": "vpc-{{ENVIRONMENT}}",
+        "module": "vpc_library_module",
+        "enabled": true,
+        "vpc": {
+          "name": "custom-natgw-vpc",
+          "cidr": "10.0.0.0/16",
+          "max_azs": 2,
+          "public_subnets": true,
+          "private_subnets": true,
+          "isolated_subnets": false,
+          "public_subnet_name": "web-tier",
+          "private_subnet_name": "app-tier",
+          "nat_gateway_name": "egress-gateway",
+          "nat_gateways": {
+            "count": 2
+          },
+          "public_subnet_mask": 24,
+          "private_subnet_mask": 24,
+          "enable_dns_hostnames": true,
+          "enable_dns_support": true,
+          "enable_s3_endpoint": true,
+          "tags": {
+            "Environment": "{{ENVIRONMENT}}",
+            "Project": "CustomNatGatewayDemo"
+          }
+        }
+      }
+    ],
+    "deployments": [
+      {
+        "name": "dev",
+        "environment": "dev",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": [
+          "vpc-{{ENVIRONMENT}}"
+        ],
+        "enabled": true
+      }
+    ]
+  }
+}

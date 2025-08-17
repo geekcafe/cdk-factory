@@ -79,6 +79,11 @@ class VpcConfig(BaseConfig):
         return self.get("nat_gateways", {"count": 1})
 
     @property
+    def nat_gateway_name(self) -> str:
+        """Custom name for NAT gateways"""
+        return self.get("nat_gateway_name", "nat-egress-gateway")
+
+    @property
     def enable_s3_endpoint(self) -> bool:
         """Whether to enable S3 gateway endpoint"""
         return self.get("enable_s3_endpoint", True)
@@ -102,8 +107,23 @@ class VpcConfig(BaseConfig):
     def tags(self) -> Dict[str, str]:
         """Tags to apply to the VPC"""
         return self.get("tags", {})
-        
+
     @property
     def ssm_parameters(self) -> Dict[str, str]:
         """SSM parameter paths for VPC resources"""
         return self.get("ssm_parameters", {})
+
+    @property
+    def public_subnet_name(self) -> str:
+        """Custom name for public subnets"""
+        return self.get("public_subnet_name", "public")
+
+    @property
+    def private_subnet_name(self) -> str:
+        """Custom name for private subnets"""
+        return self.get("private_subnet_name", "private")
+
+    @property
+    def isolated_subnet_name(self) -> str:
+        """Custom name for isolated subnets"""
+        return self.get("isolated_subnet_name", "isolated")
