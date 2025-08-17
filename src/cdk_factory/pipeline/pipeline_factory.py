@@ -293,8 +293,16 @@ class PipelineFactoryStack(cdk.Stack):
                     "stack_name": stack_config.name,
                 }
                 cf_stacks.append(stack)
+            else:
+                print(
+                    f"\t\t ⚠️ Stack {stack_config.name} is disabled in stage: {stage_config.name}"
+                )
 
-        # TODO: add dependencies
+        if len(cf_stacks) == 0:
+            print(f"\t\t ⚠️ No stacks added to stage: {stage_config.name}")
+            print(f"\t\t ⚠️ Internal Stack Count: {len(stage_config.stacks)}")
+
+        # add dependencies
         for cf_stack in cf_stacks:
             if cf_stack["stack_config"].dependencies:
                 for dependency in cf_stack["stack_config"].dependencies:
