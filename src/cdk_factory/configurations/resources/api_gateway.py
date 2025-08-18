@@ -18,7 +18,7 @@ class ApiGatewayConfig:
 
     @property
     def api_gateway_name(self) -> str | None:
-        return self.__config.get("api_gateway_name")
+        return self.__config.get("api_gateway_name") or self.__config.get("name")
 
     @property
     def description(self) -> str | None:
@@ -123,3 +123,18 @@ class ApiGatewayConfig:
     @property
     def ssl_cert_arn(self) -> str | None:
         return self.__config.get("ssl_cert_arn")
+        
+    @property
+    def resources(self) -> list[dict]:
+        """List of resource definitions for API Gateway"""
+        return self.__config.get("resources", [])
+        
+    @property
+    def api_keys(self) -> list[dict]:
+        """List of API key definitions"""
+        return self.__config.get("api_keys", [])
+        
+    @property
+    def usage_plans(self) -> list[dict]:
+        """List of usage plan definitions"""
+        return self.__config.get("usage_plans", [])
