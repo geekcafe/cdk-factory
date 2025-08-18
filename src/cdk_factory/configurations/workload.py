@@ -149,7 +149,7 @@ class WorkloadConfig:
 
     @property
     def dictionary(self) -> dict:
-        """Returns the dictionay version of this object"""
+        """Returns the dictionary version of this object"""
         if not self.__workload:
             raise ValueError("Workload is not defined in the configuration.")
         if not isinstance(self.__workload, dict):
@@ -247,3 +247,13 @@ class WorkloadConfig:
         Sets the cdk app file
         """
         self.__output_directory = value
+
+    @property
+    def vpc_id(self) -> str | None:
+        """Returns the VPC ID for the Security Group"""
+        return self.dictionary.get("vpc_id")
+
+    @vpc_id.setter
+    def vpc_id(self, value: str):
+        """Sets the VPC ID for the Security Group"""
+        self.dictionary["vpc_id"] = value
