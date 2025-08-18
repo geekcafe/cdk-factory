@@ -90,24 +90,24 @@ class RdsStack(IStack):
     def _create_db_instance(self, db_name: str) -> rds.DatabaseInstance:
         """Create a new RDS instance"""
         # Configure subnet selection
-        subnet_group_name = self.rds_config.subnet_group_name
-        subnets = ec2.SubnetSelection(subnet_group_name=subnet_group_name)
+        # Use private subnets for database placement
+        subnets = ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS)
         
         # Configure engine
         engine_version = None
         if self.rds_config.engine.lower() == "postgres":
             engine_version = rds.PostgresEngineVersion.of(
-                major_version=self.rds_config.engine_version
+                self.rds_config.engine_version, self.rds_config.engine_version
             )
             engine = rds.DatabaseInstanceEngine.postgres(version=engine_version)
         elif self.rds_config.engine.lower() == "mysql":
             engine_version = rds.MysqlEngineVersion.of(
-                major_version=self.rds_config.engine_version
+                self.rds_config.engine_version, self.rds_config.engine_version
             )
             engine = rds.DatabaseInstanceEngine.mysql(version=engine_version)
         elif self.rds_config.engine.lower() == "mariadb":
             engine_version = rds.MariaDbEngineVersion.of(
-                major_version=self.rds_config.engine_version
+                self.rds_config.engine_version, self.rds_config.engine_version
             )
             engine = rds.DatabaseInstanceEngine.mariadb(version=engine_version)
         else:
