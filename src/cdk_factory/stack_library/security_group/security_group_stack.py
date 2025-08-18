@@ -39,6 +39,7 @@ class SecurityGroupStack(IStack):
         self.security_group = None
         # Flag to determine if we're in test mode
         self._test_mode = False
+        self._vpc = None
 
     def build(
         self,
@@ -84,13 +85,17 @@ class SecurityGroupStack(IStack):
 
     def _get_vpc(self) -> ec2.IVpc:
         """Get the VPC for the Security Group"""
+        if self._vpc:
+            return self._vpc
         if self.sg_config.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
+            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
         elif self.workload.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
+            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
 
         else:
             raise ValueError("VPC ID is not defined in the configuration.")
+
+        return self._vpc
 
     def _create_security_group(self, sg_name: str) -> ec2.SecurityGroup:
         """Create a new security group"""

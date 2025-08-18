@@ -44,6 +44,7 @@ class LoadBalancerStack(IStack):
         self.load_balancer = None
         self.target_groups = {}
         self.listeners = {}
+        self._vpc = None
 
     def build(
         self,
@@ -136,11 +137,13 @@ class LoadBalancerStack(IStack):
 
     def _get_vpc(self) -> ec2.IVpc:
         """Get the VPC for the Load Balancer"""
-        vpc_id = self.lb_config.vpc_id
-        if vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=vpc_id)
-        if self.workload.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
+        if self._vpc:
+            return self._vpc
+
+        elif self.lb_config.vpc_id:
+            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.lb_config.vpc_id)
+        elif self.workload.vpc_id:
+            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
         else:
             # Use default VPC if not provided
             raise ValueError(
@@ -148,6 +151,8 @@ class LoadBalancerStack(IStack):
                 "You can provide it a the load_balancer.vpc_id in the configuration "
                 "or a top level workload.vpc_id in the workload configuration."
             )
+
+        return self._vpc
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the Load Balancer"""
