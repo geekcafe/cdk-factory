@@ -34,6 +34,7 @@ class WorkloadFactory:
         outdir: str | None = None,
         paths: List[str] | None = None,
         cdk_app_file: str | None = None,
+        add_env_context: bool = True,
     ):
         self.cdk_config = CdkConfig(
             config_path=config_path,
@@ -47,6 +48,7 @@ class WorkloadFactory:
         self.app = app
         self.outdir = outdir
         self.workload.output_directory = outdir
+        self.add_env_context = add_env_context
 
     def synth(self) -> CloudAssembly:
         """Build the workload"""
@@ -116,7 +118,12 @@ class WorkloadFactory:
                     kwargs = stack.kwargs
                 print(f"building stack: {stack.name}")
                 module = factory.load_module(
-                    module_name=stack.module, scope=self.app, id=stack.name, **kwargs
+                    module_name=stack.module, 
+                    scope=self.app, 
+                    id=stack.name, 
+                    deployment=deployment,
+                    add_env_context=self.add_env_context,
+                    **kwargs
                 )
                 module.build(
                     stack_config=stack, deployment=deployment, workload=self.workload
@@ -145,15 +152,25 @@ class WorkloadFactory:
                 "######################################################################"
             )
 
-        factory = PipelineFactoryStack(
-            scope=self.app,
-            id=deployment.name,
-            deployment=deployment,
-            outdir=self.outdir,
-            workload=self.workload,
-            cdk_config=self.cdk_config,
-            description=deployment.description,
-        )
+        # Create kwargs for PipelineFactoryStack
+        pipeline_kwargs = {
+            "scope": self.app,
+            "id": deployment.name,
+            "deployment": deployment,
+            "outdir": self.outdir,
+            "workload": self.workload,
+            "cdk_config": self.cdk_config,
+            "description": deployment.description,
+        }
+        
+        # Add environment if enabled
+        if self.add_env_context:
+            pipeline_kwargs["env"] = aws_cdk.Environment(
+                account=deployment.account,
+                region=deployment.region
+            )
+            
+        factory = PipelineFactoryStack(**pipeline_kwargs)
 
         factory.build()
 
