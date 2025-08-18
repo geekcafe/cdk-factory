@@ -88,8 +88,10 @@ class SecurityGroupStack(IStack):
             return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
         elif hasattr(self.workload, "vpc") and self.workload.vpc:
             return self.workload.vpc
-        elif self.config.get("ssm_imports", {}).get("vpc_id"):
-            ssm_import = self.config.get("ssm_imports", {}).get("vpc_id")
+        elif self.stack_config.dictionary.get("ssm_imports", {}).get("vpc_id"):
+            ssm_import = self.stack_config.dictionary.get("ssm_imports", {}).get(
+                "vpc_id"
+            )
             id = ssm_import.replace("/", "-")
             vpc_id = self.import_ssm_parameter(
                 scope=self, id=id, parameter_name=ssm_import
