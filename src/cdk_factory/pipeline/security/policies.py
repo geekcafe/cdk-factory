@@ -116,4 +116,15 @@ class CodeBuildPolicy:
         )
         code_build_policy.append(assume_codeartifact_role_policy)
 
+        # add ec2 policy
+        policy = iam.PolicyStatement(
+            sid="EC2Policy",
+            effect=iam.Effect.ALLOW,
+            actions=["ec2:*"],
+            resources=["*"],
+        )
+        code_build_policy.append(policy)
+
+        # TODO: allow users to add their own policies
+
         return code_build_policy
