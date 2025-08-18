@@ -17,8 +17,8 @@ from constructs import Construct
 
 
 class WebAppStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
-        super().__init__(scope, construct_id, **kwargs)
+    def __init__(self, scope: Construct, id: str, **kwargs) -> None:
+        super().__init__(scope, id, **kwargs)
 
         # ---- Context / parameters ----
         ctx = self.node.try_get_context

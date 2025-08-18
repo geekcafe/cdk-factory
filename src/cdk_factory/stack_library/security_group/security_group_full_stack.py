@@ -32,8 +32,8 @@ class SecurityGroupsStack(IStack):
         # Flag to determine if we're in test mode
         self._test_mode = False
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
-        super().__init__(scope, construct_id, **kwargs)
+    def __init__(self, scope: Construct, id: str, **kwargs) -> None:
+        super().__init__(scope, id, **kwargs)
 
     def build(
         self,
@@ -56,7 +56,7 @@ class SecurityGroupsStack(IStack):
         self.workload = workload
 
         self.sg_config = SecurityGroupFullStackConfig(
-            stack_config=stack_config.dictionary.get("security_group", {}),
+            config=stack_config.dictionary.get("security_group", {}),
             deployment=deployment,
         )
 
@@ -196,33 +196,33 @@ class SecurityGroupsStack(IStack):
         # =========================================================
         # Outputs (exports)
         # =========================================================
-        CfnOutput(
+        cdk.CfnOutput(
             self,
             "WebFleetAlbSecurityGroupOut",
             value=alb_sg.ref,
             description="Web Fleet Application Load Balancer Security Group",
-            export_name=f"{Aws.STACK_NAME}-WebFleetAlbSecurityGroup",
+            export_name=f"{self.deployment.environment}-{self.workload.name}-WebFleetAlbSecurityGroup",
         )
-        CfnOutput(
+        cdk.CfnOutput(
             self,
             "WebFleetInstancesSecurityGroupOut",
             value=web_fleet_sg.ref,
             description="Web Fleet Instances Security Group",
-            export_name=f"{Aws.STACK_NAME}-WebFleetInstancesSecurityGroup",
+            export_name=f"{self.deployment.environment}-{self.workload.name}-WebFleetInstancesSecurityGroup",
         )
-        CfnOutput(
+        cdk.CfnOutput(
             self,
             "MySqlDbSecurityGroupOut",
             value=mysql_sg.ref,
             description="MySql Security Group",
-            export_name=f"{Aws.STACK_NAME}-MySqlDbSecurityGroup",
+            export_name=f"{self.deployment.environment}-{self.workload.name}-MySqlDbSecurityGroup",
         )
-        CfnOutput(
+        cdk.CfnOutput(
             self,
             "WebMonitoringSecurityGroupOut",
             value=monitoring_sg.ref,
             description="Web Fleet Application Load Balancer Security Group",
-            export_name=f"{Aws.STACK_NAME}-WebMonitoringSecurityGroup",
+            export_name=f"{self.deployment.environment}-{self.workload.name}-WebMonitoringSecurityGroup",
         )
 
     def _get_vpc(self) -> ec2.IVpc:
