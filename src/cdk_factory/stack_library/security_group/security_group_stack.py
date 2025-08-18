@@ -317,6 +317,10 @@ class SecurityGroupStack(IStack):
             # In test mode, always use TCP protocol to avoid mocking issues
             return ec2.Protocol.TCP
 
+        # Handle special case for all protocols
+        if protocol_str == "-1" or protocol_str.lower() == "all":
+            return ec2.Protocol.ALL
+
         protocol_str = protocol_str.lower()
         # Protocol is a class with static properties in CDK
         if hasattr(ec2.Protocol, protocol_str.upper()):
