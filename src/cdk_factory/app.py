@@ -23,6 +23,7 @@ class CdkAppFactory:
         runtime_directory: str | None = None,
         config_path: str | None = None,
         outdir: str | None = None,
+        add_env_context: bool = True,
     ) -> None:
 
         self.args = args or CommandlineArgs()
@@ -30,6 +31,7 @@ class CdkAppFactory:
         self.app: aws_cdk.App = aws_cdk.App()
         self.runtime_directory = runtime_directory or str(Path(__file__).parent)
         self.config_path: str | None = config_path
+        self.add_env_context = add_env_context
 
     def synth(
         self,
@@ -70,6 +72,7 @@ class CdkAppFactory:
             paths=paths,
             runtime_directory=self.runtime_directory,
             outdir=self.outdir,
+            add_env_context=self.add_env_context,
         )
 
         assembly: CloudAssembly = workload.synth()
