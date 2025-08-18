@@ -30,7 +30,10 @@ class RdsConfig:
     @property
     def engine_version(self) -> str:
         """Database engine version"""
-        return self.__config.get("engine_version", "16")
+        engine_version = self.__config.get("engine_version")
+        if not engine_version:
+            raise ValueError("No engine version found")
+        return engine_version
 
     @property
     def instance_class(self) -> str:
@@ -56,7 +59,8 @@ class RdsConfig:
     @property
     def allocated_storage(self) -> int:
         """Allocated storage in GB"""
-        return self.__config.get("allocated_storage", 20)
+        # Ensure we return an integer
+        return int(self.__config.get("allocated_storage", 20))
 
     @property
     def storage_encrypted(self) -> bool:
