@@ -43,6 +43,7 @@ class PipelineFactoryStack(cdk.Stack):
         workload: WorkloadConfig,
         cdk_config: CdkConfig,
         outdir: str | None = None,
+        add_env_context: bool = True,
         **kwargs,
     ):
 
@@ -53,6 +54,7 @@ class PipelineFactoryStack(cdk.Stack):
         devops_region = self.workload.devops.region
         self.outdir: str | None = outdir
         self.kwargs = kwargs
+        self.add_env_context = add_env_context
 
         if not devops_account:
             raise ValueError("DevOps Account is required")

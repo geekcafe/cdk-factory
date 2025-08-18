@@ -118,12 +118,12 @@ class WorkloadFactory:
                     kwargs = stack.kwargs
                 print(f"building stack: {stack.name}")
                 module = factory.load_module(
-                    module_name=stack.module, 
-                    scope=self.app, 
-                    id=stack.name, 
+                    module_name=stack.module,
+                    scope=self.app,
+                    id=stack.name,
                     deployment=deployment,
                     add_env_context=self.add_env_context,
-                    **kwargs
+                    **kwargs,
                 )
                 module.build(
                     stack_config=stack, deployment=deployment, workload=self.workload
@@ -162,15 +162,14 @@ class WorkloadFactory:
             "cdk_config": self.cdk_config,
             "description": deployment.description,
         }
-        
+
         # Add environment if enabled
         if self.add_env_context:
             pipeline_kwargs["env"] = aws_cdk.Environment(
-                account=deployment.account,
-                region=deployment.region
+                account=deployment.account, region=deployment.region
             )
-            
-        factory = PipelineFactoryStack(**pipeline_kwargs)
+
+        factory = PipelineFactoryStack(self.add_env_context, **pipeline_kwargs)
 
         factory.build()
 
