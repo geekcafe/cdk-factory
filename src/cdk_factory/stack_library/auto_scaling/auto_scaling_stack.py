@@ -73,7 +73,6 @@ class AutoScalingStack(IStack):
         asg_name = deployment.build_resource_name(self.asg_config.name)
 
         # Get VPC and security groups
-        self.vpc = self._get_vpc()
         self.security_groups = self._get_security_groups()
 
         # Create IAM role for instances
@@ -94,7 +93,8 @@ class AutoScalingStack(IStack):
         # Add outputs
         self._add_outputs(asg_name)
 
-    def _get_vpc(self) -> ec2.IVpc:
+    @property
+    def vpc(self) -> ec2.IVpc:
         """Get the VPC for the Auto Scaling Group"""
         # Assuming VPC is provided by the workload
 

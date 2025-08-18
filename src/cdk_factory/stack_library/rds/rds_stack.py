@@ -40,6 +40,7 @@ class RdsStack(IStack):
         self.db_instance = None
         self.vpc = None
         self.security_groups = []
+        self._vpc = None
 
     def build(
         self,
@@ -65,7 +66,6 @@ class RdsStack(IStack):
         db_name = deployment.build_resource_name(self.rds_config.name)
 
         # Get VPC and security groups
-        self.vpc = self._get_vpc()
         self.security_groups = self._get_security_groups()
 
         # Create RDS instance or import existing
@@ -77,13 +77,16 @@ class RdsStack(IStack):
         # Add outputs
         self._add_outputs(db_name)
 
-    def _get_vpc(self) -> ec2.IVpc:
+    @property
+    def vpc(self) -> ec2.IVpc:
         """Get the VPC for the RDS instance"""
         # Assuming VPC is provided by the workload
+        if self._vpc:
+            return self._vpc
         if self.rds_config.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.rds_config.vpc_id)
+            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.rds_config.vpc_id)
         if self.workload.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
+            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
         else:
             # Use default VPC if not provided
             raise ValueError(
@@ -91,6 +94,7 @@ class RdsStack(IStack):
                 "You can provide it a the rds.vpc_id in the configuration "
                 "or a top level workload.vpc_id in the workload configuration."
             )
+        return self._vpc
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the RDS instance"""

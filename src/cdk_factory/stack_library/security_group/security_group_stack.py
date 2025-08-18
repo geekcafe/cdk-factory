@@ -66,9 +66,6 @@ class SecurityGroupStack(IStack):
         )
         sg_name = deployment.build_resource_name(self.sg_config.name)
 
-        # Get VPC
-        self.vpc = self._get_vpc()
-
         # Create or import security group
         if self.sg_config.existing_security_group_id:
             self.security_group = self._import_existing_security_group(sg_name)
@@ -83,7 +80,8 @@ class SecurityGroupStack(IStack):
         # Add outputs
         self._add_outputs(sg_name)
 
-    def _get_vpc(self) -> ec2.IVpc:
+    @property
+    def vpc(self) -> ec2.IVpc:
         """Get the VPC for the Security Group"""
         if self._vpc:
             return self._vpc

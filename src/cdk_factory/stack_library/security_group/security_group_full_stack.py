@@ -31,6 +31,7 @@ class SecurityGroupsStack(IStack):
         self.security_group = None
         # Flag to determine if we're in test mode
         self._test_mode = False
+        self._vpc = None
 
     def build(
         self,
@@ -58,8 +59,6 @@ class SecurityGroupsStack(IStack):
         )
 
         env_name = self.deployment.environment
-        # Get VPC
-        self.vpc = self._get_vpc()
 
         # =========================================================
         # Security Groups
@@ -222,7 +221,8 @@ class SecurityGroupsStack(IStack):
             export_name=f"{self.deployment.environment}-{self.workload.name}-WebMonitoringSecurityGroup",
         )
 
-    def _get_vpc(self) -> ec2.IVpc:
+    @property
+    def vpc(self) -> ec2.IVpc:
         """Get the VPC for the Security Group"""
         if self._vpc:
             return self._vpc
