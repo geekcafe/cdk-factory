@@ -161,6 +161,7 @@ class WorkloadFactory:
             "workload": self.workload,
             "cdk_config": self.cdk_config,
             "description": deployment.description,
+            "add_env_context": self.add_env_context,
         }
 
         # Add environment if enabled
@@ -169,7 +170,7 @@ class WorkloadFactory:
                 account=deployment.account, region=deployment.region
             )
 
-        factory = PipelineFactoryStack(self.add_env_context, **pipeline_kwargs)
+        factory = PipelineFactoryStack(**pipeline_kwargs)
 
         factory.build()
 
