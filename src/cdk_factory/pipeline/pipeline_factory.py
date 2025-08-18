@@ -284,6 +284,8 @@ class PipelineFactoryStack(cdk.Stack):
                     module_name=stack_config.module,
                     scope=pipeline_stage,
                     id=stack_config.name,
+                    deployment=deployment,
+                    add_env_context=self.add_env_context,
                     **kwargs,
                 )
                 cf_stack.build(
