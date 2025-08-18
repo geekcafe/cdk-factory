@@ -63,7 +63,11 @@ class PipelineFactoryStack(cdk.Stack):
             account=f"{devops_account}", region=f"{devops_region}"
         )
         # pass it up the chain
-        super().__init__(scope, id, env=devops_environment, **kwargs)
+        # check if kwargs for "env" for the pipeline for the devops
+        # this allows for cross account deployments
+        kwargs["env"] = devops_environment
+
+        super().__init__(scope, id, **kwargs)
 
         self.pipeline: PipelineConfig = PipelineConfig(
             pipeline=deployment.pipeline, workload=deployment.workload
