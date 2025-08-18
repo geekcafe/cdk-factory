@@ -139,9 +139,15 @@ class LoadBalancerStack(IStack):
         vpc_id = self.lb_config.vpc_id
         if vpc_id:
             return ec2.Vpc.from_lookup(self, "VPC", vpc_id=vpc_id)
+        if self.workload.vpc_id:
+            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
         else:
-            # Use default VPC if not specified
-            return ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+            # Use default VPC if not provided
+            raise ValueError(
+                "VPC is not defined in the configuration.  "
+                "You can provide it a the load_balancer.vpc_id in the configuration "
+                "or a top level workload.vpc_id in the workload configuration."
+            )
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the Load Balancer"""

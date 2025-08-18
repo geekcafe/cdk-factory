@@ -41,11 +41,21 @@ class RdsStack(IStack):
         self.vpc = None
         self.security_groups = []
 
-    def build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
+    def build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         """Build the RDS stack"""
         self._build(stack_config, deployment, workload)
 
-    def _build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
+    def _build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         """Internal build method for the RDS stack"""
         self.stack_config = stack_config
         self.deployment = deployment
@@ -53,28 +63,34 @@ class RdsStack(IStack):
 
         self.rds_config = RdsConfig(stack_config.dictionary.get("rds", {}), deployment)
         db_name = deployment.build_resource_name(self.rds_config.name)
-        
+
         # Get VPC and security groups
         self.vpc = self._get_vpc()
         self.security_groups = self._get_security_groups()
-        
+
         # Create RDS instance or import existing
         if self.rds_config.existing_instance_id:
             self.db_instance = self._import_existing_db(db_name)
         else:
             self.db_instance = self._create_db_instance(db_name)
-        
+
         # Add outputs
         self._add_outputs(db_name)
 
     def _get_vpc(self) -> ec2.IVpc:
         """Get the VPC for the RDS instance"""
         # Assuming VPC is provided by the workload
-        if hasattr(self.workload, "vpc") and self.workload.vpc:
-            return self.workload.vpc
+        if self.rds_config.vpc_id:
+            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.rds_config.vpc_id)
+        if self.workload.vpc_id:
+            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
         else:
             # Use default VPC if not provided
-            return ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+            raise ValueError(
+                "VPC is not defined in the configuration.  "
+                "You can provide it a the rds.vpc_id in the configuration "
+                "or a top level workload.vpc_id in the workload configuration."
+            )
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the RDS instance"""
@@ -92,7 +108,7 @@ class RdsStack(IStack):
         # Configure subnet selection
         # Use private subnets for database placement
         subnets = ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS)
-        
+
         # Configure engine
         engine_version = None
         if self.rds_config.engine.lower() == "postgres":
@@ -112,11 +128,11 @@ class RdsStack(IStack):
             engine = rds.DatabaseInstanceEngine.mariadb(version=engine_version)
         else:
             raise ValueError(f"Unsupported database engine: {self.rds_config.engine}")
-        
+
         # Configure instance type
         instance_class = self.rds_config.instance_class
         instance_type = ec2.InstanceType(instance_class)
-        
+
         # Configure removal policy
         removal_policy = None
         if self.rds_config.removal_policy.lower() == "destroy":
@@ -125,7 +141,7 @@ class RdsStack(IStack):
             removal_policy = cdk.RemovalPolicy.SNAPSHOT
         elif self.rds_config.removal_policy.lower() == "retain":
             removal_policy = cdk.RemovalPolicy.RETAIN
-        
+
         # Create the database instance
         db_instance = rds.DatabaseInstance(
             self,
@@ -136,7 +152,7 @@ class RdsStack(IStack):
             instance_type=instance_type,
             credentials=rds.Credentials.from_generated_secret(
                 username=self.rds_config.username,
-                secret_name=self.rds_config.secret_name
+                secret_name=self.rds_config.secret_name,
             ),
             database_name=self.rds_config.database_name,
             multi_az=self.rds_config.multi_az,
@@ -147,13 +163,13 @@ class RdsStack(IStack):
             backup_retention=Duration.days(self.rds_config.backup_retention),
             cloudwatch_logs_exports=self.rds_config.cloudwatch_logs_exports,
             enable_performance_insights=self.rds_config.enable_performance_insights,
-            removal_policy=removal_policy
+            removal_policy=removal_policy,
         )
-        
+
         # Add tags
         for key, value in self.rds_config.tags.items():
             cdk.Tags.of(db_instance).add(key, value)
-            
+
         return db_instance
 
     def _import_existing_db(self, db_name: str) -> rds.IDatabaseInstance:
@@ -164,7 +180,7 @@ class RdsStack(IStack):
             instance_identifier=self.rds_config.existing_instance_id,
             instance_endpoint_address=f"{self.rds_config.existing_instance_id}.{self.region}.rds.amazonaws.com",
             port=5432,  # Default port, could be configurable
-            security_groups=self.security_groups
+            security_groups=self.security_groups,
         )
 
     def _add_outputs(self, db_name: str) -> None:
@@ -175,22 +191,22 @@ class RdsStack(IStack):
                 self,
                 f"{db_name}-endpoint",
                 value=self.db_instance.db_instance_endpoint_address,
-                export_name=f"{self.deployment.build_resource_name(db_name)}-endpoint"
+                export_name=f"{self.deployment.build_resource_name(db_name)}-endpoint",
             )
-            
+
             # Database port
             cdk.CfnOutput(
                 self,
                 f"{db_name}-port",
                 value=self.db_instance.db_instance_endpoint_port,
-                export_name=f"{self.deployment.build_resource_name(db_name)}-port"
+                export_name=f"{self.deployment.build_resource_name(db_name)}-port",
             )
-            
+
             # Secret ARN (if available)
             if hasattr(self.db_instance, "secret") and self.db_instance.secret:
                 cdk.CfnOutput(
                     self,
                     f"{db_name}-secret-arn",
                     value=self.db_instance.secret.secret_arn,
-                    export_name=f"{self.deployment.build_resource_name(db_name)}-secret-arn"
+                    export_name=f"{self.deployment.build_resource_name(db_name)}-secret-arn",
                 )

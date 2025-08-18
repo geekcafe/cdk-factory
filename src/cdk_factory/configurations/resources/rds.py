@@ -116,3 +116,13 @@ class RdsConfig:
     def tags(self) -> Dict[str, str]:
         """Tags to apply to the RDS instance"""
         return self.__config.get("tags", {})
+
+    @property
+    def vpc_id(self) -> str | None:
+        """Returns the VPC ID for the Security Group"""
+        return self.__config.get("vpc_id")
+
+    @vpc_id.setter
+    def vpc_id(self, value: str):
+        """Sets the VPC ID for the Security Group"""
+        self.__config["vpc_id"] = value
