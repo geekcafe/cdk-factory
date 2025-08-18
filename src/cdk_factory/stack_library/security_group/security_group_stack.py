@@ -86,20 +86,11 @@ class SecurityGroupStack(IStack):
         """Get the VPC for the Security Group"""
         if self.sg_config.vpc_id:
             return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
-        elif hasattr(self.workload, "vpc") and self.workload.vpc:
-            return self.workload.vpc
-        elif self.stack_config.dictionary.get("ssm_imports", {}).get("vpc_id"):
-            ssm_import = self.stack_config.dictionary.get("ssm_imports", {}).get(
-                "vpc_id"
-            )
-            id = ssm_import.replace("/", "-")
-            vpc_id = self.import_ssm_parameter(
-                scope=self, id=id, parameter_name=ssm_import
-            )
-            return ec2.Vpc.from_lookup(self, id, vpc_id=vpc_id)
+        elif self.workload.vpc_id:
+            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
+
         else:
-            # Use default VPC if not provided
-            return ec2.Vpc.from_lookup(self, "DefaultVPC", is_default=True)
+            raise ValueError("VPC ID is not defined in the configuration.")
 
     def _create_security_group(self, sg_name: str) -> ec2.SecurityGroup:
         """Create a new security group"""
