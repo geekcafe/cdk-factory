@@ -31,10 +31,6 @@ class SecurityGroupsStack(IStack):
         self.security_group = None
         # Flag to determine if we're in test mode
         self._test_mode = False
-        self._vpc = None
-
-    def __init__(self, scope: Construct, id: str, **kwargs) -> None:
-        super().__init__(scope, id, **kwargs)
 
     def build(
         self,
