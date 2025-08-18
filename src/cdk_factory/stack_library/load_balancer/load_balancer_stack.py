@@ -199,7 +199,7 @@ class LoadBalancerStack(IStack):
                         tg_config.get("protocol", "HTTP")
                     ),
                     target_type=elbv2.TargetType(
-                        tg_config.get("target_type", "INSTANCE")
+                        str(tg_config.get("target_type", "INSTANCE")).upper()
                     ),
                     health_check=health_check,
                 )
@@ -212,7 +212,7 @@ class LoadBalancerStack(IStack):
                     port=tg_config.get("port", 80),
                     protocol=elbv2.Protocol(tg_config.get("protocol", "TCP")),
                     target_type=elbv2.TargetType(
-                        tg_config.get("target_type", "INSTANCE")
+                        str(tg_config.get("target_type", "INSTANCE")).upper()
                     ),
                     health_check=health_check,
                 )
