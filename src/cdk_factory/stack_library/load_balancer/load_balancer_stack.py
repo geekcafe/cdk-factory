@@ -25,6 +25,8 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(service="LoadBalancerStack")
 
 
+@register_stack("alb_library_module")
+@register_stack("alb_stack")
 @register_stack("load_balancer_library_module")
 @register_stack("load_balancer_stack")
 class LoadBalancerStack(IStack):
@@ -43,44 +45,60 @@ class LoadBalancerStack(IStack):
         self.target_groups = {}
         self.listeners = {}
 
-    def build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
+    def build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         """Build the Load Balancer stack"""
         self._build(stack_config, deployment, workload)
 
-    def _build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
+    def _build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         """Internal build method for the Load Balancer stack"""
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
 
-        self.lb_config = LoadBalancerConfig(stack_config.dictionary.get("load_balancer", {}), deployment)
+        self.lb_config = LoadBalancerConfig(
+            stack_config.dictionary.get("load_balancer", {}), deployment
+        )
         lb_name = deployment.build_resource_name(self.lb_config.name)
-        
+
         # Create the Load Balancer
         self.load_balancer = self._create_load_balancer(lb_name)
-        
+
         # Create target groups
         self._create_target_groups(lb_name)
-        
+
         # Create listeners
         self._create_listeners(lb_name)
-        
+
         # Setup DNS if configured
         self._setup_dns(lb_name)
-        
+
         # Add outputs
         self._add_outputs(lb_name)
 
     def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancerV2:
         """Create a Load Balancer with the specified configuration"""
         vpc = self._get_vpc()
-        
+
         # Configure security groups if applicable
-        security_groups = self._get_security_groups() if self.lb_config.type == "APPLICATION" else None
-        
+        security_groups = (
+            self._get_security_groups()
+            if self.lb_config.type == "APPLICATION"
+            else None
+        )
+
         # Get subnets
         subnets = self._get_subnets(vpc)
-        
+
         # Create the Load Balancer based on type
         if self.lb_config.type == "APPLICATION":
             load_balancer = elbv2.ApplicationLoadBalancer(
@@ -89,12 +107,15 @@ class LoadBalancerStack(IStack):
                 load_balancer_name=lb_name,
                 vpc=vpc,
                 internet_facing=self.lb_config.internet_facing,
-                security_group=security_groups[0] if security_groups and len(security_groups) > 0 else None,
-                security_groups=[sg.security_group_id for sg in security_groups] if security_groups else None,
+                security_group=(
+                    security_groups[0]
+                    if security_groups and len(security_groups) > 0
+                    else None
+                ),
                 deletion_protection=self.lb_config.deletion_protection,
                 idle_timeout=cdk.Duration.seconds(self.lb_config.idle_timeout),
                 http2_enabled=self.lb_config.http2_enabled,
-                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None
+                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
             )
         else:  # NETWORK
             load_balancer = elbv2.NetworkLoadBalancer(
@@ -104,13 +125,13 @@ class LoadBalancerStack(IStack):
                 vpc=vpc,
                 internet_facing=self.lb_config.internet_facing,
                 deletion_protection=self.lb_config.deletion_protection,
-                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None
+                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
             )
-        
+
         # Add tags
         for key, value in self.lb_config.tags.items():
             cdk.Tags.of(load_balancer).add(key, value)
-            
+
         return load_balancer
 
     def _get_vpc(self) -> ec2.IVpc:
@@ -138,23 +159,23 @@ class LoadBalancerStack(IStack):
         subnets = []
         for subnet_id in self.lb_config.subnets:
             subnets.append(
-                ec2.Subnet.from_subnet_id(
-                    self, f"Subnet-{subnet_id}", subnet_id
-                )
+                ec2.Subnet.from_subnet_id(self, f"Subnet-{subnet_id}", subnet_id)
             )
         return subnets
 
     def _create_target_groups(self, lb_name: str) -> None:
         """Create target groups for the Load Balancer"""
         vpc = self._get_vpc()
-        
+
         for idx, tg_config in enumerate(self.lb_config.target_groups):
             tg_name = tg_config.get("name", f"tg-{idx}")
             tg_id = f"{lb_name}-{tg_name}"
-            
+
             # Configure health check
-            health_check = self._configure_health_check(tg_config.get("health_check", {}))
-            
+            health_check = self._configure_health_check(
+                tg_config.get("health_check", {})
+            )
+
             # Create target group based on load balancer type
             if self.lb_config.type == "APPLICATION":
                 target_group = elbv2.ApplicationTargetGroup(
@@ -163,9 +184,13 @@ class LoadBalancerStack(IStack):
                     target_group_name=tg_id[:32],  # Ensure name is within AWS limits
                     vpc=vpc,
                     port=tg_config.get("port", 80),
-                    protocol=elbv2.ApplicationProtocol(tg_config.get("protocol", "HTTP")),
-                    target_type=elbv2.TargetType(tg_config.get("target_type", "INSTANCE")),
-                    health_check=health_check
+                    protocol=elbv2.ApplicationProtocol(
+                        tg_config.get("protocol", "HTTP")
+                    ),
+                    target_type=elbv2.TargetType(
+                        tg_config.get("target_type", "INSTANCE")
+                    ),
+                    health_check=health_check,
                 )
             else:  # NETWORK
                 target_group = elbv2.NetworkTargetGroup(
@@ -175,14 +200,18 @@ class LoadBalancerStack(IStack):
                     vpc=vpc,
                     port=tg_config.get("port", 80),
                     protocol=elbv2.Protocol(tg_config.get("protocol", "TCP")),
-                    target_type=elbv2.TargetType(tg_config.get("target_type", "INSTANCE")),
-                    health_check=health_check
+                    target_type=elbv2.TargetType(
+                        tg_config.get("target_type", "INSTANCE")
+                    ),
+                    health_check=health_check,
                 )
-            
+
             # Store target group for later use
             self.target_groups[tg_name] = target_group
 
-    def _configure_health_check(self, health_check_config: Dict[str, Any]) -> elbv2.HealthCheck:
+    def _configure_health_check(
+        self, health_check_config: Dict[str, Any]
+    ) -> elbv2.HealthCheck:
         """Configure health check for target groups"""
         return elbv2.HealthCheck(
             path=health_check_config.get("path", "/"),
@@ -191,7 +220,7 @@ class LoadBalancerStack(IStack):
             unhealthy_threshold_count=health_check_config.get("unhealthy_threshold", 2),
             timeout=cdk.Duration.seconds(health_check_config.get("timeout", 5)),
             interval=cdk.Duration.seconds(health_check_config.get("interval", 30)),
-            healthy_http_codes=health_check_config.get("healthy_http_codes", "200")
+            healthy_http_codes=health_check_config.get("healthy_http_codes", "200"),
         )
 
     def _create_listeners(self, lb_name: str) -> None:
@@ -201,18 +230,22 @@ class LoadBalancerStack(IStack):
             listener_id = f"{lb_name}-{listener_name}"
             port = listener_config.get("port", 80)
             protocol = listener_config.get("protocol", "HTTP")
-            
+
             # Get target group for default action
             default_target_group_name = listener_config.get("default_target_group")
-            default_target_group = self.target_groups.get(default_target_group_name) if default_target_group_name else None
-            
+            default_target_group = (
+                self.target_groups.get(default_target_group_name)
+                if default_target_group_name
+                else None
+            )
+
             # Create listener based on load balancer type
             if self.lb_config.type == "APPLICATION":
                 # Handle SSL certificates for HTTPS
                 certificates = None
                 if protocol.upper() == "HTTPS":
                     certificates = self._get_certificates()
-                
+
                 listener = elbv2.ApplicationListener(
                     self,
                     listener_id,
@@ -220,18 +253,28 @@ class LoadBalancerStack(IStack):
                     port=port,
                     protocol=elbv2.ApplicationProtocol(protocol),
                     certificates=certificates,
-                    ssl_policy=elbv2.SslPolicy(self.lb_config.ssl_policy) if protocol.upper() == "HTTPS" else None,
-                    default_target_groups=[default_target_group] if default_target_group else None,
-                    default_action=elbv2.ListenerAction.fixed_response(
-                        status_code=404,
-                        content_type="text/plain",
-                        message_body="Not Found"
-                    ) if not default_target_group else None
+                    ssl_policy=(
+                        elbv2.SslPolicy(self.lb_config.ssl_policy)
+                        if protocol.upper() == "HTTPS"
+                        else None
+                    ),
+                    default_target_groups=(
+                        [default_target_group] if default_target_group else None
+                    ),
+                    default_action=(
+                        elbv2.ListenerAction.fixed_response(
+                            status_code=404,
+                            content_type="text/plain",
+                            message_body="Not Found",
+                        )
+                        if not default_target_group
+                        else None
+                    ),
                 )
-                
+
                 # Add rules if specified
                 self._add_listener_rules(listener, listener_config.get("rules", []))
-                
+
             else:  # NETWORK
                 listener = elbv2.NetworkListener(
                     self,
@@ -239,9 +282,11 @@ class LoadBalancerStack(IStack):
                     load_balancer=self.load_balancer,
                     port=port,
                     protocol=elbv2.Protocol(protocol),
-                    default_target_groups=[default_target_group] if default_target_group else None
+                    default_target_groups=(
+                        [default_target_group] if default_target_group else None
+                    ),
                 )
-            
+
             # Store listener for later use
             self.listeners[listener_name] = listener
 
@@ -249,47 +294,57 @@ class LoadBalancerStack(IStack):
         """Get certificates for HTTPS listeners"""
         certificates = []
         for cert_arn in self.lb_config.certificate_arns:
-            certificates.append(
-                elbv2.ListenerCertificate.from_arn(cert_arn)
-            )
+            certificates.append(elbv2.ListenerCertificate.from_arn(cert_arn))
         return certificates
 
-    def _add_listener_rules(self, listener: elbv2.ApplicationListener, rules: List[Dict[str, Any]]) -> None:
+    def _add_listener_rules(
+        self, listener: elbv2.ApplicationListener, rules: List[Dict[str, Any]]
+    ) -> None:
         """Add rules to an Application Load Balancer listener"""
         for idx, rule_config in enumerate(rules):
             rule_id = f"{listener.node.id}-rule-{idx}"
             priority = rule_config.get("priority", 100 + idx)
-            
+
             # Configure conditions
             conditions = []
-            
+
             # Path patterns
             path_patterns = rule_config.get("path_patterns", [])
             if path_patterns:
                 conditions.append(elbv2.ListenerCondition.path_patterns(path_patterns))
-            
+
             # Host headers
             host_headers = rule_config.get("host_headers", [])
             if host_headers:
                 conditions.append(elbv2.ListenerCondition.host_headers(host_headers))
-            
+
             # HTTP headers
             http_headers = rule_config.get("http_headers", {})
             for header_name, header_values in http_headers.items():
-                conditions.append(elbv2.ListenerCondition.http_header(header_name, header_values))
-            
+                conditions.append(
+                    elbv2.ListenerCondition.http_header(header_name, header_values)
+                )
+
             # Query strings
             query_strings = rule_config.get("query_strings", [])
             if query_strings:
                 query_string_conditions = []
                 for qs in query_strings:
-                    query_string_conditions.append(elbv2.QueryStringCondition(key=qs.get("key"), value=qs.get("value")))
-                conditions.append(elbv2.ListenerCondition.query_strings(query_string_conditions))
-            
+                    query_string_conditions.append(
+                        elbv2.QueryStringCondition(
+                            key=qs.get("key"), value=qs.get("value")
+                        )
+                    )
+                conditions.append(
+                    elbv2.ListenerCondition.query_strings(query_string_conditions)
+                )
+
             # Configure actions
             target_group_name = rule_config.get("target_group")
-            target_group = self.target_groups.get(target_group_name) if target_group_name else None
-            
+            target_group = (
+                self.target_groups.get(target_group_name) if target_group_name else None
+            )
+
             if target_group:
                 # Create rule with forward action
                 elbv2.ApplicationListenerRule(
@@ -298,7 +353,7 @@ class LoadBalancerStack(IStack):
                     listener=listener,
                     priority=priority,
                     conditions=conditions,
-                    target_groups=[target_group]
+                    target_groups=[target_group],
                 )
 
     def _setup_dns(self, lb_name: str) -> None:
@@ -306,22 +361,22 @@ class LoadBalancerStack(IStack):
         hosted_zone_config = self.lb_config.hosted_zone
         if not hosted_zone_config:
             return
-            
+
         hosted_zone_id = hosted_zone_config.get("id")
         hosted_zone_name = hosted_zone_config.get("name")
         record_names = hosted_zone_config.get("record_names", [])
-        
+
         if not hosted_zone_id or not hosted_zone_name or not record_names:
             return
-            
+
         # Get the hosted zone
         hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
             self,
             f"{lb_name}-hosted-zone",
             hosted_zone_id=hosted_zone_id,
-            zone_name=hosted_zone_name
+            zone_name=hosted_zone_name,
         )
-        
+
         # Create DNS records
         for record_name in record_names:
             # A Record
@@ -332,9 +387,9 @@ class LoadBalancerStack(IStack):
                 record_name=record_name,
                 target=route53.RecordTarget.from_alias(
                     targets.LoadBalancerTarget(self.load_balancer)
-                )
+                ),
             )
-            
+
             # AAAA Record
             route53.AaaaRecord(
                 self,
@@ -343,10 +398,14 @@ class LoadBalancerStack(IStack):
                 record_name=record_name,
                 target=route53.RecordTarget.from_alias(
                     targets.LoadBalancerTarget(self.load_balancer)
-                )
+                ),
             )
 
     def _add_outputs(self, lb_name: str) -> None:
+        self._export_cfn_outputs(lb_name)
+        self._export_ssm_parameters(lb_name)
+
+    def _export_cfn_outputs(self, lb_name: str) -> None:
         """Add CloudFormation outputs for the Load Balancer"""
         if self.load_balancer:
             # Load Balancer DNS Name
@@ -354,22 +413,41 @@ class LoadBalancerStack(IStack):
                 self,
                 f"{lb_name}-dns-name",
                 value=self.load_balancer.load_balancer_dns_name,
-                export_name=f"{self.deployment.build_resource_name(lb_name)}-dns-name"
+                export_name=f"{self.deployment.build_resource_name(lb_name)}-dns-name",
             )
-            
+
             # Load Balancer ARN
             cdk.CfnOutput(
                 self,
                 f"{lb_name}-arn",
                 value=self.load_balancer.load_balancer_arn,
-                export_name=f"{self.deployment.build_resource_name(lb_name)}-arn"
+                export_name=f"{self.deployment.build_resource_name(lb_name)}-arn",
             )
-            
+
             # Target Group ARNs
             for tg_name, target_group in self.target_groups.items():
                 cdk.CfnOutput(
                     self,
                     f"{lb_name}-{tg_name}-arn",
                     value=target_group.target_group_arn,
-                    export_name=f"{self.deployment.build_resource_name(lb_name)}-{tg_name}-arn"
+                    export_name=f"{self.deployment.build_resource_name(lb_name)}-{tg_name}-arn",
                 )
+
+    def _export_ssm_parameters(self, lb_name: str) -> None:
+        """Export Load Balancer resources to SSM Parameter Store if configured"""
+        if not self.load_balancer:
+            return
+
+        # Create a dictionary of Load Balancer resources to export
+        lb_resources = {
+            "alb_dns_name": self.load_balancer.load_balancer_dns_name,
+            "alb_zone_id": self.load_balancer.load_balancer_canonical_hosted_zone_id,
+        }
+
+        # Use the new clearer method for exporting resources to SSM
+        self.export_resource_to_ssm(
+            scope=self,
+            resource_values=lb_resources,
+            config=self.lb_config,
+            resource_name=lb_name,
+        )

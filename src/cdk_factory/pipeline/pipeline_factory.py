@@ -195,6 +195,10 @@ class PipelineFactoryStack(cdk.Stack):
         # add the stages to a pipeline
         for stage in self.pipeline.stages:
             print(f"\t 👉 Prepping stage: {stage.name}")
+            if not stage.enabled:
+                print(f"\t\t ⚠️ Stage {stage.name} is disabled - skipping.")
+                continue
+            # create the stage
             pipeline_stage = PipelineStage(self, stage.name, **kwargs)
 
             self.__setup_stacks(

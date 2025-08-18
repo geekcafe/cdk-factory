@@ -59,6 +59,13 @@ class PipelineStageConfig:
         return value
 
     @property
+    def enabled(self) -> bool:
+        """
+        Returns the stage enabled status
+        """
+        return str(self.dictionary.get("enabled", True)).lower() == "true"
+
+    @property
     def description(self) -> str | None:
         """
         Returns the stage description

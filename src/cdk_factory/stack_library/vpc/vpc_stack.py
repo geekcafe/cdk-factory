@@ -15,7 +15,6 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.vpc import VpcConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.ssm_parameter_mixin import SsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -24,7 +23,7 @@ logger = Logger(service="VpcStack")
 
 @register_stack("vpc_library_module")
 @register_stack("vpc_stack")
-class VpcStack(IStack, SsmParameterMixin):
+class VpcStack(IStack):
     """
     Reusable stack for AWS VPC.
     Supports creating VPCs with customizable CIDR blocks, subnets, and networking components.
@@ -38,11 +37,21 @@ class VpcStack(IStack, SsmParameterMixin):
         self.workload = None
         self.vpc = None
 
-    def build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
+    def build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         """Build the VPC stack"""
         self._build(stack_config, deployment, workload)
 
-    def _build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
+    def _build(
+        self,
+        stack_config: StackConfig,
+        deployment: DeploymentConfig,
+        workload: WorkloadConfig,
+    ) -> None:
         """Internal build method for the VPC stack"""
         self.stack_config = stack_config
         self.deployment = deployment
@@ -50,10 +59,10 @@ class VpcStack(IStack, SsmParameterMixin):
 
         self.vpc_config = VpcConfig(stack_config.dictionary.get("vpc", {}), deployment)
         vpc_name = deployment.build_resource_name(self.vpc_config.name)
-        
+
         # Create the VPC
         self.vpc = self._create_vpc(vpc_name)
-        
+
         # Add outputs
         self._add_outputs(vpc_name)
 
@@ -61,10 +70,10 @@ class VpcStack(IStack, SsmParameterMixin):
         """Create a VPC with the specified configuration"""
         # Configure subnet configuration
         subnet_configuration = self._get_subnet_configuration()
-        
+
         # Configure NAT gateways
         nat_gateway_count = self.vpc_config.nat_gateways.get("count", 1)
-        
+
         # Create the VPC
         vpc = ec2.Vpc(
             self,
@@ -76,57 +85,61 @@ class VpcStack(IStack, SsmParameterMixin):
             subnet_configuration=subnet_configuration,
             enable_dns_hostnames=self.vpc_config.enable_dns_hostnames,
             enable_dns_support=self.vpc_config.enable_dns_support,
-            gateway_endpoints={
-                "S3": ec2.GatewayVpcEndpointOptions(
-                    service=ec2.GatewayVpcEndpointAwsService.S3
-                )
-            } if self.vpc_config.enable_s3_endpoint else None
+            gateway_endpoints=(
+                {
+                    "S3": ec2.GatewayVpcEndpointOptions(
+                        service=ec2.GatewayVpcEndpointAwsService.S3
+                    )
+                }
+                if self.vpc_config.enable_s3_endpoint
+                else None
+            ),
         )
-        
+
         # Add interface endpoints if specified
         if self.vpc_config.enable_interface_endpoints:
             self._add_interface_endpoints(vpc, self.vpc_config.interface_endpoints)
-            
+
         # Add tags if specified
         for key, value in self.vpc_config.tags.items():
             cdk.Tags.of(vpc).add(key, value)
-        
+
         return vpc
 
     def _get_subnet_configuration(self) -> List[ec2.SubnetConfiguration]:
         """Configure the subnets for the VPC"""
         subnet_configs = []
-        
+
         # Public subnets
         if self.vpc_config.public_subnets:
             subnet_configs.append(
                 ec2.SubnetConfiguration(
                     name=self.vpc_config.public_subnet_name,
                     subnet_type=ec2.SubnetType.PUBLIC,
-                    cidr_mask=self.vpc_config.public_subnet_mask
+                    cidr_mask=self.vpc_config.public_subnet_mask,
                 )
             )
-        
+
         # Private subnets
         if self.vpc_config.private_subnets:
             subnet_configs.append(
                 ec2.SubnetConfiguration(
                     name=self.vpc_config.private_subnet_name,
                     subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
-                    cidr_mask=self.vpc_config.private_subnet_mask
+                    cidr_mask=self.vpc_config.private_subnet_mask,
                 )
             )
-        
+
         # Isolated subnets
         if self.vpc_config.isolated_subnets:
             subnet_configs.append(
                 ec2.SubnetConfiguration(
                     name=self.vpc_config.isolated_subnet_name,
                     subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
-                    cidr_mask=self.vpc_config.isolated_subnet_mask
+                    cidr_mask=self.vpc_config.isolated_subnet_mask,
                 )
             )
-        
+
         return subnet_configs
 
     def _get_nat_gateway_configuration(self) -> Dict[str, Any]:
@@ -143,15 +156,14 @@ class VpcStack(IStack, SsmParameterMixin):
             "ssm": ec2.InterfaceVpcEndpointAwsService.SSM,
             "secretsmanager": ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
             "lambda": ec2.InterfaceVpcEndpointAwsService.LAMBDA_,
-            "sts": ec2.InterfaceVpcEndpointAwsService.STS
+            "sts": ec2.InterfaceVpcEndpointAwsService.STS,
         }
-        
+
         # Add specified endpoints
         for endpoint in endpoints:
             if endpoint in endpoint_services:
                 vpc.add_interface_endpoint(
-                    f"{endpoint}-endpoint",
-                    service=endpoint_services[endpoint]
+                    f"{endpoint}-endpoint", service=endpoint_services[endpoint]
                 )
             else:
                 logger.warning(f"Unsupported interface endpoint: {endpoint}")
@@ -163,60 +175,72 @@ class VpcStack(IStack, SsmParameterMixin):
                 self,
                 f"{vpc_name}-id",
                 value=self.vpc.vpc_id,
-                export_name=f"{self.deployment.build_resource_name(vpc_name)}-id"
+                export_name=f"{self.deployment.build_resource_name(vpc_name)}-id",
             )
-            
+
             cdk.CfnOutput(
                 self,
                 f"{vpc_name}-public-subnets",
-                value=",".join([subnet.subnet_id for subnet in self.vpc.public_subnets]),
-                export_name=f"{self.deployment.build_resource_name(vpc_name)}-public-subnets"
+                value=",".join(
+                    [subnet.subnet_id for subnet in self.vpc.public_subnets]
+                ),
+                export_name=f"{self.deployment.build_resource_name(vpc_name)}-public-subnets",
             )
-            
+
             if self.vpc.private_subnets:
                 cdk.CfnOutput(
                     self,
                     f"{vpc_name}-private-subnets",
-                    value=",".join([subnet.subnet_id for subnet in self.vpc.private_subnets]),
-                    export_name=f"{self.deployment.build_resource_name(vpc_name)}-private-subnets"
+                    value=",".join(
+                        [subnet.subnet_id for subnet in self.vpc.private_subnets]
+                    ),
+                    export_name=f"{self.deployment.build_resource_name(vpc_name)}-private-subnets",
                 )
-            
-            if hasattr(self.vpc, 'isolated_subnets') and self.vpc.isolated_subnets:
+
+            if hasattr(self.vpc, "isolated_subnets") and self.vpc.isolated_subnets:
                 cdk.CfnOutput(
                     self,
                     f"{vpc_name}-isolated-subnets",
-                    value=",".join([subnet.subnet_id for subnet in self.vpc.isolated_subnets]),
-                    export_name=f"{self.deployment.build_resource_name(vpc_name)}-isolated-subnets"
+                    value=",".join(
+                        [subnet.subnet_id for subnet in self.vpc.isolated_subnets]
+                    ),
+                    export_name=f"{self.deployment.build_resource_name(vpc_name)}-isolated-subnets",
                 )
-            
+
             # Export SSM parameters if configured
             self._export_ssm_parameters(vpc_name)
-            
+
     def _export_ssm_parameters(self, vpc_name: str) -> None:
         """Export VPC resources to SSM Parameter Store if configured"""
         if not self.vpc:
             return
-            
+
         # Create a dictionary of VPC resources to export
         vpc_resources = {
-            'vpc_id': self.vpc.vpc_id,
-            'vpc_cidr': self.vpc.vpc_cidr_block,
+            "vpc_id": self.vpc.vpc_id,
+            "vpc_cidr": self.vpc.vpc_cidr_block,
         }
-        
+
         # Add subnet IDs as comma-separated lists
         if self.vpc.public_subnets:
-            vpc_resources['public_subnet_ids'] = ','.join([subnet.subnet_id for subnet in self.vpc.public_subnets])
-            
+            vpc_resources["public_subnet_ids"] = ",".join(
+                [subnet.subnet_id for subnet in self.vpc.public_subnets]
+            )
+
         if self.vpc.private_subnets:
-            vpc_resources['private_subnet_ids'] = ','.join([subnet.subnet_id for subnet in self.vpc.private_subnets])
-            
-        if hasattr(self.vpc, 'isolated_subnets') and self.vpc.isolated_subnets:
-            vpc_resources['isolated_subnet_ids'] = ','.join([subnet.subnet_id for subnet in self.vpc.isolated_subnets])
-        
+            vpc_resources["private_subnet_ids"] = ",".join(
+                [subnet.subnet_id for subnet in self.vpc.private_subnets]
+            )
+
+        if hasattr(self.vpc, "isolated_subnets") and self.vpc.isolated_subnets:
+            vpc_resources["isolated_subnet_ids"] = ",".join(
+                [subnet.subnet_id for subnet in self.vpc.isolated_subnets]
+            )
+
         # Use the new clearer method for exporting resources to SSM
         self.export_resource_to_ssm(
             scope=self,
             resource_values=vpc_resources,
             config=self.vpc_config,
-            resource_name=vpc_name
+            resource_name=vpc_name,
         )

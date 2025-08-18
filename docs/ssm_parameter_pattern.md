@@ -96,7 +96,7 @@ class SsmParameterMixin:
     def import_ssm_parameter(self, scope, id, parameter_name, version=None):
         # Imports an SSM parameter value
         
-    def export_ssm_parameters_from_config(self, scope, config_dict, ssm_config, prefix=""):
+    def export_ssm_parameters_from_config(self, scope, config_dict, ssm_config, resource=""):
         # Exports multiple SSM parameters based on a configuration dictionary
         
     def export_resource_to_ssm(self, scope, resource_values, config, resource_name):

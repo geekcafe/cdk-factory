@@ -8,13 +8,14 @@ from abc import ABCMeta, abstractmethod
 import jsii
 from constructs import Construct
 from aws_cdk import Stack
+from cdk_factory.interfaces.ssm_parameter_mixin import SsmParameterMixin
 
 
 class StackABCMeta(jsii.JSIIMeta, ABCMeta):
     """StackABCMeta"""
 
 
-class IStack(Stack, metaclass=StackABCMeta):
+class IStack(Stack, SsmParameterMixin, metaclass=StackABCMeta):
     """
     IStack for Dynamically loaded Factory Stacks
     Only imports from constructs and abc to avoid circular dependencies.
