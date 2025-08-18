@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from aws_cdk import App
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_apigateway as apigateway
 
 from cdk_factory.stack_library.api_gateway.api_gateway_stack import ApiGatewayStack
 from cdk_factory.configurations.stack import StackConfig
@@ -41,7 +42,7 @@ def dummy_workload():
                         "cors": True,
                         "api_key_required": False,
                         "default_method_options": {
-                            "authorization_type": "NONE"
+                            "authorization_type": apigateway.AuthorizationType.NONE
                         }
                     },
                 }
@@ -68,7 +69,7 @@ def test_api_gateway_stack_synth(dummy_workload):
                 "cors": True,
                 "api_key_required": False,
                 "default_method_options": {
-                    "authorization_type": "NONE"
+                    "authorization_type": apigateway.AuthorizationType.NONE
                 }
             },
         },
@@ -132,7 +133,7 @@ def test_api_gateway_with_resources(dummy_workload):
                 "cors": True,
                 "api_key_required": True,
                 "default_method_options": {
-                    "authorization_type": "NONE"
+                    "authorization_type": apigateway.AuthorizationType.NONE
                 },
                 "resources": [
                     {
