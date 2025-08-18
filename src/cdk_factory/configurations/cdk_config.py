@@ -198,24 +198,29 @@ class CdkConfig:
         # ssm_parameter_name = parameter.get("ssm_parameter_name", None)
         environment_variable_name = parameter.get("env_var_name", None)
         static_value = parameter.get("value", None)
+        required = str(parameter.get("required", True)).lower() == "true"
         value: str | None = None
 
         if self.cdk_context is None:
             raise ValueError("cdk_context is None")
 
         value = self.cdk_context.get(cdk_parameter_name)
-        print(f"Value for {cdk_parameter_name}: {value}")
+
+        print(f"\t3📦 Value for {cdk_parameter_name}: {value}")
         if static_value is not None:
             value = static_value
         elif environment_variable_name is not None and not value:
             value = os.environ.get(environment_variable_name, None)
-            if value is None:
+            if value is None and required:
                 raise ValueError(
                     f"Failed to get value for environment variable {environment_variable_name}"
                 )
 
         if environment_variable_name is not None and value is not None:
             self._env_vars[environment_variable_name] = value
+
+        if value is None and not required:
+            return None
 
         if value is None:
             raise ValueError(
