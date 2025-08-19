@@ -118,29 +118,39 @@ class AutoScalingStack(IStack):
     def _get_target_group_arns(self) -> List[str]:
         """Get target group ARNs from SSM imports"""
         target_group_arns = []
-        
+
         # Import target group ARNs using the SSM import pattern
         imported_values = self.import_resources_from_ssm(
             scope=self,
             config=self.asg_config,
             resource_name=self.asg_config.name,
-            resource_type="auto-scaling"
+            resource_type="auto-scaling",
         )
-        
+
         # Look for target group ARN imports
         for key, value in imported_values.items():
             if "target_group" in key and "arn" in key:
                 target_group_arns.append(value)
-        
+
+        # see if we have any directly defined in the config
+        if self.asg_config.target_group_arns:
+            for arn in self.asg_config.target_group_arns:
+                logger.info(f"Adding target group ARN: {arn}")
+                target_group_arns.append(arn)
+
         return target_group_arns
 
     def _attach_target_groups(self, asg: autoscaling.AutoScalingGroup) -> None:
         """Attach the Auto Scaling Group to target groups"""
         target_group_arns = self._get_target_group_arns()
-        
+
         if not target_group_arns:
+            logger.warning("No target group ARNs found for Auto Scaling Group")
+            print(
+                "⚠️ No target group ARNs found for Auto Scaling Group.  Nothing will be attached."
+            )
             return
-            
+
         # Get the underlying CloudFormation resource to add target group ARNs
         cfn_asg = asg.node.default_child
         cfn_asg.add_property_override("TargetGroupARNs", target_group_arns)
@@ -415,11 +425,11 @@ class AutoScalingStack(IStack):
                 "lower": step.get("lower", 0),
                 "change": step.get("change", 1),
             }
-            
+
             # Only set upper if it's explicitly provided
             if "upper" in step:
                 interval_kwargs["upper"] = step["upper"]
-                
+
             scaling_intervals.append(autoscaling.ScalingInterval(**interval_kwargs))
 
         return scaling_intervals

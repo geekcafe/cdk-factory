@@ -21,6 +21,30 @@ class SsmParameterMixin:
     are exported and imported across the project.
     """
 
+    @staticmethod
+    def normalize_resource_name(name: str, for_export: bool = False) -> str:
+        """
+        Normalize resource names for consistent naming across CDK stacks.
+        
+        Args:
+            name: The resource name to normalize
+            for_export: If True, keeps hyphens for CloudFormation export compatibility
+            
+        Returns:
+            Normalized name with consistent convention
+            
+        Examples:
+            "web-servers" -> "web_servers" (for SSM parameters)
+            "web-servers" -> "web-servers" (for CloudFormation exports, for_export=True)
+            "API-Gateway" -> "api_gateway" or "api-gateway"
+        """
+        if for_export:
+            # CloudFormation exports only allow alphanumeric, colons, hyphens
+            return name.lower()
+        else:
+            # SSM parameters use underscores for consistency
+            return name.replace("-", "_").lower()
+
     def export_ssm_parameter(
         self,
         scope: Construct,
@@ -210,6 +234,9 @@ class SsmParameterMixin:
             )
         else:
             logger.info(f"No SSM export paths configured for {resource_name} resources")
+            logger.info("The following SSM exports are available for this resource: ")
+            for key, item in resource_values.items():
+                logger.info(f"{key}: {item}")
             return {}
 
     def import_resources_from_ssm(

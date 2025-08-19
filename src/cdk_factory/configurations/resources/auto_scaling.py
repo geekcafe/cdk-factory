@@ -144,3 +144,7 @@ class AutoScalingConfig(BaseConfig):
         """VPC ID for the Auto Scaling Group"""
         return self.__config.get("vpc_id")
 
+    @property
+    def target_group_arns(self) -> List[str]:
+        """Target group ARNs for the Auto Scaling Group"""
+        return self.__config.get("target_group_arns", [])

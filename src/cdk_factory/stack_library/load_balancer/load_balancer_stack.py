@@ -466,11 +466,13 @@ class LoadBalancerStack(IStack):
 
             # Target Group ARNs
             for tg_name, target_group in self.target_groups.items():
+                # Normalize target group name for consistent CloudFormation export naming
+                normalized_tg_name = self.normalize_resource_name(tg_name, for_export=True)
                 cdk.CfnOutput(
                     self,
-                    f"{lb_name}-{tg_name}-arn",
+                    f"{lb_name}-{normalized_tg_name}-arn",
                     value=target_group.target_group_arn,
-                    export_name=f"{self.deployment.build_resource_name(lb_name)}-{tg_name}-arn",
+                    export_name=f"{self.deployment.build_resource_name(lb_name)}-{normalized_tg_name}-arn",
                 )
 
     def _export_ssm_parameters(self, lb_name: str) -> None:
@@ -485,9 +487,11 @@ class LoadBalancerStack(IStack):
             "alb_arn": self.load_balancer.load_balancer_arn,
         }
 
-        # Add target group ARNs to the resources to export
+        # Export target group ARNs to SSM
         for tg_name, target_group in self.target_groups.items():
-            lb_resources[f"target_group_{tg_name}_arn"] = target_group.target_group_arn
+            # Normalize target group name for consistent SSM parameter naming
+            normalized_tg_name = self.normalize_resource_name(tg_name)
+            lb_resources[f"target_group_{normalized_tg_name}_arn"] = target_group.target_group_arn
 
         # Use the new clearer method for exporting resources to SSM
         self.export_resource_to_ssm(
@@ -496,3 +500,33 @@ class LoadBalancerStack(IStack):
             config=self.lb_config,
             resource_name=lb_name,
         )
+
+    def _export_cfn_outputs(self, lb_name: str) -> None:
+        """Add CloudFormation outputs for the Load Balancer"""
+        if self.load_balancer:
+            # Load Balancer DNS Name
+            cdk.CfnOutput(
+                self,
+                f"{lb_name}-dns-name",
+                value=self.load_balancer.load_balancer_dns_name,
+                export_name=f"{self.deployment.build_resource_name(lb_name)}-dns-name",
+            )
+
+            # Load Balancer ARN
+            cdk.CfnOutput(
+                self,
+                f"{lb_name}-arn",
+                value=self.load_balancer.load_balancer_arn,
+                export_name=f"{self.deployment.build_resource_name(lb_name)}-arn",
+        )
+
+            # Target Group ARNs
+            for tg_name, target_group in self.target_groups.items():
+                # Normalize target group name for consistent CloudFormation export naming
+                normalized_tg_name = self.normalize_resource_name(tg_name, for_export=True)
+                cdk.CfnOutput(
+                    self,
+                    f"{lb_name}-{normalized_tg_name}-arn",
+                    value=target_group.target_group_arn,
+                    export_name=f"{self.deployment.build_resource_name(lb_name)}-{normalized_tg_name}-arn",
+                )
