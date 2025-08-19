@@ -134,7 +134,7 @@ def test_auto_scaling_stack_full_config():
                 "health_check_type": "ELB",
                 "health_check_grace_period": 300,
                 "cooldown": 300,
-                "termination_policies": ["OldestInstance", "Default"],
+                "termination_policies": ["OLDEST_INSTANCE", "DEFAULT"],
                 "managed_policies": [
                     "AmazonSSMManagedInstanceCore",
                     "AmazonEC2ContainerRegistryReadOnly",
@@ -255,8 +255,8 @@ def test_auto_scaling_stack_full_config():
                                     )
                                     assert stack.asg_config.cooldown == 300
                                     assert stack.asg_config.termination_policies == [
-                                        "OldestInstance",
-                                        "Default",
+                                        "OLDEST_INSTANCE",
+                                        "DEFAULT",
                                     ]
                                     assert stack.asg_config.managed_policies == [
                                         "AmazonSSMManagedInstanceCore",

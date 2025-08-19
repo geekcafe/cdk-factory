@@ -118,11 +118,22 @@ class AutoScalingStack(IStack):
         """Get security groups for the Auto Scaling Group"""
         security_groups = []
         for sg_id in self.asg_config.security_group_ids:
-            security_groups.append(
-                ec2.SecurityGroup.from_security_group_id(
-                    self, f"SecurityGroup-{sg_id}", sg_id
+            # if the security group id contains a comma, it is a list of security group ids
+            if "," in sg_id:
+                blocks = sg_id.split(",")
+                for block in blocks:
+                    security_groups.append(
+                        ec2.SecurityGroup.from_security_group_id(
+                            self, f"SecurityGroup-{block}", block
+                        )
+                    )
+            else:
+                # TODO: add some additional checks to make it more robust
+                security_groups.append(
+                    ec2.SecurityGroup.from_security_group_id(
+                        self, f"SecurityGroup-{sg_id}", sg_id
+                    )
                 )
-            )
         return security_groups
 
     def _create_instance_role(self, asg_name: str) -> iam.Role:
@@ -244,7 +255,7 @@ class AutoScalingStack(IStack):
                     volume=ec2.BlockDeviceVolume.ebs(
                         volume_size=device.get("volume_size", 8),
                         volume_type=ec2.EbsDeviceVolumeType(
-                            device.get("volume_type", "gp3")
+                            str(device.get("volume_type", "gp3")).upper()
                         ),
                         delete_on_termination=device.get("delete_on_termination", True),
                         encrypted=device.get("encrypted", True),
@@ -299,14 +310,20 @@ class AutoScalingStack(IStack):
         )
 
         # Configure update policy
-        update_policy = self.asg_config.update_policy
-        if update_policy:
-            asg.apply_rolling_update_policy(
-                min_instances_in_service=update_policy.get(
-                    "min_instances_in_service", 1
-                ),
-                max_batch_size=update_policy.get("max_batch_size", 1),
-                pause_time=Duration.seconds(update_policy.get("pause_time", 300)),
+        # Only apply update policy if it was explicitly configured
+        if "update_policy" in self.stack_config.dictionary.get("auto_scaling", {}):
+            update_policy = self.asg_config.update_policy
+            # Apply the update policy to the ASG's CloudFormation resource
+            cfn_asg = asg.node.default_child
+            cfn_asg.add_override(
+                "UpdatePolicy",
+                {
+                    "AutoScalingRollingUpdate": {
+                        "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
+                        "MaxBatchSize": update_policy.get("max_batch_size", 1),
+                        "PauseTime": f"PT{update_policy.get('pause_time', 300) // 60}M",
+                    }
+                }
             )
 
         # Add tags

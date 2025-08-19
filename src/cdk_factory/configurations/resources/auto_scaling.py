@@ -65,16 +65,15 @@ class AutoScalingConfig:
     @property
     def termination_policies(self) -> List[str]:
         """Termination policies"""
-        return self.__config.get("termination_policies", ["Default"])
+        return self.__config.get("termination_policies", ["DEFAULT"])
 
     @property
     def update_policy(self) -> Dict[str, Any]:
         """Update policy configuration"""
-        return self.__config.get("update_policy", {
-            "min_instances_in_service": 1,
-            "max_batch_size": 1,
-            "pause_time": 300
-        })
+        return self.__config.get(
+            "update_policy",
+            {"min_instances_in_service": 1, "max_batch_size": 1, "pause_time": 300},
+        )
 
     @property
     def user_data_commands(self) -> List[str]:
@@ -89,11 +88,14 @@ class AutoScalingConfig:
     @property
     def managed_policies(self) -> List[str]:
         """Managed policies to attach to the instance role"""
-        return self.__config.get("managed_policies", [
-            "AmazonEC2ContainerRegistryReadOnly",
-            "AmazonSSMManagedInstanceCore",
-            "CloudWatchAgentServerPolicy"
-        ])
+        return self.__config.get(
+            "managed_policies",
+            [
+                "AmazonEC2ContainerRegistryReadOnly",
+                "AmazonSSMManagedInstanceCore",
+                "CloudWatchAgentServerPolicy",
+            ],
+        )
 
     @property
     def ami_id(self) -> Optional[str]:
@@ -134,3 +136,8 @@ class AutoScalingConfig:
     def tags(self) -> Dict[str, str]:
         """Tags to apply to the Auto Scaling Group"""
         return self.__config.get("tags", {})
+
+    @property
+    def vpc_id(self) -> Optional[str]:
+        """VPC ID for the Auto Scaling Group"""
+        return self.__config.get("vpc_id")

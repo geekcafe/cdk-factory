@@ -175,7 +175,7 @@ class CdkConfig:
                     value = self.__get_cdk_parameter_value(parameter)
                     replacements[placeholder] = value or ""
                     # do a find replace on the config
-                    print(f"replacing {placeholder} with {value}")
+                    print(f"\t\t👉 Replacing {placeholder} with {value}")
 
         if self._resolved_config_file_path is None:
             raise ValueError("Config file path is not set")
@@ -186,7 +186,7 @@ class CdkConfig:
         cdk = config.get("cdk", {})
         if replacements and len(replacements) > 0:
             config = JsonLoadingUtility.recursive_replace(config, replacements)
-            print(f"Saving config to {path}")
+            print(f"📀 Saving config to {path}")
             # add the original cdk back
             config["cdk"] = cdk
 
@@ -206,7 +206,7 @@ class CdkConfig:
 
         value = self.cdk_context.get(cdk_parameter_name)
 
-        print(f"\t3📦 Value for {cdk_parameter_name}: {value}")
+        print(f"\t📦 Value for {cdk_parameter_name}: {value}")
         if static_value is not None:
             value = static_value
         elif environment_variable_name is not None and not value:
