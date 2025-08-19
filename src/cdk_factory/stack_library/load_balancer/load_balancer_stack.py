@@ -45,6 +45,8 @@ class LoadBalancerStack(IStack):
         self.target_groups = {}
         self.listeners = {}
         self._vpc = None
+        self._hosted_zone = None
+        self._record_names = None
 
     def build(
         self,
@@ -86,9 +88,10 @@ class LoadBalancerStack(IStack):
         # Add outputs
         self._add_outputs(lb_name)
 
+        self._setup_ssl_certificate()
+
     def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancerV2:
         """Create a Load Balancer with the specified configuration"""
-        vpc = self.vpc
 
         # Configure security groups if applicable
         security_groups = (
@@ -106,7 +109,7 @@ class LoadBalancerStack(IStack):
                 self,
                 lb_name,
                 load_balancer_name=lb_name,
-                vpc=vpc,
+                vpc=self.vpc,
                 internet_facing=self.lb_config.internet_facing,
                 security_group=(
                     security_groups[0]
@@ -123,7 +126,7 @@ class LoadBalancerStack(IStack):
                 self,
                 lb_name,
                 load_balancer_name=lb_name,
-                vpc=vpc,
+                vpc=self.vpc,
                 internet_facing=self.lb_config.internet_facing,
                 deletion_protection=self.lb_config.deletion_protection,
                 vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
@@ -177,7 +180,6 @@ class LoadBalancerStack(IStack):
 
     def _create_target_groups(self, lb_name: str) -> None:
         """Create target groups for the Load Balancer"""
-        vpc = self.vpc
 
         for idx, tg_config in enumerate(self.lb_config.target_groups):
             tg_name = tg_config.get("name", f"tg-{idx}")
@@ -194,7 +196,7 @@ class LoadBalancerStack(IStack):
                     self,
                     tg_id,
                     target_group_name=tg_id[:32],  # Ensure name is within AWS limits
-                    vpc=vpc,
+                    vpc=self.vpc,
                     port=tg_config.get("port", 80),
                     protocol=elbv2.ApplicationProtocol(
                         tg_config.get("protocol", "HTTP")
@@ -209,7 +211,7 @@ class LoadBalancerStack(IStack):
                     self,
                     tg_id,
                     target_group_name=tg_id[:32],  # Ensure name is within AWS limits
-                    vpc=vpc,
+                    vpc=self.vpc,
                     port=tg_config.get("port", 80),
                     protocol=elbv2.Protocol(tg_config.get("protocol", "TCP")),
                     target_type=elbv2.TargetType(
@@ -376,13 +378,13 @@ class LoadBalancerStack(IStack):
 
         hosted_zone_id = hosted_zone_config.get("id")
         hosted_zone_name = hosted_zone_config.get("name")
-        record_names = hosted_zone_config.get("record_names", [])
+        self._record_names = hosted_zone_config.get("record_names", [])
 
-        if not hosted_zone_id or not hosted_zone_name or not record_names:
+        if not hosted_zone_id or not hosted_zone_name or not self._record_names:
             return
 
         # Get the hosted zone
-        hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+        self._hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
             self,
             f"{lb_name}-hosted-zone",
             hosted_zone_id=hosted_zone_id,
@@ -390,12 +392,12 @@ class LoadBalancerStack(IStack):
         )
 
         # Create DNS records
-        for record_name in record_names:
+        for record_name in self._record_names:
             # A Record
             route53.ARecord(
                 self,
                 f"{lb_name}-{record_name}-a-record",
-                zone=hosted_zone,
+                zone=self._hosted_zone,
                 record_name=record_name,
                 target=route53.RecordTarget.from_alias(
                     targets.LoadBalancerTarget(self.load_balancer)
@@ -406,11 +408,37 @@ class LoadBalancerStack(IStack):
             route53.AaaaRecord(
                 self,
                 f"{lb_name}-{record_name}-aaaa-record",
-                zone=hosted_zone,
+                zone=self._hosted_zone,
                 record_name=record_name,
                 target=route53.RecordTarget.from_alias(
                     targets.LoadBalancerTarget(self.load_balancer)
                 ),
+            )
+
+    def _setup_ssl_certificate(self) -> None:
+        """Setup SSL certificate for the Load Balancer"""
+        if self.lb_config.ssl_cert_arn:
+            acm.Certificate.from_certificate_arn(
+                self,
+                "LbCertificate",
+                certificate_arn=self.lb_config.ssl_cert_arn,
+            )
+        else:
+            # there are more than one record name, so we need to add them as alt names
+            # exclude the first record name from the alt names
+            if len(self._record_names) > 1:
+                alt_names = self._record_names[1:]
+            else:
+                alt_names = None
+
+            acm.Certificate(
+                self,
+                id="LbCertificate",
+                domain_name=self._record_names[0],
+                validation=acm.CertificateValidation.from_dns(
+                    hosted_zone=self._hosted_zone
+                ),
+                subject_alternative_names=alt_names,
             )
 
     def _add_outputs(self, lb_name: str) -> None:

@@ -107,3 +107,8 @@ class LoadBalancerConfig:
     def vpc_id(self, value: str):
         """Sets the VPC ID for the Security Group"""
         self.__config["vpc_id"] = value
+
+    @property
+    def ssl_cert_arn(self) -> str | None:
+        """Returns the SSL certificate ARN for the Load Balancer"""
+        return self.__config.get("ssl_cert_arn")
