@@ -482,7 +482,12 @@ class LoadBalancerStack(IStack):
         lb_resources = {
             "alb_dns_name": self.load_balancer.load_balancer_dns_name,
             "alb_zone_id": self.load_balancer.load_balancer_canonical_hosted_zone_id,
+            "alb_arn": self.load_balancer.load_balancer_arn,
         }
+
+        # Add target group ARNs to the resources to export
+        for tg_name, target_group in self.target_groups.items():
+            lb_resources[f"target_group_{tg_name}_arn"] = target_group.target_group_arn
 
         # Use the new clearer method for exporting resources to SSM
         self.export_resource_to_ssm(

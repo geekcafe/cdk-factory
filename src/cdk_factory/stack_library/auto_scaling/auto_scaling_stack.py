@@ -11,6 +11,7 @@ from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_autoscaling as autoscaling
 from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_ssm as ssm
 from aws_cdk import Duration
 from aws_lambda_powertools import Logger
 from constructs import Construct
@@ -113,6 +114,36 @@ class AutoScalingStack(IStack):
             )
 
         return self._vpc
+
+    def _get_target_group_arns(self) -> List[str]:
+        """Get target group ARNs from SSM imports"""
+        target_group_arns = []
+        
+        # Import target group ARNs using the SSM import pattern
+        imported_values = self.import_resources_from_ssm(
+            scope=self,
+            config=self.asg_config,
+            resource_name=self.asg_config.name,
+            resource_type="auto-scaling"
+        )
+        
+        # Look for target group ARN imports
+        for key, value in imported_values.items():
+            if "target_group" in key and "arn" in key:
+                target_group_arns.append(value)
+        
+        return target_group_arns
+
+    def _attach_target_groups(self, asg: autoscaling.AutoScalingGroup) -> None:
+        """Attach the Auto Scaling Group to target groups"""
+        target_group_arns = self._get_target_group_arns()
+        
+        if not target_group_arns:
+            return
+            
+        # Get the underlying CloudFormation resource to add target group ARNs
+        cfn_asg = asg.node.default_child
+        cfn_asg.add_property_override("TargetGroupARNs", target_group_arns)
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the Auto Scaling Group"""
@@ -308,6 +339,9 @@ class AutoScalingStack(IStack):
                 for policy in self.asg_config.termination_policies
             ],
         )
+
+        # Attach to target groups after ASG creation
+        self._attach_target_groups(asg)
 
         # Configure update policy
         # Only apply update policy if it was explicitly configured

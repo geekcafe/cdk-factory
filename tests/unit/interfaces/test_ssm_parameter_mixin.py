@@ -120,7 +120,7 @@ class TestSsmParameterMixin(unittest.TestCase):
 
         # Assert
         mock_from_string_parameter_name.assert_called_once_with(
-            self.construct, "ImportedParam", parameter_name="/test/import"
+            self.construct, "ImportedParam", "/test/import"
         )
         self.assertEqual(result, "imported-value")
 

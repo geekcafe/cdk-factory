@@ -5,15 +5,17 @@ MIT License. See Project Root for license information.
 """
 
 from typing import Any, Dict, List, Optional
+from cdk_factory.configurations.base_config import BaseConfig
 
 
-class LoadBalancerConfig:
+class LoadBalancerConfig(BaseConfig):
     """
     Load Balancer Configuration - supports Application and Network Load Balancer settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
     def __init__(self, config: dict = None, deployment=None) -> None:
+        super().__init__(config)
         self.__config = config or {}
         self.__deployment = deployment
 

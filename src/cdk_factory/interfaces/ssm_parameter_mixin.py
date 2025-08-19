@@ -102,7 +102,7 @@ class SsmParameterMixin:
             return ssm.StringParameter.from_string_parameter_name(
                 scope,
                 id,
-                parameter_name=parameter_name,
+                parameter_name,
             ).string_value
 
     def export_ssm_parameters_from_config(
