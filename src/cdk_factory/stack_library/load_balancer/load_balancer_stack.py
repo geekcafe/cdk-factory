@@ -423,7 +423,7 @@ class LoadBalancerStack(IStack):
                 "LbCertificate",
                 certificate_arn=self.lb_config.ssl_cert_arn,
             )
-        else:
+        elif self._record_names and self._hosted_zone:
             # there are more than one record name, so we need to add them as alt names
             # exclude the first record name from the alt names
             if len(self._record_names) > 1:
