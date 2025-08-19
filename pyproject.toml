@@ -5,6 +5,23 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cdk_factory"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  ".unittest/",
+  ".venv/",
+  "tests/",
+  "samples/",
+  "docs/",
+  ".git/",
+  ".gitignore",
+  ".vscode/",
+  "*.pyc",
+  "__pycache__/",
+  "*.egg-info/",
+  "dist/",
+  "build/"
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "samples"]
 testpaths = ["tests/unit"]
@@ -16,7 +33,7 @@ markers = [
 [project]
 
 name = "cdk_factory"
-version = "0.4.33"
+version = "0.4.34"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
