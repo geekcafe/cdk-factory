@@ -1,0 +1,28 @@
+{
+  "load_balancer": {
+    "name": "simple-alb",
+    "type": "APPLICATION",
+    "internet_facing": true,
+    "vpc_id": "${VPC_ID}",
+    "security_groups": ["${SECURITY_GROUP_ID}"],
+    "target_groups": [
+      {
+        "name": "default-tg",
+        "port": 80,
+        "protocol": "HTTP",
+        "target_type": "instance",
+        "health_check": {
+          "path": "/"
+        }
+      }
+    ],
+    "listeners": [
+      {
+        "name": "http",
+        "port": 80,
+        "protocol": "HTTP",
+        "default_target_group": "default-tg"
+      }
+    ]
+  }
+}

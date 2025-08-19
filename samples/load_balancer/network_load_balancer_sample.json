@@ -1,0 +1,62 @@
+{
+  "load_balancer": {
+    "name": "sample-nlb",
+    "type": "NETWORK",
+    "internet_facing": true,
+    "vpc_id": "${VPC_ID}",
+    "subnets": ["${SUBNET_ID_1}", "${SUBNET_ID_2}"],
+    "deletion_protection": false,
+    "target_groups": [
+      {
+        "name": "tcp-tg",
+        "port": 443,
+        "protocol": "TCP",
+        "target_type": "instance",
+        "health_check": {
+          "port": "traffic-port",
+          "healthy_threshold": 3,
+          "unhealthy_threshold": 3,
+          "timeout": 10,
+          "interval": 30
+        }
+      },
+      {
+        "name": "tls-tg",
+        "port": 8443,
+        "protocol": "TLS",
+        "target_type": "ip",
+        "health_check": {
+          "port": 8443,
+          "healthy_threshold": 3,
+          "unhealthy_threshold": 3,
+          "timeout": 10,
+          "interval": 30
+        }
+      }
+    ],
+    "listeners": [
+      {
+        "name": "tcp-listener",
+        "port": 443,
+        "protocol": "TCP",
+        "default_target_group": "tcp-tg"
+      },
+      {
+        "name": "tls-listener",
+        "port": 8443,
+        "protocol": "TLS",
+        "default_target_group": "tls-tg"
+      }
+    ],
+    "certificate_arns": ["${CERTIFICATE_ARN}"],
+    "tags": {
+      "Environment": "dev",
+      "Application": "SampleApp",
+      "ManagedBy": "CDK-Factory"
+    },
+    "ssm_exports": {
+      "nlb_dns_name": "/{deployment_name}/network-load-balancer/dns-name",
+      "nlb_zone_id": "/{deployment_name}/network-load-balancer/zone-id"
+    }
+  }
+}

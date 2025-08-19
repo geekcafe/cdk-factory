@@ -1,0 +1,89 @@
+{
+  "load_balancer": {
+    "name": "sample-alb",
+    "type": "APPLICATION",
+    "internet_facing": true,
+    "vpc_id": "${VPC_ID}",
+    "subnets": ["${PUBLIC_SUBNET_ID_1}", "${PUBLIC_SUBNET_ID_2}"],
+    "security_groups": ["${SECURITY_GROUP_ID}"],
+    "deletion_protection": false,
+    "idle_timeout": 60,
+    "http2_enabled": true,
+    "target_groups": [
+      {
+        "name": "web-tg",
+        "port": 80,
+        "protocol": "HTTP",
+        "target_type": "instance",
+        "health_check": {
+          "path": "/health",
+          "port": "traffic-port",
+          "healthy_threshold": 3,
+          "unhealthy_threshold": 2,
+          "timeout": 5,
+          "interval": 30,
+          "healthy_http_codes": "200-299"
+        }
+      },
+      {
+        "name": "api-tg",
+        "port": 8080,
+        "protocol": "HTTP",
+        "target_type": "ip",
+        "health_check": {
+          "path": "/api/health",
+          "port": "traffic-port",
+          "healthy_threshold": 3,
+          "unhealthy_threshold": 2,
+          "timeout": 5,
+          "interval": 30,
+          "healthy_http_codes": "200"
+        }
+      }
+    ],
+    "listeners": [
+      {
+        "name": "http",
+        "port": 80,
+        "protocol": "HTTP",
+        "default_target_group": "web-tg",
+        "rules": [
+          {
+            "priority": 10,
+            "path_patterns": ["/api/*"],
+            "target_group": "api-tg"
+          }
+        ]
+      },
+      {
+        "name": "https",
+        "port": 443,
+        "protocol": "HTTPS",
+        "default_target_group": "web-tg",
+        "ssl_policy": "ELBSecurityPolicy-TLS-1-2-Ext-2018-06",
+        "rules": [
+          {
+            "priority": 10,
+            "path_patterns": ["/api/*"],
+            "target_group": "api-tg"
+          }
+        ]
+      }
+    ],
+    "certificate_arns": ["${CERTIFICATE_ARN}"],
+    "hosted_zone": {
+      "id": "${HOSTED_ZONE_ID}",
+      "name": "example.com",
+      "record_names": ["app.example.com", "api.example.com"]
+    },
+    "tags": {
+      "Environment": "dev",
+      "Application": "SampleApp",
+      "ManagedBy": "CDK-Factory"
+    },
+    "ssm_exports": {
+      "alb_dns_name": "/{deployment_name}/load-balancer/dns-name",
+      "alb_zone_id": "/{deployment_name}/load-balancer/zone-id"
+    }
+  }
+}
