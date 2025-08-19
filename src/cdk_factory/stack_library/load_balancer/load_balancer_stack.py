@@ -88,7 +88,7 @@ class LoadBalancerStack(IStack):
 
     def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancerV2:
         """Create a Load Balancer with the specified configuration"""
-        vpc = self._get_vpc()
+        vpc = self.vpc
 
         # Configure security groups if applicable
         security_groups = (
@@ -98,7 +98,7 @@ class LoadBalancerStack(IStack):
         )
 
         # Get subnets
-        subnets = self._get_subnets(vpc)
+        subnets = self._get_subnets()
 
         # Create the Load Balancer based on type
         if self.lb_config.type == "APPLICATION":
@@ -135,7 +135,8 @@ class LoadBalancerStack(IStack):
 
         return load_balancer
 
-    def _get_vpc(self) -> ec2.IVpc:
+    @property
+    def vpc(self) -> ec2.IVpc:
         """Get the VPC for the Load Balancer"""
         if self._vpc:
             return self._vpc
@@ -165,7 +166,7 @@ class LoadBalancerStack(IStack):
             )
         return security_groups
 
-    def _get_subnets(self, vpc: ec2.IVpc) -> List[ec2.ISubnet]:
+    def _get_subnets(self) -> List[ec2.ISubnet]:
         """Get subnets for the Load Balancer"""
         subnets = []
         for subnet_id in self.lb_config.subnets:
@@ -176,7 +177,7 @@ class LoadBalancerStack(IStack):
 
     def _create_target_groups(self, lb_name: str) -> None:
         """Create target groups for the Load Balancer"""
-        vpc = self._get_vpc()
+        vpc = self.vpc
 
         for idx, tg_config in enumerate(self.lb_config.target_groups):
             tg_name = tg_config.get("name", f"tg-{idx}")

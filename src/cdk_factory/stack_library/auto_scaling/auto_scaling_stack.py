@@ -39,7 +39,6 @@ class AutoScalingStack(IStack):
         self.stack_config = None
         self.deployment = None
         self.workload = None
-        self.vpc = None
         self.security_groups = []
         self.auto_scaling_group = None
         self.launch_template = None

@@ -38,7 +38,6 @@ class RdsStack(IStack):
         self.deployment = None
         self.workload = None
         self.db_instance = None
-        self.vpc = None
         self.security_groups = []
         self._vpc = None
 

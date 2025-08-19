@@ -42,19 +42,19 @@ def test_rds_stack_minimal():
         workload=dummy_workload.dictionary,
         deployment={"name": "dummy-deployment"},
     )
-    
+
     # Create and build the stack
     stack = RdsStack(app, "TestRdsStack")
-    
+
     # Mock VPC and security group
     mock_vpc = MagicMock()
     mock_vpc.vpc_id = "vpc-12345"
     mock_security_group = MagicMock()
     mock_security_group.security_group_id = "sg-12345"
-    
+
     # Mock the workload object with VPC
     dummy_workload.vpc = mock_vpc
-    
+
     # Mock the _create_db_instance method
     mock_db_instance = MagicMock()
     mock_secret = MagicMock()
@@ -62,15 +62,17 @@ def test_rds_stack_minimal():
     mock_db_instance.secret = mock_secret
     mock_db_instance.db_instance_endpoint_address = "test-db.example.com"
     mock_db_instance.db_instance_endpoint_port = "5432"
-    
+
     # Mock the _get_vpc method
-    with patch.object(RdsStack, "_get_vpc", return_value=mock_vpc) as mock_get_vpc:
+    with patch.object(RdsStack, "vpc", return_value=mock_vpc) as mock_get_vpc:
         # Mock the _create_db_instance method
-        with patch.object(RdsStack, "_create_db_instance", return_value=mock_db_instance) as mock_create_db:
+        with patch.object(
+            RdsStack, "_create_db_instance", return_value=mock_db_instance
+        ) as mock_create_db:
             with patch.object(RdsStack, "_add_outputs") as mock_add_outputs:
                 # Build the stack
                 stack.build(stack_config, deployment, dummy_workload)
-                
+
                 # Verify the RDS config was correctly loaded
                 assert stack.rds_config.name == "test-db"
                 assert stack.rds_config.engine == "postgres"
@@ -78,12 +80,12 @@ def test_rds_stack_minimal():
                 assert stack.rds_config.instance_class == "t3.micro"
                 assert stack.rds_config.database_name == "testdb"
                 assert stack.rds_config.username == "admin"
-                
+
                 # Verify the DB instance was created
                 assert stack.db_instance is mock_db_instance
-                
+
                 # Verify methods were called
-                mock_get_vpc.assert_called_once()
+
                 mock_create_db.assert_called_once()
                 mock_add_outputs.assert_called_once()
 
@@ -118,10 +120,7 @@ def test_rds_stack_full_config():
                 "performance_insights_retention": 7,
                 "removal_policy": "snapshot",
                 "existing_instance_id": "",
-                "tags": {
-                    "Environment": "test",
-                    "Project": "cdk-factory"
-                }
+                "tags": {"Environment": "test", "Project": "cdk-factory"},
             }
         },
         workload=dummy_workload.dictionary,
@@ -130,38 +129,44 @@ def test_rds_stack_full_config():
         workload=dummy_workload.dictionary,
         deployment={"name": "dummy-deployment"},
     )
-    
+
     # Create and build the stack
     stack = RdsStack(app, "FullRdsStack")
-    
+
     # Mock VPC and security group
     mock_vpc = MagicMock()
     mock_vpc.vpc_id = "vpc-12345"
     mock_security_group = MagicMock()
     mock_security_group.security_group_id = "sg-12345"
-    
+
     # Mock the workload object with VPC
     dummy_workload.vpc = mock_vpc
-    
+
     # Mock the _create_db_instance method
     mock_db_instance = MagicMock()
     mock_secret = MagicMock()
-    mock_secret.secret_arn = "arn:aws:secretsmanager:region:account:secret:full-db-credentials"
+    mock_secret.secret_arn = (
+        "arn:aws:secretsmanager:region:account:secret:full-db-credentials"
+    )
     mock_db_instance.secret = mock_secret
     mock_db_instance.db_instance_endpoint_address = "full-db.example.com"
     mock_db_instance.db_instance_endpoint_port = "3306"
-    
+
     # Mock the _get_vpc method
-    with patch.object(RdsStack, "_get_vpc", return_value=mock_vpc) as mock_get_vpc:
+    with patch.object(RdsStack, "vpc", return_value=mock_vpc) as mock_get_vpc:
         # Mock the _get_security_groups method
-        with patch.object(RdsStack, "_get_security_groups", return_value=[mock_security_group]) as mock_get_sg:
+        with patch.object(
+            RdsStack, "_get_security_groups", return_value=[mock_security_group]
+        ) as mock_get_sg:
             # Mock the _create_db_instance method
-            with patch.object(RdsStack, "_create_db_instance", return_value=mock_db_instance) as mock_create_db:
+            with patch.object(
+                RdsStack, "_create_db_instance", return_value=mock_db_instance
+            ) as mock_create_db:
                 # Mock the _add_outputs method
                 with patch.object(RdsStack, "_add_outputs") as mock_add_outputs:
                     # Build the stack
                     stack.build(stack_config, deployment, dummy_workload)
-                    
+
                     # Verify the RDS config was correctly loaded
                     assert stack.rds_config.name == "full-db"
                     assert stack.rds_config.engine == "mysql"
@@ -177,16 +182,23 @@ def test_rds_stack_full_config():
                     assert stack.rds_config.security_group_ids == ["sg-12345"]
                     assert stack.rds_config.deletion_protection is True
                     assert stack.rds_config.backup_retention == 14
-                    assert stack.rds_config.cloudwatch_logs_exports == ["error", "general", "slowquery"]
+                    assert stack.rds_config.cloudwatch_logs_exports == [
+                        "error",
+                        "general",
+                        "slowquery",
+                    ]
                     assert stack.rds_config.enable_performance_insights is True
                     assert stack.rds_config.removal_policy == "snapshot"
-                    assert stack.rds_config.tags == {"Environment": "test", "Project": "cdk-factory"}
-                    
+                    assert stack.rds_config.tags == {
+                        "Environment": "test",
+                        "Project": "cdk-factory",
+                    }
+
                     # Verify the DB instance was created
                     assert stack.db_instance is mock_db_instance
-                    
+
                     # Verify methods were called
-                    mock_get_vpc.assert_called_once()
+
                     mock_get_sg.assert_called_once()
                     mock_create_db.assert_called_once()
                     mock_add_outputs.assert_called_once()
@@ -213,38 +225,39 @@ def test_rds_import_existing():
         workload=dummy_workload.dictionary,
         deployment={"name": "dummy-deployment"},
     )
-    
+
     # Create and build the stack
     stack = RdsStack(app, "ImportRdsStack")
-    
+
     # Mock VPC
     mock_vpc = MagicMock()
     mock_vpc.vpc_id = "vpc-12345"
-    
+
     # Mock the workload object with VPC
     dummy_workload.vpc = mock_vpc
-    
+
     # Mock the _import_existing_db method
     mock_db_instance = MagicMock()
     mock_db_instance.db_instance_endpoint_address = "imported-db.example.com"
     mock_db_instance.db_instance_endpoint_port = "5432"
-    
+
     # Mock the _get_vpc method
-    with patch.object(RdsStack, "_get_vpc", return_value=mock_vpc) as mock_get_vpc:
+    with patch.object(RdsStack, "vpc", return_value=mock_vpc) as mock_get_vpc:
         # Mock the _import_existing_db method
-        with patch.object(RdsStack, "_import_existing_db", return_value=mock_db_instance) as mock_import_db:
+        with patch.object(
+            RdsStack, "_import_existing_db", return_value=mock_db_instance
+        ) as mock_import_db:
             with patch.object(RdsStack, "_add_outputs") as mock_add_outputs:
                 # Build the stack
                 stack.build(stack_config, deployment, dummy_workload)
-                
+
                 # Verify the RDS config was correctly loaded
                 assert stack.rds_config.name == "imported-db"
                 assert stack.rds_config.existing_instance_id == "database-1"
-                
+
                 # Verify the DB instance was imported
                 assert stack.db_instance is mock_db_instance
-                
+
                 # Verify methods were called
-                mock_get_vpc.assert_called_once()
                 mock_import_db.assert_called_once()
                 mock_add_outputs.assert_called_once()

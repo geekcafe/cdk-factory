@@ -35,7 +35,6 @@ class SecurityGroupStack(IStack):
         self.stack_config = None
         self.deployment = None
         self.workload = None
-        self.vpc = None
         self.security_group = None
         # Flag to determine if we're in test mode
         self._test_mode = False
