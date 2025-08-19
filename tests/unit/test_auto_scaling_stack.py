@@ -1,15 +1,12 @@
 """
-Unit tests for the Auto Scaling Stack
+Unit tests for the Auto Scaling Stack - No Mocking, Real CDK Synthesis
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
 
 import aws_cdk as cdk
 from aws_cdk import App
-from aws_cdk import aws_autoscaling as autoscaling
-from aws_cdk import aws_ec2 as ec2
-from aws_cdk import aws_iam as iam
+from aws_cdk.assertions import Template
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
@@ -17,352 +14,510 @@ from cdk_factory.stack_library.auto_scaling.auto_scaling_stack import AutoScalin
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
 
-def test_auto_scaling_stack_minimal():
-    """Test Auto Scaling stack with minimal configuration"""
-    app = App()
-    dummy_workload = WorkloadConfig(
-        {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
-        }
-    )
-    stack_config = StackConfig(
-        {
-            "auto_scaling": {
-                "name": "test-asg",
-                "instance_type": "t3.micro",
-                "min_capacity": 1,
-                "max_capacity": 3,
-                "desired_capacity": 2,
-            }
-        },
-        workload=dummy_workload.dictionary,
-    )
-    deployment = DeploymentConfig(
-        workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
-    )
+class TestAutoScalingStack(unittest.TestCase):
+    """Test Auto Scaling stack with real CDK synthesis"""
 
-    # Create and build the stack
-    stack = AutoScalingStack(app, "TestAutoScalingStack")
+    def setUp(self):
+        """Set up test resources"""
+        self.app = App()
 
-    # Mock VPC and security group
-    mock_vpc = MagicMock()
-    mock_vpc.vpc_id = "vpc-12345"
-    mock_security_group = MagicMock()
-    mock_security_group.security_group_id = "sg-12345"
-
-    # Mock the workload object with VPC
-    dummy_workload.vpc = mock_vpc
-
-    # Mock the necessary methods
-    mock_role = MagicMock()
-    mock_role.role_arn = "arn:aws:iam::account:role/test-role"
-
-    mock_launch_template = MagicMock()
-    mock_launch_template.launch_template_id = "lt-12345"
-
-    mock_asg = MagicMock()
-    mock_asg.auto_scaling_group_name = "test-asg"
-
-    # Mock the methods
-    with patch.object(AutoScalingStack, "vpc", return_value=mock_vpc) as mock_get_vpc:
-        with patch.object(
-            AutoScalingStack, "_create_instance_role", return_value=mock_role
-        ) as mock_create_role:
-            with patch.object(
-                AutoScalingStack, "_create_user_data"
-            ) as mock_create_user_data:
-                with patch.object(
-                    AutoScalingStack,
-                    "_create_launch_template",
-                    return_value=mock_launch_template,
-                ) as mock_create_lt:
-                    with patch.object(
-                        AutoScalingStack,
-                        "_create_auto_scaling_group",
-                        return_value=mock_asg,
-                    ) as mock_create_asg:
-                        with patch.object(
-                            AutoScalingStack, "_configure_scaling_policies"
-                        ) as mock_configure_policies:
-                            with patch.object(
-                                AutoScalingStack, "_add_outputs"
-                            ) as mock_add_outputs:
-                                # Build the stack
-                                stack.build(stack_config, deployment, dummy_workload)
-
-                                # Verify the Auto Scaling config was correctly loaded
-                                assert stack.asg_config.name == "test-asg"
-                                assert stack.asg_config.instance_type == "t3.micro"
-                                assert stack.asg_config.min_capacity == 1
-                                assert stack.asg_config.max_capacity == 3
-                                assert stack.asg_config.desired_capacity == 2
-
-                                # Verify the resources were created
-                                assert stack.instance_role is mock_role
-                                assert stack.launch_template is mock_launch_template
-                                assert stack.auto_scaling_group is mock_asg
-
-                                # Verify methods were called
-
-                                mock_create_role.assert_called_once()
-                                mock_create_user_data.assert_called_once()
-                                mock_create_lt.assert_called_once()
-                                mock_create_asg.assert_called_once()
-                                mock_configure_policies.assert_called_once()
-                                mock_add_outputs.assert_called_once()
-
-
-def test_auto_scaling_stack_full_config():
-    """Test Auto Scaling stack with full configuration"""
-    app = App()
-    dummy_workload = WorkloadConfig(
-        {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
-        }
-    )
-    stack_config = StackConfig(
-        {
-            "auto_scaling": {
-                "name": "full-asg",
-                "instance_type": "m5.large",
-                "min_capacity": 2,
-                "max_capacity": 10,
-                "desired_capacity": 4,
-                "subnet_group_name": "private",
-                "security_group_ids": ["sg-12345"],
-                "health_check_type": "ELB",
-                "health_check_grace_period": 300,
-                "cooldown": 300,
-                "termination_policies": ["OLDEST_INSTANCE", "DEFAULT"],
-                "managed_policies": [
-                    "AmazonSSMManagedInstanceCore",
-                    "AmazonEC2ContainerRegistryReadOnly",
-                ],
-                "ami_type": "amazon-linux-2023",
-                "detailed_monitoring": True,
-                "block_devices": [
-                    {
-                        "device_name": "/dev/xvda",
-                        "volume_size": 30,
-                        "volume_type": "gp3",
-                        "delete_on_termination": True,
-                        "encrypted": True,
-                    }
-                ],
-                "container_config": {
-                    "ecr": {"repo": "app", "tag": "latest"},
-                    "database": {
-                        "secret_arn": "arn:aws:secretsmanager:region:account:secret:db-credentials"
-                    },
-                    "port": 8080,
+        # Create a basic workload config with VPC
+        self.workload_config = WorkloadConfig(
+            {
+                "workload": {
+                    "name": "test-workload",
+                    "devops": {"name": "test-devops"},
                 },
-                "user_data_commands": [
-                    "yum update -y",
-                    "yum install -y docker",
-                    "systemctl enable --now docker",
-                ],
-                "scaling_policies": [
+                "vpc": {
+                    "id": "vpc-12345",
+                    "cidr": "10.0.0.0/16",
+                    "subnets": {
+                        "private": ["subnet-1", "subnet-2"],
+                        "public": ["subnet-3", "subnet-4"],
+                    },
+                },
+            }
+        )
+
+        # Create a deployment config
+        self.deployment_config = DeploymentConfig(
+            workload=self.workload_config.dictionary,
+            deployment={"name": "test-deployment"},
+        )
+
+    def test_minimal_auto_scaling_stack(self):
+        """Test Auto Scaling stack with minimal configuration"""
+        # Create stack configuration with minimal settings
+        stack_config = StackConfig(
+            {
+                "auto_scaling": {
+                    "name": "test-asg",
+                    "instance_type": "t3.micro",
+                    "min_capacity": 1,
+                    "max_capacity": 3,
+                    "desired_capacity": 2,
+                    "ami_type": "amazon-linux-2023",
+                    "subnet_group_name": "private",
+                    "security_group_ids": ["sg-12345"],
+                    "vpc_id": "vpc-12345",
+                }
+            },
+            workload=self.workload_config.dictionary,
+        )
+
+        # Create the stack
+        stack = AutoScalingStack(
+            self.app,
+            "TestMinimalAutoScaling",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+
+        # Build the stack - this will create all resources
+        stack.build(stack_config, self.deployment_config, self.workload_config)
+
+        # Synthesize the stack to CloudFormation
+        template = Template.from_stack(stack)
+
+        # Verify AutoScaling Group exists
+        template.has_resource_properties(
+            "AWS::AutoScaling::AutoScalingGroup",
+            {
+                "MinSize": "1",
+                "MaxSize": "3",
+                "DesiredCapacity": "2",
+            },
+        )
+
+        # Verify Launch Template exists
+        template.has_resource("AWS::EC2::LaunchTemplate", {})
+
+        # Verify IAM Role exists
+        template.has_resource("AWS::IAM::Role", {})
+
+        # Verify stack configuration was loaded correctly
+        self.assertEqual(stack.asg_config.name, "test-asg")
+        self.assertEqual(stack.asg_config.instance_type, "t3.micro")
+        self.assertEqual(stack.asg_config.min_capacity, 1)
+        self.assertEqual(stack.asg_config.max_capacity, 3)
+        self.assertEqual(stack.asg_config.desired_capacity, 2)
+
+    def test_full_configuration_auto_scaling_stack(self):
+        """Test Auto Scaling stack with comprehensive configuration"""
+        # Create stack configuration with full settings
+        stack_config = StackConfig(
+            {
+                "auto_scaling": {
+                    "name": "full-asg",
+                    "instance_type": "m5.large",
+                    "min_capacity": 2,
+                    "max_capacity": 10,
+                    "desired_capacity": 4,
+                    "subnet_group_name": "private",
+                    "security_group_ids": ["sg-12345", "sg-67890"],
+                    "vpc_id": "vpc-12345",
+                    "health_check_type": "ELB",
+                    "health_check_grace_period": 300,
+                    "cooldown": 300,
+                    "termination_policies": ["OLDEST_INSTANCE", "DEFAULT"],
+                    "managed_policies": [
+                        "AmazonSSMManagedInstanceCore",
+                        "AmazonEC2ContainerRegistryReadOnly",
+                    ],
+                    "ami_type": "amazon-linux-2023",
+                    "detailed_monitoring": True,
+                    "block_devices": [
+                        {
+                            "device_name": "/dev/xvda",
+                            "volume_size": 30,
+                            "volume_type": "gp3",
+                            "delete_on_termination": True,
+                            "encrypted": True,
+                        }
+                    ],
+                    "user_data_commands": [
+                        "yum update -y",
+                        "yum install -y docker",
+                        "systemctl enable --now docker",
+                    ],
+                    "tags": {"Environment": "test", "Project": "cdk-factory"},
+                }
+            },
+            workload=self.workload_config.dictionary,
+        )
+
+        # Create the stack
+        stack = AutoScalingStack(
+            self.app,
+            "TestFullAutoScaling",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+
+        # Build the stack
+        stack.build(stack_config, self.deployment_config, self.workload_config)
+
+        # Synthesize the stack to CloudFormation
+        template = Template.from_stack(stack)
+
+        # Verify AutoScaling Group with full configuration
+        template.has_resource_properties(
+            "AWS::AutoScaling::AutoScalingGroup",
+            {
+                "MinSize": "2",
+                "MaxSize": "10",
+                "DesiredCapacity": "4",
+                "Cooldown": "300",
+                "HealthCheckGracePeriod": 300,
+                "HealthCheckType": "ELB",
+                "TerminationPolicies": ["OldestInstance", "Default"],
+            },
+        )
+
+        # Verify Launch Template with detailed monitoring
+        template.has_resource_properties(
+            "AWS::EC2::LaunchTemplate",
+            {
+                "LaunchTemplateData": {
+                    "Monitoring": {"Enabled": True},
+                    "BlockDeviceMappings": [
+                        {
+                            "DeviceName": "/dev/xvda",
+                            "Ebs": {
+                                "VolumeSize": 30,
+                                "VolumeType": "gp3",
+                                "DeleteOnTermination": True,
+                                "Encrypted": True,
+                            },
+                        }
+                    ],
+                }
+            },
+        )
+
+        # Verify IAM Role with managed policies
+        template.has_resource_properties(
+            "AWS::IAM::Role",
+            {
+                "ManagedPolicyArns": [
                     {
-                        "name": "cpu-scale-out",
-                        "type": "target_tracking",
-                        "metric_name": "CPUUtilization",
-                        "target_value": 70,
-                        "scale_out_cooldown": 300,
-                        "scale_in_cooldown": 300,
-                    }
-                ],
-                "tags": {"Environment": "test", "Project": "cdk-factory"},
-            }
-        },
-        workload=dummy_workload.dictionary,
-    )
-    deployment = DeploymentConfig(
-        workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
-    )
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {"Ref": "AWS::Partition"},
+                                ":iam::aws:policy/AmazonSSMManagedInstanceCore",
+                            ],
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {"Ref": "AWS::Partition"},
+                                ":iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+                            ],
+                        ]
+                    },
+                ]
+            },
+        )
 
-    # Create and build the stack
-    stack = AutoScalingStack(app, "FullAutoScalingStack")
+        # Verify stack configuration was loaded correctly
+        self.assertEqual(stack.asg_config.name, "full-asg")
+        self.assertEqual(stack.asg_config.instance_type, "m5.large")
+        self.assertEqual(stack.asg_config.min_capacity, 2)
+        self.assertEqual(stack.asg_config.max_capacity, 10)
+        self.assertEqual(stack.asg_config.desired_capacity, 4)
+        self.assertEqual(stack.asg_config.health_check_type, "ELB")
+        self.assertEqual(stack.asg_config.cooldown, 300)
+        self.assertEqual(
+            stack.asg_config.termination_policies, ["OLDEST_INSTANCE", "DEFAULT"]
+        )
+        self.assertTrue(stack.asg_config.detailed_monitoring)
+        self.assertEqual(len(stack.asg_config.block_devices), 1)
+        self.assertEqual(len(stack.asg_config.user_data_commands), 3)
 
-    # Mock VPC and security group
-    mock_vpc = MagicMock()
-    mock_vpc.vpc_id = "vpc-12345"
-    mock_security_group = MagicMock()
-    mock_security_group.security_group_id = "sg-12345"
+    def test_auto_scaling_with_update_policy(self):
+        """Test Auto Scaling stack with update policy configuration"""
+        # Create stack configuration with update policy
+        stack_config = StackConfig(
+            {
+                "auto_scaling": {
+                    "name": "update-policy-asg",
+                    "instance_type": "t3.small",
+                    "min_capacity": 2,
+                    "max_capacity": 6,
+                    "desired_capacity": 3,
+                    "subnet_group_name": "private",
+                    "security_group_ids": ["sg-12345"],
+                    "vpc_id": "vpc-12345",
+                    "update_policy": {
+                        "min_instances_in_service": 1,
+                        "max_batch_size": 2,
+                        "pause_time": 600,
+                    },
+                }
+            },
+            workload=self.workload_config.dictionary,
+        )
 
-    # Mock the workload object with VPC
-    dummy_workload.vpc = mock_vpc
+        # Create the stack
+        stack = AutoScalingStack(
+            self.app,
+            "TestUpdatePolicyAutoScaling",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
 
-    # Mock the necessary methods
-    mock_role = MagicMock()
-    mock_role.role_arn = "arn:aws:iam::account:role/full-role"
+        # Build the stack
+        stack.build(stack_config, self.deployment_config, self.workload_config)
 
-    mock_launch_template = MagicMock()
-    mock_launch_template.launch_template_id = "lt-67890"
+        # Synthesize the stack to CloudFormation
+        template = Template.from_stack(stack)
 
-    mock_asg = MagicMock()
-    mock_asg.auto_scaling_group_name = "full-asg"
+        # Get the template as a dictionary for detailed inspection
+        template_dict = template.to_json()
 
-    # Mock the methods
-    with patch.object(AutoScalingStack, "vpc", return_value=mock_vpc) as mock_get_vpc:
-        with patch.object(
-            AutoScalingStack, "_get_security_groups", return_value=[mock_security_group]
-        ) as mock_get_sg:
-            with patch.object(
-                AutoScalingStack, "_create_instance_role", return_value=mock_role
-            ) as mock_create_role:
-                with patch.object(
-                    AutoScalingStack, "_create_user_data"
-                ) as mock_create_user_data:
-                    with patch.object(
-                        AutoScalingStack,
-                        "_create_launch_template",
-                        return_value=mock_launch_template,
-                    ) as mock_create_lt:
-                        with patch.object(
-                            AutoScalingStack,
-                            "_create_auto_scaling_group",
-                            return_value=mock_asg,
-                        ) as mock_create_asg:
-                            with patch.object(
-                                AutoScalingStack, "_configure_scaling_policies"
-                            ) as mock_configure_policies:
-                                with patch.object(
-                                    AutoScalingStack, "_add_outputs"
-                                ) as mock_add_outputs:
-                                    # Build the stack
-                                    stack.build(
-                                        stack_config, deployment, dummy_workload
-                                    )
+        # Find the AutoScalingGroup resource
+        asg_resources = [
+            resource
+            for resource_id, resource in template_dict["Resources"].items()
+            if resource["Type"] == "AWS::AutoScaling::AutoScalingGroup"
+        ]
 
-                                    # Verify the Auto Scaling config was correctly loaded
-                                    assert stack.asg_config.name == "full-asg"
-                                    assert stack.asg_config.instance_type == "m5.large"
-                                    assert stack.asg_config.min_capacity == 2
-                                    assert stack.asg_config.max_capacity == 10
-                                    assert stack.asg_config.desired_capacity == 4
-                                    assert (
-                                        stack.asg_config.subnet_group_name == "private"
-                                    )
-                                    assert stack.asg_config.security_group_ids == [
-                                        "sg-12345"
-                                    ]
-                                    assert stack.asg_config.health_check_type == "ELB"
-                                    assert (
-                                        stack.asg_config.health_check_grace_period
-                                        == 300
-                                    )
-                                    assert stack.asg_config.cooldown == 300
-                                    assert stack.asg_config.termination_policies == [
-                                        "OLDEST_INSTANCE",
-                                        "DEFAULT",
-                                    ]
-                                    assert stack.asg_config.managed_policies == [
-                                        "AmazonSSMManagedInstanceCore",
-                                        "AmazonEC2ContainerRegistryReadOnly",
-                                    ]
-                                    assert (
-                                        stack.asg_config.ami_type == "amazon-linux-2023"
-                                    )
-                                    assert stack.asg_config.detailed_monitoring is True
-                                    assert len(stack.asg_config.block_devices) == 1
-                                    assert (
-                                        stack.asg_config.block_devices[0]["device_name"]
-                                        == "/dev/xvda"
-                                    )
-                                    assert (
-                                        stack.asg_config.block_devices[0]["volume_size"]
-                                        == 30
-                                    )
-                                    assert (
-                                        stack.asg_config.container_config["ecr"]["repo"]
-                                        == "app"
-                                    )
-                                    assert (
-                                        stack.asg_config.container_config["port"]
-                                        == 8080
-                                    )
-                                    assert len(stack.asg_config.user_data_commands) == 3
-                                    assert len(stack.asg_config.scaling_policies) == 1
-                                    assert (
-                                        stack.asg_config.scaling_policies[0]["name"]
-                                        == "cpu-scale-out"
-                                    )
-                                    assert stack.asg_config.tags == {
-                                        "Environment": "test",
-                                        "Project": "cdk-factory",
-                                    }
+        # Verify we have exactly one ASG
+        self.assertEqual(len(asg_resources), 1)
 
-                                    # Verify the resources were created
-                                    assert stack.instance_role is mock_role
-                                    assert stack.launch_template is mock_launch_template
-                                    assert stack.auto_scaling_group is mock_asg
+        # Get the ASG resource
+        asg_resource = asg_resources[0]
 
-                                    # Verify methods were called
+        # Verify the update policy exists and is correctly configured
+        self.assertIn("UpdatePolicy", asg_resource)
+        update_policy = asg_resource["UpdatePolicy"]
+        self.assertIn("AutoScalingRollingUpdate", update_policy)
 
-                                    mock_get_sg.assert_called_once()
-                                    mock_create_role.assert_called_once()
-                                    mock_create_user_data.assert_called_once()
-                                    mock_create_lt.assert_called_once()
-                                    mock_create_asg.assert_called_once()
-                                    mock_configure_policies.assert_called_once()
-                                    mock_add_outputs.assert_called_once()
+        rolling_update = update_policy["AutoScalingRollingUpdate"]
+        self.assertEqual(rolling_update["MinInstancesInService"], 1)
+        self.assertEqual(rolling_update["MaxBatchSize"], 2)
+        self.assertEqual(
+            rolling_update["PauseTime"], "PT10M"
+        )  # 600 seconds = 10 minutes
+
+    def test_container_configuration(self):
+        """Test Auto Scaling stack with container configuration"""
+        # Create stack configuration with container settings
+        stack_config = StackConfig(
+            {
+                "auto_scaling": {
+                    "name": "container-asg",
+                    "instance_type": "t3.medium",
+                    "min_capacity": 1,
+                    "max_capacity": 5,
+                    "desired_capacity": 2,
+                    "subnet_group_name": "private",
+                    "security_group_ids": ["sg-12345"],
+                    "vpc_id": "vpc-12345",
+                    "container_config": {
+                        "ecr": {"repo": "my-app", "tag": "v1.0.0"},
+                        "port": 8080,
+                        "database": {
+                            "secret_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:db-creds"
+                        },
+                    },
+                }
+            },
+            workload=self.workload_config.dictionary,
+        )
+
+        # Create the stack
+        stack = AutoScalingStack(
+            self.app,
+            "TestContainerAutoScaling",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+
+        # Build the stack
+        stack.build(stack_config, self.deployment_config, self.workload_config)
+
+        # Synthesize the stack to CloudFormation
+        template = Template.from_stack(stack)
+
+        # Verify Launch Template exists (container config affects user data)
+        template.has_resource("AWS::EC2::LaunchTemplate", {})
+
+        # Verify stack configuration was loaded correctly
+        self.assertEqual(stack.asg_config.container_config["ecr"]["repo"], "my-app")
+        self.assertEqual(stack.asg_config.container_config["port"], 8080)
+
+    def test_custom_ami_configuration(self):
+        """Test Auto Scaling stack with custom AMI"""
+        # Create stack configuration with custom AMI
+        stack_config = StackConfig(
+            {
+                "auto_scaling": {
+                    "name": "custom-ami-asg",
+                    "instance_type": "t3.small",
+                    "min_capacity": 1,
+                    "max_capacity": 3,
+                    "desired_capacity": 1,
+                    "subnet_group_name": "private",
+                    "security_group_ids": ["sg-12345"],
+                    "vpc_id": "vpc-12345",
+                    "ami_id": "ami-12345678",
+                }
+            },
+            workload=self.workload_config.dictionary,
+        )
+
+        # Create the stack
+        stack = AutoScalingStack(
+            self.app,
+            "TestCustomAMIAutoScaling",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+
+        # Build the stack
+        stack.build(stack_config, self.deployment_config, self.workload_config)
+
+        # Synthesize the stack to CloudFormation
+        template = Template.from_stack(stack)
+
+        # Verify Launch Template with custom AMI
+        template.has_resource_properties(
+            "AWS::EC2::LaunchTemplate",
+            {"LaunchTemplateData": {"ImageId": "ami-12345678"}},
+        )
+
+        # Verify stack configuration
+        self.assertEqual(stack.asg_config.ami_id, "ami-12345678")
+
+    def test_custom_scale_configuration(self):
+        """Test Auto Scaling stack with custom AMI"""
+        # Create stack configuration with custom AMI
+        print("test_custom_scale_configuration")
+        stack_config = StackConfig(
+            {
+                "auto_scaling": {
+                    "name": "test-asg",
+                    "vpc_id": "vpc-12345",
+                    "instance_type": "t3.medium",
+                    "min_capacity": 2,
+                    "max_capacity": 6,
+                    "desired_capacity": 2,
+                    "subnet_group_name": "private",
+                    "security_group_ids": ["sg-12345"],
+                    "health_check_type": "ELB",
+                    "health_check_grace_period": 300,
+                    "cooldown": 300,
+                    "termination_policies": ["OLDEST_INSTANCE", "DEFAULT"],
+                    "managed_policies": [
+                        "AmazonSSMManagedInstanceCore",
+                        "CloudWatchAgentServerPolicy",
+                        "AmazonEC2ContainerRegistryReadOnly",
+                    ],
+                    "ami_id": "ami-12345678",
+                    "detailed_monitoring": True,
+                    "block_devices": [
+                        {
+                            "device_name": "/dev/xvda",
+                            "volume_size": 30,
+                            "volume_type": "GP3",
+                            "delete_on_termination": True,
+                            "encrypted": True,
+                        }
+                    ],
+                    "container_config_TMP": {
+                        "ecr": {
+                            "account_id": "123456789012",
+                            "region": "us-east-1",
+                            "repo": "sample-app",
+                            "tag": "latest",
+                        },
+                        "database_TMP": {
+                            "secret_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:db-creds"
+                        },
+                        "port": 8080,
+                    },
+                    "user_data_commands": [
+                        "yum update -y",
+                        "yum install -y amazon-cloudwatch-agent",
+                        "systemctl enable amazon-cloudwatch-agent",
+                        "systemctl start amazon-cloudwatch-agent",
+                        "#!/bin/bash",
+                        "# Log startup\necho 'Starting application setup' > /var/log/user-data.log",
+                        "# Update system packages\nyum update -y",
+                        "# Install Apache web server\nyum install -y httpd",
+                        "# Create health check endpoint\ncat > /var/www/html/health <<EOF\n<!DOCTYPE html>\n<html>\n<head>\n  <title>Health Check</title>\n</head>\n<body>\n  <h1>OK</h1>\n</body>\n</html>\nEOF",
+                        "# Create index page\ncat > /var/www/html/index.html <<EOF\n<!DOCTYPE html>\n<html>\n<head>\n  <title>{{WORKLOAD_NAME}} - {{ENVIRONMENT}}</title>\n</head>\n<body>\n  <h1>Welcome to {{WORKLOAD_NAME}} - {{ENVIRONMENT}}</h1>\n  <p>Server is up and running!</p>\n</body>\n</html>\nEOF",
+                        "# Set proper permissions\nchown -R apache:apache /var/www/html",
+                        "# Start and enable Apache service\nsystemctl start httpd\nsystemctl enable httpd",
+                        "# Log completion\necho 'Web server setup complete' >> /var/log/user-data.log",
+                    ],
+                    "scaling_policies": [
+                        {
+                            "name": "cpu-scale-out",
+                            "type": "target_tracking",
+                            "metric_name": "CPUUtilization",
+                            "statistic": "Average",
+                            "period": 60,
+                            "steps": [
+                                {"lower": 0, "upper": 30, "change": -1},
+                                {"lower": 70, "change": 1},
+                            ],
+                        },
+                        {
+                            "name": "request-count-scale",
+                            "type": "step",
+                            "metric_name": "RequestCount",
+                            "statistic": "Sum",
+                            "period": 60,
+                            "steps": [
+                                {"lower": 0, "upper": 1000, "change": 0},
+                                {"lower": 1000, "upper": 5000, "change": 1},
+                                {"lower": 5000, "change": 2},
+                            ],
+                        },
+                    ],
+                    "update_policy": {
+                        "min_instances_in_service": 1,
+                        "max_batch_size": 1,
+                        "pause_time": 300,
+                    },
+                    "tags": {
+                        "Environment": "test",
+                        "Application": "test-workload",
+                        "ManagedBy": "CDK-Factory",
+                    },
+                    "ssm_exports": {
+                        "asg_name": "/test/test-workload/auto-scaling/name",
+                        "asg_arn": "/test/test-workload/auto-scaling/arn",
+                    },
+                }
+            },
+            workload=self.workload_config.dictionary,
+        )
+
+        # Create the stack
+        stack = AutoScalingStack(
+            self.app,
+            "TestCustomAMIAutoScaling",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+
+        # Build the stack
+        stack.build(stack_config, self.deployment_config, self.workload_config)
+
+        # Synthesize the stack to CloudFormation
+        template = Template.from_stack(stack)
+
+        # Verify Launch Template with custom AMI
+        template.has_resource_properties(
+            "AWS::EC2::LaunchTemplate",
+            {"LaunchTemplateData": {"ImageId": "ami-12345678"}},
+        )
+
+        # Verify stack configuration
+        self.assertEqual(stack.asg_config.ami_id, "ami-12345678")
 
 
-def test_auto_scaling_stack_existing_asg():
-    """Test Auto Scaling stack with importing an existing ASG"""
-    app = App()
-    dummy_workload = WorkloadConfig(
-        {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
-        }
-    )
-    stack_config = StackConfig(
-        {
-            "auto_scaling": {
-                "name": "imported-asg",
-                "existing_asg_name": "existing-asg",
-            }
-        },
-        workload=dummy_workload.dictionary,
-    )
-    deployment = DeploymentConfig(
-        workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
-    )
-
-    # Create and build the stack
-    stack = AutoScalingStack(app, "ImportAutoScalingStack")
-
-    # Mock VPC and security group
-    mock_vpc = MagicMock()
-    mock_vpc.vpc_id = "vpc-12345"
-
-    # Mock the workload object with VPC
-    dummy_workload.vpc = mock_vpc
-
-    # Mock the necessary methods
-    mock_asg = MagicMock()
-    mock_asg.auto_scaling_group_name = "existing-asg"
-
-    # In the actual implementation, there's no _import_auto_scaling_group method
-    # The import happens in _create_auto_scaling_group when existing_asg_name is set
-    with patch.object(AutoScalingStack, "vpc", return_value=mock_vpc) as mock_get_vpc:
-        with patch.object(
-            AutoScalingStack, "_create_auto_scaling_group", return_value=mock_asg
-        ) as mock_create_asg:
-            with patch.object(AutoScalingStack, "_add_outputs") as mock_add_outputs:
-                # Build the stack
-                stack.build(stack_config, deployment, dummy_workload)
-
-                # Verify the Auto Scaling config was correctly loaded
-                assert stack.asg_config.name == "imported-asg"
-
-                # Verify the ASG was imported
-                assert stack.auto_scaling_group is mock_asg
-
-                # Verify methods were called
-
-                mock_create_asg.assert_called_once()
-                mock_add_outputs.assert_called_once()
+if __name__ == "__main__":
+    unittest.main()

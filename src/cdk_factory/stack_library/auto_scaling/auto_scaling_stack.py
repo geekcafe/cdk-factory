@@ -319,11 +319,13 @@ class AutoScalingStack(IStack):
                 "UpdatePolicy",
                 {
                     "AutoScalingRollingUpdate": {
-                        "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
+                        "MinInstancesInService": update_policy.get(
+                            "min_instances_in_service", 1
+                        ),
                         "MaxBatchSize": update_policy.get("max_batch_size", 1),
                         "PauseTime": f"PT{update_policy.get('pause_time', 300) // 60}M",
                     }
-                }
+                },
             )
 
         # Add tags
@@ -359,7 +361,7 @@ class AutoScalingStack(IStack):
         return cloudwatch.Metric(
             namespace="AWS/EC2",
             metric_name=policy.get("metric_name", "CPUUtilization"),
-            dimensions={
+            dimensions_map={
                 "AutoScalingGroupName": self.auto_scaling_group.auto_scaling_group_name
             },
             statistic=policy.get("statistic", "Average"),
@@ -374,13 +376,17 @@ class AutoScalingStack(IStack):
         scaling_intervals = []
 
         for step in steps:
-            scaling_intervals.append(
-                autoscaling.ScalingInterval(
-                    lower=step.get("lower", 0),
-                    upper=step.get("upper", float("inf")),
-                    change=step.get("change", 1),
-                )
-            )
+            # Handle upper bound - if not specified, don't set it (let CDK handle it)
+            interval_kwargs = {
+                "lower": step.get("lower", 0),
+                "change": step.get("change", 1),
+            }
+            
+            # Only set upper if it's explicitly provided
+            if "upper" in step:
+                interval_kwargs["upper"] = step["upper"]
+                
+            scaling_intervals.append(autoscaling.ScalingInterval(**interval_kwargs))
 
         return scaling_intervals
 
