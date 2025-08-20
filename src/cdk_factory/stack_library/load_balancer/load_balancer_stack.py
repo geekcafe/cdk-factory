@@ -467,7 +467,9 @@ class LoadBalancerStack(IStack):
             # Target Group ARNs
             for tg_name, target_group in self.target_groups.items():
                 # Normalize target group name for consistent CloudFormation export naming
-                normalized_tg_name = self.normalize_resource_name(tg_name, for_export=True)
+                normalized_tg_name = self.normalize_resource_name(
+                    tg_name, for_export=True
+                )
                 cdk.CfnOutput(
                     self,
                     f"{lb_name}-{normalized_tg_name}-arn",
@@ -490,8 +492,12 @@ class LoadBalancerStack(IStack):
         # Export target group ARNs to SSM
         for tg_name, target_group in self.target_groups.items():
             # Normalize target group name for consistent SSM parameter naming
-            normalized_tg_name = self.normalize_resource_name(tg_name)
-            lb_resources[f"target_group_{normalized_tg_name}_arn"] = target_group.target_group_arn
+            # attempting to normalize this is causing issues
+            # TODO : remove the normalizing code completely once we test this
+            normalized_tg_name = tg_name  # self.normalize_resource_name(tg_name)
+            lb_resources[f"target_group_{normalized_tg_name}_arn"] = (
+                target_group.target_group_arn
+            )
 
         # Use the new clearer method for exporting resources to SSM
         self.export_resource_to_ssm(
@@ -518,12 +524,14 @@ class LoadBalancerStack(IStack):
                 f"{lb_name}-arn",
                 value=self.load_balancer.load_balancer_arn,
                 export_name=f"{self.deployment.build_resource_name(lb_name)}-arn",
-        )
+            )
 
             # Target Group ARNs
             for tg_name, target_group in self.target_groups.items():
                 # Normalize target group name for consistent CloudFormation export naming
-                normalized_tg_name = self.normalize_resource_name(tg_name, for_export=True)
+                normalized_tg_name = self.normalize_resource_name(
+                    tg_name, for_export=True
+                )
                 cdk.CfnOutput(
                     self,
                     f"{lb_name}-{normalized_tg_name}-arn",
