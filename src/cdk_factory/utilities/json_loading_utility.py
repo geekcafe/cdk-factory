@@ -144,7 +144,7 @@ class JsonLoadingUtility:
     @staticmethod
     def recursive_replace(data: dict | list | str, replacements: Dict[str, Any]):
         """
-        Recursively replaces substrings in all string values within a JSON-like structure.
+        Recursively replaces substrings in all string values and keys within a JSON-like structure.
 
         :param data: The input data (dict, list, or other) to process.
         :param replacements: A dictionary where keys are substrings to find and values are the replacements.
@@ -158,10 +158,18 @@ class JsonLoadingUtility:
         :return: A new data structure with the replacements applied.
         """
         if isinstance(data, dict):
-            return {
-                k: JsonLoadingUtility.recursive_replace(v, replacements)
-                for k, v in data.items()
-            }
+            result = {}
+            for k, v in data.items():
+                # Replace placeholders in the key if it's a string
+                new_key = k
+                if isinstance(k, str):
+                    for find_str, replace_str in replacements.items():
+                        new_key = new_key.replace(find_str, replace_str)
+                
+                # Recursively process the value
+                new_value = JsonLoadingUtility.recursive_replace(v, replacements)
+                result[new_key] = new_value
+            return result
         elif isinstance(data, list):
             return [
                 JsonLoadingUtility.recursive_replace(item, replacements)
