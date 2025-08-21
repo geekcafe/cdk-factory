@@ -288,6 +288,9 @@ class LoadBalancerStack(IStack):
 
                 # Add rules if specified
                 self._add_listener_rules(listener, listener_config.get("rules", []))
+                
+                # Add IP whitelist rules if enabled
+                self._add_ip_whitelist_rules(listener)
 
             else:  # NETWORK
                 listener = elbv2.NetworkListener(
@@ -369,6 +372,67 @@ class LoadBalancerStack(IStack):
                     conditions=conditions,
                     target_groups=[target_group],
                 )
+
+    def _add_ip_whitelist_rules(self, listener: elbv2.ApplicationListener) -> None:
+        """Add IP whitelist rules to an Application Load Balancer listener"""
+        if not self.lb_config.ip_whitelist_enabled or not self.lb_config.ip_whitelist_cidrs:
+            return
+
+        # For IP whitelisting, we need to create a rule that blocks all IPs except those in the whitelist
+        # Since ALB doesn't support negation directly, we'll create a rule that matches all IPs
+        # and blocks them, but we'll modify the listener's default action to only accept whitelisted IPs
+        
+        # Get the current default target groups from the listener
+        default_target_groups = []
+        if hasattr(listener, 'default_target_groups') and listener.default_target_groups:
+            default_target_groups = list(listener.default_target_groups)
+
+        # Create a rule to allow whitelisted IPs to proceed to default target groups
+        allow_rule_id = f"{listener.node.id}-ip-whitelist-allow"
+        
+        if default_target_groups:
+            # Forward whitelisted IPs to the default target groups
+            allow_action = elbv2.ListenerAction.forward(target_groups=default_target_groups)
+        else:
+            # If no default target groups, allow through to default action
+            # This will use whatever the listener's default action was set to
+            return  # Let the default action handle it
+
+        # Create the allow rule for whitelisted IPs with high priority
+        elbv2.ApplicationListenerRule(
+            self,
+            allow_rule_id,
+            listener=listener,
+            priority=1,  # High priority to evaluate first
+            conditions=[
+                elbv2.ListenerCondition.source_ips(self.lb_config.ip_whitelist_cidrs)
+            ],
+            action=allow_action,
+        )
+
+        # Create a catch-all rule to block non-whitelisted IPs
+        block_rule_id = f"{listener.node.id}-ip-whitelist-block"
+        
+        # Configure the block action
+        block_response = self.lb_config.ip_whitelist_block_response
+        block_action = elbv2.ListenerAction.fixed_response(
+            status_code=block_response.get("status_code", 403),
+            content_type=block_response.get("content_type", "text/plain"),
+            message_body=block_response.get("message_body", "Access Denied")
+        )
+
+        # Create a rule that matches all other IPs (catch-all) and blocks them
+        # This rule has lower priority so whitelisted IPs are processed first
+        elbv2.ApplicationListenerRule(
+            self,
+            block_rule_id,
+            listener=listener,
+            priority=32000,  # Low priority catch-all rule
+            conditions=[
+                elbv2.ListenerCondition.source_ips(["0.0.0.0/0", "::/0"])
+            ],
+            action=block_action,
+        )
 
     def _setup_dns(self, lb_name: str) -> None:
         """Setup DNS records for the Load Balancer"""
@@ -491,13 +555,11 @@ class LoadBalancerStack(IStack):
 
         # Export target group ARNs to SSM
         for tg_name, target_group in self.target_groups.items():
-            # Normalize target group name for consistent SSM parameter naming
+            # Do not normalize the ssm parameter name
             # attempting to normalize this is causing issues
-            # TODO : remove the normalizing code completely once we test this
-            normalized_tg_name = tg_name  # self.normalize_resource_name(tg_name)
-            lb_resources[f"target_group_{normalized_tg_name}_arn"] = (
-                target_group.target_group_arn
-            )
+            # some parameters are auto generated based on the resource name
+            # in order to import them later, the names need to match
+            lb_resources[f"target_group_{tg_name}_arn"] = target_group.target_group_arn
 
         # Use the new clearer method for exporting resources to SSM
         self.export_resource_to_ssm(

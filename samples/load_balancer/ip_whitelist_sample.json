@@ -1,0 +1,80 @@
+{
+  "deployment": {
+    "name": "ip-whitelist-demo",
+    "region": "us-east-1",
+    "account": "123456789012"
+  },
+  "workload": {
+    "vpc_id": "vpc-12345678"
+  },
+  "stacks": [
+    {
+      "name": "load-balancer-with-ip-whitelist",
+      "type": "load_balancer_stack",
+      "load_balancer": {
+        "name": "secure-alb",
+        "type": "APPLICATION",
+        "internet_facing": true,
+        "subnets": ["subnet-12345678", "subnet-87654321"],
+        "security_groups": ["sg-12345678"],
+        "ip_whitelist": {
+          "enabled": true,
+          "allowed_cidrs": [
+            "203.0.113.0/24",
+            "198.51.100.0/24",
+            "192.0.2.0/24"
+          ],
+          "block_action": "fixed_response",
+          "block_response": {
+            "status_code": 403,
+            "content_type": "text/html",
+            "message_body": "<html><body><h1>Access Denied</h1><p>Your IP address is not authorized to access this resource.</p></body></html>"
+          }
+        },
+        "target_groups": [
+          {
+            "name": "web-servers",
+            "port": 80,
+            "protocol": "HTTP",
+            "target_type": "instance",
+            "health_check": {
+              "path": "/health",
+              "port": "traffic-port",
+              "healthy_threshold": 2,
+              "unhealthy_threshold": 3,
+              "timeout": 5,
+              "interval": 30,
+              "healthy_http_codes": "200"
+            }
+          }
+        ],
+        "listeners": [
+          {
+            "name": "http-listener",
+            "port": 80,
+            "protocol": "HTTP",
+            "default_target_group": "web-servers"
+          },
+          {
+            "name": "https-listener",
+            "port": 443,
+            "protocol": "HTTPS",
+            "default_target_group": "web-servers",
+            "rules": [
+              {
+                "priority": 100,
+                "path_patterns": ["/api/*"],
+                "target_group": "web-servers"
+              }
+            ]
+          }
+        ],
+        "certificate_arns": ["arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"],
+        "tags": {
+          "Environment": "production",
+          "Project": "secure-web-app"
+        }
+      }
+    }
+  ]
+}

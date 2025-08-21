@@ -114,3 +114,28 @@ class LoadBalancerConfig(BaseConfig):
     def ssl_cert_arn(self) -> str | None:
         """Returns the SSL certificate ARN for the Load Balancer"""
         return self.__config.get("ssl_cert_arn")
+
+    @property
+    def ip_whitelist_enabled(self) -> bool:
+        """Whether IP whitelisting is enabled"""
+        return self.__config.get("ip_whitelist", {}).get("enabled", False)
+
+    @property
+    def ip_whitelist_cidrs(self) -> List[str]:
+        """List of CIDR blocks to allow access"""
+        return self.__config.get("ip_whitelist", {}).get("allowed_cidrs", [])
+
+    @property
+    def ip_whitelist_block_action(self) -> str:
+        """Action to take for blocked IPs (fixed_response or redirect)"""
+        return self.__config.get("ip_whitelist", {}).get("block_action", "fixed_response")
+
+    @property
+    def ip_whitelist_block_response(self) -> Dict[str, Any]:
+        """Response configuration for blocked requests"""
+        default_response = {
+            "status_code": 403,
+            "content_type": "text/plain",
+            "message_body": "Access Denied"
+        }
+        return self.__config.get("ip_whitelist", {}).get("block_response", default_response)
