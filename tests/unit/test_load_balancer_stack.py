@@ -22,10 +22,12 @@ class TestLoadBalancerStack(unittest.TestCase):
 
     def test_minimal_alb_configuration(self):
         """Test Load Balancer stack with minimal ALB configuration"""
-        app = App(context={
-            "aws-cdk:enableDiffNoFail": True,
-        })
-        
+        app = App(
+            context={
+                "aws-cdk:enableDiffNoFail": True,
+            }
+        )
+
         dummy_workload = WorkloadConfig(
             {
                 "workload": {
@@ -50,10 +52,10 @@ class TestLoadBalancerStack(unittest.TestCase):
                                 "interval": 30,
                                 "timeout": 5,
                                 "healthy_threshold": 2,
-                                "unhealthy_threshold": 5
-                            }
+                                "unhealthy_threshold": 5,
+                            },
                         }
-                    ]
+                    ],
                 }
             },
             workload=dummy_workload.dictionary,
@@ -87,9 +89,11 @@ class TestLoadBalancerStack(unittest.TestCase):
 
     def test_full_alb_configuration(self):
         """Test Load Balancer stack with full ALB configuration"""
-        app = App(context={
-            "aws-cdk:enableDiffNoFail": True,
-        })
+        app = App(
+            context={
+                "aws-cdk:enableDiffNoFail": True,
+            }
+        )
         dummy_workload = WorkloadConfig(
             {
                 "workload": {
@@ -176,14 +180,14 @@ class TestLoadBalancerStack(unittest.TestCase):
                 "Scheme": "internet-facing",
             },
         )
-        
+
         # Verify specific load balancer attributes are present
         template.has_resource_properties(
             "AWS::ElasticLoadBalancingV2::LoadBalancer",
             {
-                "LoadBalancerAttributes": Match.array_with([
-                    {"Key": "idle_timeout.timeout_seconds", "Value": "120"}
-                ])
+                "LoadBalancerAttributes": Match.array_with(
+                    [{"Key": "idle_timeout.timeout_seconds", "Value": "120"}]
+                )
             },
         )
 
@@ -206,9 +210,11 @@ class TestLoadBalancerStack(unittest.TestCase):
 
     def test_network_load_balancer_configuration(self):
         """Test Load Balancer stack with Network Load Balancer configuration"""
-        app = App(context={
-            "aws-cdk:enableDiffNoFail": True,
-        })
+        app = App(
+            context={
+                "aws-cdk:enableDiffNoFail": True,
+            }
+        )
         dummy_workload = WorkloadConfig(
             {
                 "workload": {
@@ -284,9 +290,11 @@ class TestLoadBalancerStack(unittest.TestCase):
 
     def test_ssm_parameter_export(self):
         """Test Load Balancer stack with SSM parameter export configuration"""
-        app = App(context={
-            "aws-cdk:enableDiffNoFail": True,
-        })
+        app = App(
+            context={
+                "aws-cdk:enableDiffNoFail": True,
+            }
+        )
         dummy_workload = WorkloadConfig(
             {
                 "workload": {
@@ -307,9 +315,9 @@ class TestLoadBalancerStack(unittest.TestCase):
                         {"name": "web-servers", "port": 80, "protocol": "HTTP"}
                     ],
                     "ssm_exports": {
-                        "alb_dns_name_path": "/my-app/alb/dns-name",
-                        "alb_arn_path": "/my-app/alb/arn",
-                        "target_group_web-servers_arn_path": "/my-app/alb/web-servers-arn",
+                        "alb_dns_name": "/my-app/alb/dns-name",
+                        "alb_arn": "/my-app/alb/arn",
+                        "target_group_web-servers_arn": "/my-app/alb/web-servers-arn",
                     },
                 }
             },
@@ -331,15 +339,13 @@ class TestLoadBalancerStack(unittest.TestCase):
         # Synthesize the stack to CloudFormation template
         template = Template.from_stack(stack)
 
-        # Note: SSM parameters are not being created in this test environment
-        # This appears to be due to the test setup not triggering the SSM export logic
-        # In a real deployment, these would be created
-        template.resource_count_is("AWS::SSM::Parameter", 0)
-        
+        # make sure our parameters are created
+        template.resource_count_is("AWS::SSM::Parameter", 3)
+
         # Verify that the load balancer was created successfully
         template.has_resource_properties(
             "AWS::ElasticLoadBalancingV2::LoadBalancer",
-            {"Type": "application", "Name": "ssm-lb"}
+            {"Type": "application", "Name": "ssm-lb"},
         )
 
     def test_load_balancer_config(self):
