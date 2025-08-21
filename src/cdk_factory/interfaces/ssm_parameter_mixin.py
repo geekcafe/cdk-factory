@@ -25,14 +25,14 @@ class SsmParameterMixin:
     def normalize_resource_name(name: str, for_export: bool = False) -> str:
         """
         Normalize resource names for consistent naming across CDK stacks.
-        
+
         Args:
             name: The resource name to normalize
             for_export: If True, keeps hyphens for CloudFormation export compatibility
-            
+
         Returns:
             Normalized name with consistent convention
-            
+
         Examples:
             "web-servers" -> "web_servers" (for SSM parameters)
             "web-servers" -> "web-servers" (for CloudFormation exports, for_export=True)
@@ -149,9 +149,15 @@ class SsmParameterMixin:
             Dictionary of created SSM parameters
         """
         parameters = {}
-
+        missing_keys = []
         for key, path in ssm_config.items():
-            if key not in config_dict or not path:
+            if key not in config_dict:
+                # missing or misspelled key
+                missing_keys.append(key)
+                continue
+
+            if not path:
+                # nothing configured for this key which is acceptable
                 continue
 
             value = str(config_dict[key])
@@ -167,6 +173,20 @@ class SsmParameterMixin:
 
             if param:
                 parameters[key] = param
+
+        if missing_keys:
+            logger.warning(f"Missing keys: {missing_keys}")
+            # TODO : throw an exception here?
+            message = (
+                "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+                f"\nThe following keys are missing from the config dictionary: {missing_keys}."
+                f"\nThe accepted keys are: {list(config_dict.keys())}."
+                "\nPlease check your configuration.  Some keys may be misspelled."
+                "\n🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+            )
+            print(message)
+            logger.error(message.replace("\n", ""))
+            exit(1)
 
         return parameters
 
