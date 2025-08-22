@@ -293,7 +293,7 @@ class LoadBalancerStack(IStack):
                 self._add_listener_rules(listener, listener_config.get("rules", []))
 
                 # Add IP whitelist rules if enabled
-                self._add_ip_whitelist_rules(listener)
+                self._add_ip_whitelist_rules(listener, [default_target_group])
 
             else:  # NETWORK
                 listener = elbv2.NetworkListener(
@@ -382,7 +382,11 @@ class LoadBalancerStack(IStack):
                     target_groups=[target_group],
                 )
 
-    def _add_ip_whitelist_rules(self, listener: elbv2.ApplicationListener) -> None:
+    def _add_ip_whitelist_rules(
+        self,
+        listener: elbv2.ApplicationListener,
+        default_target_groups: List[elbv2.ApplicationTargetGroup],
+    ) -> None:
         """Add IP whitelist rules to an Application Load Balancer listener"""
         if (
             not self.lb_config.ip_whitelist_enabled
@@ -393,14 +397,6 @@ class LoadBalancerStack(IStack):
         # For IP whitelisting, we need to create a rule that blocks all IPs except those in the whitelist
         # Since ALB doesn't support negation directly, we'll create a rule that matches all IPs
         # and blocks them, but we'll modify the listener's default action to only accept whitelisted IPs
-
-        # Get the current default target groups from the listener
-        default_target_groups = []
-        if (
-            hasattr(listener, "default_target_groups")
-            and listener.default_target_groups
-        ):
-            default_target_groups = list(listener.default_target_groups)
 
         # Create a rule to allow whitelisted IPs to proceed to default target groups
         allow_rule_id = f"{listener.node.id}-ip-whitelist-allow"
