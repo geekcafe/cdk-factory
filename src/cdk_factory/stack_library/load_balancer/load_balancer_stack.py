@@ -73,6 +73,8 @@ class LoadBalancerStack(IStack):
         )
         lb_name = deployment.build_resource_name(self.lb_config.name)
 
+        self._prep_dns()
+
         # set up SSL certificate if configured
         self._setup_ssl_certificate()
 
@@ -447,8 +449,8 @@ class LoadBalancerStack(IStack):
             action=block_action,
         )
 
-    def _setup_dns(self, lb_name: str) -> None:
-        """Setup DNS records for the Load Balancer"""
+    def _prep_dns(self) -> None:
+        """Prepares DNS records for the Load Balancer"""
         hosted_zone_config = self.lb_config.hosted_zone
         if not hosted_zone_config:
             return
@@ -463,10 +465,13 @@ class LoadBalancerStack(IStack):
         # Get the hosted zone
         self._hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
             self,
-            f"{lb_name}-hosted-zone",
+            "hosted-zone",
             hosted_zone_id=hosted_zone_id,
             zone_name=hosted_zone_name,
         )
+
+    def _setup_dns(self, lb_name: str) -> None:
+        """Setup DNS records for the Load Balancer"""
 
         # Create DNS records
         for record_name in self._record_names:
