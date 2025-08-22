@@ -67,11 +67,14 @@ class LoadBalancerStack(IStack):
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
-
+        self.ssl_certificate = None
         self.lb_config = LoadBalancerConfig(
             stack_config.dictionary.get("load_balancer", {}), deployment
         )
         lb_name = deployment.build_resource_name(self.lb_config.name)
+
+        # set up SSL certificate if configured
+        self._setup_ssl_certificate()
 
         # Create the Load Balancer
         self.load_balancer = self._create_load_balancer(lb_name)
@@ -87,8 +90,6 @@ class LoadBalancerStack(IStack):
 
         # Add outputs
         self._add_outputs(lb_name)
-
-        self._setup_ssl_certificate()
 
     def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancerV2:
         """Create a Load Balancer with the specified configuration"""
@@ -288,7 +289,7 @@ class LoadBalancerStack(IStack):
 
                 # Add rules if specified
                 self._add_listener_rules(listener, listener_config.get("rules", []))
-                
+
                 # Add IP whitelist rules if enabled
                 self._add_ip_whitelist_rules(listener)
 
@@ -312,6 +313,12 @@ class LoadBalancerStack(IStack):
         certificates = []
         for cert_arn in self.lb_config.certificate_arns:
             certificates.append(elbv2.ListenerCertificate.from_arn(cert_arn))
+
+        if self.ssl_certificate:
+            certificates.append(
+                elbv2.ListenerCertificate.from_arn(self.ssl_certificate.certificate_arn)
+            )
+
         return certificates
 
     def _add_listener_rules(
@@ -375,24 +382,32 @@ class LoadBalancerStack(IStack):
 
     def _add_ip_whitelist_rules(self, listener: elbv2.ApplicationListener) -> None:
         """Add IP whitelist rules to an Application Load Balancer listener"""
-        if not self.lb_config.ip_whitelist_enabled or not self.lb_config.ip_whitelist_cidrs:
+        if (
+            not self.lb_config.ip_whitelist_enabled
+            or not self.lb_config.ip_whitelist_cidrs
+        ):
             return
 
         # For IP whitelisting, we need to create a rule that blocks all IPs except those in the whitelist
         # Since ALB doesn't support negation directly, we'll create a rule that matches all IPs
         # and blocks them, but we'll modify the listener's default action to only accept whitelisted IPs
-        
+
         # Get the current default target groups from the listener
         default_target_groups = []
-        if hasattr(listener, 'default_target_groups') and listener.default_target_groups:
+        if (
+            hasattr(listener, "default_target_groups")
+            and listener.default_target_groups
+        ):
             default_target_groups = list(listener.default_target_groups)
 
         # Create a rule to allow whitelisted IPs to proceed to default target groups
         allow_rule_id = f"{listener.node.id}-ip-whitelist-allow"
-        
+
         if default_target_groups:
             # Forward whitelisted IPs to the default target groups
-            allow_action = elbv2.ListenerAction.forward(target_groups=default_target_groups)
+            allow_action = elbv2.ListenerAction.forward(
+                target_groups=default_target_groups
+            )
         else:
             # If no default target groups, allow through to default action
             # This will use whatever the listener's default action was set to
@@ -412,13 +427,13 @@ class LoadBalancerStack(IStack):
 
         # Create a catch-all rule to block non-whitelisted IPs
         block_rule_id = f"{listener.node.id}-ip-whitelist-block"
-        
+
         # Configure the block action
         block_response = self.lb_config.ip_whitelist_block_response
         block_action = elbv2.ListenerAction.fixed_response(
             status_code=block_response.get("status_code", 403),
             content_type=block_response.get("content_type", "text/plain"),
-            message_body=block_response.get("message_body", "Access Denied")
+            message_body=block_response.get("message_body", "Access Denied"),
         )
 
         # Create a rule that matches all other IPs (catch-all) and blocks them
@@ -428,9 +443,7 @@ class LoadBalancerStack(IStack):
             block_rule_id,
             listener=listener,
             priority=32000,  # Low priority catch-all rule
-            conditions=[
-                elbv2.ListenerCondition.source_ips(["0.0.0.0/0", "::/0"])
-            ],
+            conditions=[elbv2.ListenerCondition.source_ips(["0.0.0.0/0", "::/0"])],
             action=block_action,
         )
 
@@ -482,7 +495,7 @@ class LoadBalancerStack(IStack):
     def _setup_ssl_certificate(self) -> None:
         """Setup SSL certificate for the Load Balancer"""
         if self.lb_config.ssl_cert_arn:
-            acm.Certificate.from_certificate_arn(
+            self.ssl_certificate = acm.Certificate.from_certificate_arn(
                 self,
                 "LbCertificate",
                 certificate_arn=self.lb_config.ssl_cert_arn,
@@ -495,7 +508,7 @@ class LoadBalancerStack(IStack):
             else:
                 alt_names = None
 
-            acm.Certificate(
+            self.ssl_certificate = acm.Certificate(
                 self,
                 id="LbCertificate",
                 domain_name=self._record_names[0],
