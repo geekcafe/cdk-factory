@@ -83,7 +83,7 @@ class LoadBalancerConfig(BaseConfig):
     @property
     def ssl_policy(self) -> str:
         """SSL policy for HTTPS listeners"""
-        return self.__config.get("ssl_policy", "ELBSecurityPolicy-2016-08")
+        return self.__config.get("ssl_policy", "RECOMMENDED_TLS")
 
     @property
     def certificate_arns(self) -> List[str]:
@@ -128,7 +128,9 @@ class LoadBalancerConfig(BaseConfig):
     @property
     def ip_whitelist_block_action(self) -> str:
         """Action to take for blocked IPs (fixed_response or redirect)"""
-        return self.__config.get("ip_whitelist", {}).get("block_action", "fixed_response")
+        return self.__config.get("ip_whitelist", {}).get(
+            "block_action", "fixed_response"
+        )
 
     @property
     def ip_whitelist_block_response(self) -> Dict[str, Any]:
@@ -136,6 +138,8 @@ class LoadBalancerConfig(BaseConfig):
         default_response = {
             "status_code": 403,
             "content_type": "text/plain",
-            "message_body": "Access Denied"
+            "message_body": "Access Denied",
         }
-        return self.__config.get("ip_whitelist", {}).get("block_response", default_response)
+        return self.__config.get("ip_whitelist", {}).get(
+            "block_response", default_response
+        )
