@@ -74,3 +74,15 @@ class DockerConfig:
                 return value
 
         return {}
+
+    @property
+    def tag(self) -> str:
+        """tag"""
+        if self.__config and isinstance(self.__config, dict):
+            value = (
+                self.__config.get("tag") or self.__config.get("image_tag") or "latest"
+            )
+            if isinstance(value, str):
+                return value
+
+        return "latest"

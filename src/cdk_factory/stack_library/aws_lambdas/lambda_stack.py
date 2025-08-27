@@ -276,12 +276,7 @@ class LambdaStack(IStack):
         self, lambda_config: LambdaFunctionConfig
     ) -> aws_lambda.DockerImageFunction:
 
-        tag_or_digest = DockerUtilities().generate_tags(
-            repo_uri="NA",
-            primary_tag=self.deployment.tenant,
-            environment=self.deployment.environment,
-            version=lambda_config.version_number,
-        )
+        tag_or_digest = lambda_config.docker.tag
         lambda_docker: LambdaDockerConstruct = LambdaDockerConstruct(
             scope=self,
             id=f"{lambda_config.name}-construct",
@@ -293,7 +288,7 @@ class LambdaStack(IStack):
             scope=self,
             lambda_config=lambda_config,
             deployment=self.deployment,
-            tag_or_digest=tag_or_digest[0].split(":")[-1],
+            tag_or_digest=tag_or_digest,
         )
 
         return docker_image_function
