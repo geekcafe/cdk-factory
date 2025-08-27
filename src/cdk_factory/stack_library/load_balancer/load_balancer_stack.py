@@ -468,6 +468,8 @@ class LoadBalancerStack(IStack):
 
     def _setup_dns(self, lb_name: str) -> None:
         """Setup DNS records for the Load Balancer"""
+        if not self._hosted_zone or not self._record_names:
+            return None
 
         # Create DNS records
         for record_name in self._record_names:
