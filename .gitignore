@@ -192,3 +192,5 @@ cdk.out
 
 # Local configuration
 .pysetup.json
+.delete
+activate.sh

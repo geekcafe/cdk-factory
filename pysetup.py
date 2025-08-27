@@ -36,6 +36,68 @@ def print_header(msg):
     print(f"\n🔎 {msg}\n{'=' * 30}")
 
 
+def _remove_directory(path, retries=3, retry_delay=0.5):
+    """Safely remove a directory with retries and fallbacks.
+    
+    Args:
+        path: Path to the directory to remove
+        retries: Number of times to retry if initial removal fails
+        retry_delay: Delay in seconds between retries
+        
+    Returns:
+        bool: True if directory was removed successfully, False otherwise
+    """
+    import shutil
+    import time
+    import os
+    import stat
+    import platform
+    
+    path = Path(path)
+    if not path.exists():
+        return True
+    
+    # First attempt: standard rmtree
+    try:
+        shutil.rmtree(path)
+        return True
+    except Exception as e:
+        print_info(f"Standard directory removal failed: {e}")
+    
+    # Second attempt: Set write permissions and retry
+    def handle_readonly(func, path, exc_info):
+        # Make the file/dir writable and try again
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    
+    for i in range(retries):
+        try:
+            print_info(f"Retrying with permission fix (attempt {i+1}/{retries})...")
+            shutil.rmtree(path, onerror=handle_readonly)
+            return True
+        except Exception as e:
+            print_info(f"Retry {i+1} failed: {e}")
+            time.sleep(retry_delay)
+    
+    # Final attempt: Use platform-specific commands
+    try:
+        print_info("Attempting platform-specific directory removal...")
+        if platform.system() == "Windows":
+            os.system(f'rd /s /q "{path}"')
+        else:  # Unix-like systems (macOS, Linux)
+            os.system(f'rm -rf "{path}"')
+        
+        # Check if directory was actually removed
+        if not path.exists():
+            return True
+    except Exception as e:
+        print_info(f"Platform-specific removal failed: {e}")
+    
+    print_error(f"Failed to remove directory: {path}")
+    print_info("Continuing anyway. You may need to manually remove the directory later.")
+    return False
+
+
 class ProjectSetup:
     CA_CONFIG = Path(".pysetup.json")
     
@@ -253,10 +315,10 @@ class ProjectSetup:
                 "type": "codeartifact",
                 "enabled": True,
                 "tool": input("   Tool (pip/poetry) [pip]: ").strip().lower() or "pip",
-                "domain": input("   Domain: ").strip(),
-                "domain_owner": input("   Domain Owner (AWS Account ID, or press Enter if same as current account): ").strip(),
+                "domain_owner": input("   Domain Owner (AWS Account ID): ").strip(),
+                "domain": input("   Domain: ").strip(),                
                 "repository": input("   Repository Name: ").strip(),
-                "region": input("   AWS Region: ").strip() or "us-east-1",
+                "region": input("   AWS Region [us-east-1]: ").strip() or "us-east-1",
                 "profile": input("   AWS Profile (optional): ").strip() or None,
                 "trusted": True
             }
@@ -988,28 +1050,43 @@ class ProjectSetup:
         else:
             print_error(f"Unsupported OS: {sysname}")
             sys.exit(1)
-
+        
         print(f"📟 OS: {os_type} | Architecture: {arch}")
-
+        # Detect project tool from pyproject.toml or requirements.txt
         project_tool = self._detect_project_tool()
-        if project_tool == "poetry":
-            self._use_poetry = True
-            print_info("Detected Poetry project from pyproject.toml.")
-        elif project_tool == "hatch":
-            self._use_poetry = False
-            print_info("Detected Hatch project from pyproject.toml.")
-        elif project_tool == "flit":
-            self._use_poetry = False
-            print_info("Detected Flit project from pyproject.toml.")
-        elif project_tool == "pip":
-            self._use_poetry = False
-            print_info("Defaulting to pip project from requirements.txt.")
+        
+        # In CI mode, use detected package manager without prompting
+        if hasattr(self, '_ci_mode') and self._ci_mode:
+            if project_tool == "poetry":
+                self._use_poetry = True
+                print_info("CI mode: Using Poetry as detected from pyproject.toml.")
+            elif project_tool in ["hatch", "flit", "pip"]:
+                self._use_poetry = False
+                print_info(f"CI mode: Using {project_tool} as detected from project files.")
+            else:
+                # If no tool detected in CI mode, default to pip
+                self._use_poetry = False
+                print_info("CI mode: No package manager detected, defaulting to pip.")
         else:
-            pip_or_poetry = (
-                input("📦 Do you want to use pip or poetry? (default: pip): ") or "pip"
-            )
-            self._use_poetry = pip_or_poetry.lower() == "poetry"
-
+            # Interactive mode - use detected tool or prompt if none detected
+            if project_tool == "poetry":
+                self._use_poetry = True
+                print_info("Detected Poetry project from pyproject.toml.")
+            elif project_tool == "hatch":
+                self._use_poetry = False
+                print_info("Detected Hatch project from pyproject.toml.")
+            elif project_tool == "flit":
+                self._use_poetry = False
+                print_info("Detected Flit project from pyproject.toml.")
+            elif project_tool == "pip":
+                self._use_poetry = False
+                print_info("Defaulting to pip project from requirements.txt.")
+            else:
+                pip_or_poetry = (
+                    input("📦 Do you want to use pip or poetry? (default: pip): ") or "pip"
+                )
+                self._use_poetry = pip_or_poetry.lower() == "poetry"
+        
         return os_type
 
     def _detect_project_tool(self):
@@ -1117,6 +1194,23 @@ class ProjectSetup:
 
                 [tool.hatch.build.targets.wheel]
                 packages = ["src/{self._package_name}"]
+
+                [tool.hatch.build.targets.sdist]
+                exclude = [
+                    ".unittest/",
+                    ".venv/",
+                    "tests/",
+                    "samples/",
+                    "docs/",
+                    ".git/",
+                    ".gitignore",
+                    ".vscode/",
+                    "*.pyc",
+                    "__pycache__/",
+                    "*.egg-info/",
+                    "dist/",
+                    "build/"
+                ]
             """
             os.makedirs("tests", exist_ok=True)
 
@@ -1175,11 +1269,13 @@ class ProjectSetup:
             twine
             wheel
             pkginfo
-            hatchling
-            moto
+            hatchling            
         """
 
     def setup(self, force_update_sh=False, ci_mode=False):
+        # Store CI mode for use in other methods
+        self._ci_mode = ci_mode
+        
         # Check for and fetch the latest pysetup.sh first
         if self._check_and_fetch_setup_sh(force_update=force_update_sh):
             # If pysetup.sh was updated, exit and instruct the user to restart
@@ -1190,14 +1286,28 @@ class ProjectSetup:
         (self._setup_poetry if self._use_poetry else self._setup_pip)()
         self.print_env_info()
         
+        # Check if README.md exists and create it if needed
+        self._check_readme_setup()
+        
         # Check if .pysetup.json should be excluded from git
         self._check_gitignore_setup()
         
+        # Check if Git is initialized and set it up if needed
+        self._check_git_setup()
+        
+        # Create an activation helper script for convenience
+        self._create_activation_helper()
+        
         print("\n🎉 Setup complete!")
         if not self._use_poetry:
-            print(
-                f"➡️  Run 'source {VENV}/bin/activate' to activate the virtual environment."
-            )
+            # Check if virtual environment is already active
+            if os.environ.get('VIRTUAL_ENV') == os.path.abspath(VENV):
+                print(f"\n👍 Virtual environment '{VENV}' is already active!")
+            else:
+                print(f"\n👉 To activate the virtual environment, run one of these commands:")
+                print(f"   source {VENV}/bin/activate")
+                print(f"   source activate.sh")
+                print(f"\n💡 The activate.sh script has been created for your convenience.")
 
     def _check_venv_path_integrity(self) -> bool:
         """Check if the virtual environment has correct path references.
@@ -1205,6 +1315,11 @@ class ProjectSetup:
         Returns:
             bool: True if venv is healthy or doesn't exist, False if corrupted
         """
+        # In CI mode, skip this check since we're using 'clean' mode anyway
+        if hasattr(self, '_ci_mode') and self._ci_mode:
+            print_info("Running in CI mode, skipping virtual environment path integrity check.")
+            return True
+            
         venv_path = Path(VENV)
         if not venv_path.exists():
             return True  # No venv exists, so no corruption possible
@@ -1325,14 +1440,12 @@ class ProjectSetup:
         
         response = input("Would you like to remove the current virtual environment and recreate it? (Y/n): ").strip().lower()
         if response in ('', 'y', 'yes'):
-            try:
-                import shutil
-                print(f"🗑️  Removing corrupted virtual environment at {VENV}...")
-                shutil.rmtree(VENV)
+            print(f"🗑️  Removing corrupted virtual environment at {VENV}...")
+            if _remove_directory(VENV):
                 print_success(f"Removed {VENV}")
                 return True
-            except Exception as e:
-                print_error(f"Failed to remove {VENV}: {e}")
+            else:
+                print_error(f"Failed to completely remove {VENV}")
                 return False
         else:
             print("⚠️  Setup aborted. Please manually fix the virtual environment or remove it.")
@@ -1520,10 +1633,368 @@ class ProjectSetup:
         if not self._run_pip_with_progress(cmd, description):
             raise subprocess.CalledProcessError(1, cmd)
 
+    def _check_readme_setup(self):
+        """Check if README.md exists and create it if needed."""
+        # Check if README.md exists
+        readme_path = Path("README.md")
+        
+        # If README.md doesn't exist, create a default one
+        if not readme_path.exists():
+            print_header("Project Documentation")
+            print("No README.md file found. Creating a default README.md file.")
+            
+            # Get the project name from the current directory
+            project_name = Path.cwd().name
+            
+            # Try to get project description from pyproject.toml if it exists
+            project_description = "Your project description here."
+            pyproject_path = Path("pyproject.toml")
+            
+            if pyproject_path.exists():
+                try:
+                    with open(pyproject_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        
+                        # Try to extract description from poetry section
+                        poetry_match = re.search(r'\[tool\.poetry\][^\[]*description\s*=\s*"([^"]*)"', content)
+                        if poetry_match:
+                            project_description = poetry_match.group(1)
+                        else:
+                            # Try to extract from project section (PEP 621)
+                            project_match = re.search(r'\[project\][^\[]*description\s*=\s*"([^"]*)"', content)
+                            if project_match:
+                                project_description = project_match.group(1)
+                except Exception as e:
+                    print_info(f"Could not extract project description from pyproject.toml: {e}")
+            
+            # Create a default README.md template
+            readme_content = f"""# {project_name}
+
+## Description
+{project_description}
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/{project_name}.git
+cd {project_name}
+
+# Setup the environment
+./pysetup.sh
+```
+
+## Usage
+
+Describe how to use your project here.
+
+## Features
+
+- Feature 1
+- Feature 2
+- Feature 3
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome bug reports and feature requests.
+
+## License
+
+Add your license here.
+"""
+            
+            # Write the default README.md file
+            with open(readme_path, "w") as f:
+                f.write(readme_content)
+            print_success("Created default README.md file")
+            
+            # Track that we've created a README.md file
+            if "setup_prompted" not in self.ca_settings:
+                self.ca_settings["setup_prompted"] = {}
+            self.ca_settings["setup_prompted"]["readme_created"] = True
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+    
+    def _check_git_setup(self):
+        """Check if Git is initialized in the project and set it up if needed.
+        
+        If in CI mode, this will skip any prompts and not initialize Git.
+        Otherwise, it will prompt the user to initialize Git and optionally make the first commit.
+        """
+        # Check if .git directory exists
+        git_dir = Path(".git")
+        
+        # Skip Git setup in CI mode
+        if self._ci_mode:
+            print_info("Running in CI mode, skipping Git setup.")
+            return
+        
+        # If .git doesn't exist, prompt to initialize Git
+        if not git_dir.exists():
+            print_header("Git Repository")
+            print("No Git repository found in this directory.")
+            response = input("Would you like to initialize a Git repository? (Y/n): ").strip().lower() or 'y'
+            
+            if response.startswith('y'):
+                try:
+                    # Initialize Git repository
+                    subprocess.run(["git", "init"], check=True)
+                    print_success("Git repository initialized.")
+                    
+                    # Track that we've initialized Git
+                    if "setup_prompted" not in self.ca_settings:
+                        self.ca_settings["setup_prompted"] = {}
+                    self.ca_settings["setup_prompted"]["git_initialized"] = True
+                    self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+                    
+                    # Ask if user wants to make the first commit
+                    commit_response = input("Would you like to make the initial commit? (Y/n): ").strip().lower() or 'y'
+                    
+                    if commit_response.startswith('y'):
+                        # Add all files
+                        subprocess.run(["git", "add", "."], check=True)
+                        
+                        # Make the initial commit
+                        commit_message = input("Enter commit message (default: 'Initial commit'): ").strip() or "Initial commit"
+                        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+                        print_success(f"Initial commit created with message: '{commit_message}'")
+                        
+                        # Ask if user wants to add a remote repository
+                        remote_response = input("Would you like to add a remote repository? (y/N): ").strip().lower()
+                        
+                        if remote_response.startswith('y'):
+                            remote_url = input("Enter the remote repository URL: ").strip()
+                            if remote_url:
+                                subprocess.run(["git", "remote", "add", "origin", remote_url], check=True)
+                                print_success(f"Remote repository added: {remote_url}")
+                except subprocess.CalledProcessError as e:
+                    print_error(f"Error setting up Git: {e}")
+            else:
+                print_info("Git initialization skipped.")
+        else:
+            print_info("Git repository already initialized.")
+    
+    def _create_activation_helper(self):
+        """Create a convenient activation script for the virtual environment.
+        
+        This creates an activate.sh script in the project root that users can source
+        to activate the virtual environment without having to remember the full path.
+        """
+        if self._use_poetry:
+            # Poetry has its own activation mechanism
+            return
+            
+        # Create the activation script
+        activate_script = Path("activate.sh")
+        
+        # Don't overwrite if it already exists and has custom content
+        if activate_script.exists():
+            with open(activate_script, "r") as f:
+                content = f.read()
+                if f"source {VENV}/bin/activate" not in content:
+                    print_info("Custom activate.sh already exists, not overwriting.")
+                    return
+        
+        # Create or update the activation script
+        with open(activate_script, "w") as f:
+            f.write(f"#!/bin/bash\n\n# Auto-generated by pysetup.py\n# Activates the Python virtual environment\n\nsource {VENV}/bin/activate\n\n# Display Python version and environment info\necho \"\n🐍 Python \$(python --version | cut -d' ' -f2) activated in \$(basename \$VIRTUAL_ENV) environment\"\necho \"\n👉 Run 'deactivate' to exit the virtual environment\"\n")
+        
+        # Make it executable
+        os.chmod(activate_script, 0o755)
+        
+        # Add to .gitignore if it's not already there
+        if Path(".gitignore").exists():
+            with open(".gitignore", "r") as f:
+                gitignore_content = f.read()
+                
+            if "activate.sh" not in gitignore_content:
+                with open(".gitignore", "a") as f:
+                    f.write("\nactivate.sh\n")
+        else:
+            with open(".gitignore", "w") as f:
+                f.write("activate.sh\n")
+    
     def _check_gitignore_setup(self):
-        """Check if .pysetup.json should be added to .gitignore and prompt user if needed."""
-        # Check if user has already been prompted about gitignore
-        if not self.ca_settings.get("setup_prompted", {}).get("gitignore", False):
+        """Check if .gitignore exists and create it if needed, also check if .pysetup.json should be added."""
+        # First, check if .gitignore exists
+        gitignore_path = Path(".gitignore")
+        
+        # If .gitignore doesn't exist, create a default Python .gitignore
+        if not gitignore_path.exists():
+            print_header("Git Configuration")
+            print("No .gitignore file found. Creating a default Python .gitignore file.")
+            
+            # Fetch the standard Python .gitignore content from GitHub
+            python_gitignore = """
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#.idea/
+
+# VS Code
+#.vscode/
+"""
+            
+            # Write the default Python .gitignore file
+            with open(gitignore_path, "w") as f:
+                f.write(python_gitignore)
+            print_success("Created default Python .gitignore file")
+            
+            # Track that we've created a gitignore file, but don't mark pysetup.json as prompted
+            if "setup_prompted" not in self.ca_settings:
+                self.ca_settings["setup_prompted"] = {}
+            self.ca_settings["setup_prompted"]["gitignore_created"] = True
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+        
+        # First check if .pysetup.json is already in the .gitignore file
+        content = gitignore_path.read_text()
+        
+        # If .pysetup.json is already in the .gitignore, mark it as prompted and skip
+        if ".pysetup.json" in content:
+            # Ensure setup_prompted structure exists
+            if "setup_prompted" not in self.ca_settings:
+                self.ca_settings["setup_prompted"] = {}
+                
+            # Mark that we've handled .pysetup.json gitignore without prompting
+            self.ca_settings["setup_prompted"]["pysetup_json_gitignore"] = True
+            self.CA_CONFIG.write_text(json.dumps(self.ca_settings, indent=2))
+            print_info(".pysetup.json is already in .gitignore")
+        # Otherwise, check if user has already been prompted about adding .pysetup.json to gitignore
+        elif not self.ca_settings.get("setup_prompted", {}).get("pysetup_json_gitignore", False):
             print_header("Git Configuration")
             print(".pysetup.json contains configuration that may be specific to your environment.")
             print("This can cause issues when working with other developers.")
@@ -1533,33 +2004,16 @@ class ProjectSetup:
             if "setup_prompted" not in self.ca_settings:
                 self.ca_settings["setup_prompted"] = {}
             
-            # Mark that we've prompted the user
-            self.ca_settings["setup_prompted"]["gitignore"] = True
+            # Mark that we've prompted the user about .pysetup.json specifically
+            self.ca_settings["setup_prompted"]["pysetup_json_gitignore"] = True
             
             if response.startswith('y'):
                 # Add .pysetup.json to .gitignore
-                gitignore_path = Path(".gitignore")
-                
-                # Read existing .gitignore content or create new file
-                if gitignore_path.exists():
-                    content = gitignore_path.read_text()
-                    lines = content.splitlines()
-                    
-                    # Check if .pysetup.json is already in .gitignore
-                    if ".pysetup.json" not in lines:
-                        # Add .pysetup.json to .gitignore
-                        with open(gitignore_path, "a") as f:
-                            if not content.endswith("\n"):
-                                f.write("\n")
-                            f.write("# Local configuration\n.pysetup.json\n")
-                        print_success("Added .pysetup.json to .gitignore")
-                    else:
-                        print_info(".pysetup.json is already in .gitignore")
-                else:
-                    # Create new .gitignore file
-                    with open(gitignore_path, "w") as f:
-                        f.write("# Local configuration\n.pysetup.json\n")
-                    print_success("Created .gitignore and added .pysetup.json")
+                with open(gitignore_path, "a") as f:
+                    if not content.endswith("\n"):
+                        f.write("\n")
+                    f.write("# Local configuration\n.pysetup.json\n")
+                print_success("Added .pysetup.json to .gitignore")
             else:
                 print_info(".pysetup.json will be tracked by git")
                 
@@ -1631,6 +2085,11 @@ break-system-packages = true
         Returns:
             bool: True if pysetup.sh was updated, False otherwise
         """
+        # Skip check in CI mode
+        if hasattr(self, '_ci_mode') and self._ci_mode:
+            print_info("Running in CI mode, skipping pysetup.sh update check.")
+            return False
+            
         # Get the user's preference for updating pysetup.sh
         update_preference = self._get_setup_sh_update_preference()
         
@@ -1703,7 +2162,7 @@ break-system-packages = true
             return False
     
     def _get_setup_sh_update_preference(self, force_prompt=False) -> str:
-        """Get the user's preference for pulling the latest pysetup.sh from repository.
+        """Get the user's preference for checking for updates to pysetup.sh.
         
         Args:
             force_prompt: If True, prompt for preference even if already configured.
@@ -1720,28 +2179,33 @@ break-system-packages = true
             print_info(f"Using stored pysetup.sh update preference: {update_preference}")
             return update_preference
         
-        # Prompt for pysetup.sh update preference
-        print("\n🔄 pysetup.sh Update Preference")
-        print("=" * 45)
-        print("Choose how to handle pysetup.sh updates:")
-        print("  • yes        : Always check for the latest pysetup.sh from repository")
-        print("  • no         : Never check for updates to pysetup.sh")
-        print("  • interactive: Ask each time (default)")
-        print()
-        
-        while True:
-            response = input("pysetup.sh update preference [interactive/yes/no]: ").strip().lower()
-            if response in ('', 'interactive'):
-                update_preference = 'interactive'
-                break
-            elif response in ('yes', 'y'):
-                update_preference = 'yes'
-                break
-            elif response in ('no', 'n'):
-                update_preference = 'no'
-                break
-            else:
-                print_error("Invalid choice. Please enter 'interactive', 'yes', or 'no'.")
+        # In CI mode, default to 'no' without prompting
+        if hasattr(self, '_ci_mode') and self._ci_mode:
+            update_preference = 'no'
+            print_info("CI mode: Setting pysetup.sh update preference to 'no' (no updates)")
+        else:
+            # Prompt for pysetup.sh update preference in interactive mode
+            print("\n🔄 pysetup.sh Update Preference")
+            print("=" * 45)
+            print("Choose how to handle pysetup.sh updates:")
+            print("  • yes        : Always check for the latest pysetup.sh from repository")
+            print("  • no         : Never check for updates to pysetup.sh")
+            print("  • interactive: Ask each time (default)")
+            print()
+            
+            while True:
+                response = input("pysetup.sh update preference [interactive/yes/no]: ").strip().lower()
+                if response in ('', 'interactive'):
+                    update_preference = 'interactive'
+                    break
+                elif response in ('yes', 'y'):
+                    update_preference = 'yes'
+                    break
+                elif response in ('no', 'n'):
+                    update_preference = 'no'
+                    break
+                else:
+                    print_error("Invalid choice. Please enter 'interactive', 'yes', or 'no'.")
         
         # Save the preference
         self.ca_settings["setup_sh_update_preference"] = update_preference
@@ -1768,28 +2232,33 @@ break-system-packages = true
             print_info(f"Using stored repository update preference: {update_preference}")
             return update_preference
         
-        # Prompt for repository update preference
-        print("\n🔄 Repository Update Preference")
-        print("=" * 45)
-        print("Choose how to handle repository updates:")
-        print("  • yes        : Always pull the latest pysetup.py from repository")
-        print("  • no         : Never pull the latest pysetup.py")
-        print("  • interactive: Ask each time (default)")
-        print()
-        
-        while True:
-            response = input("Repository update preference [interactive/yes/no]: ").strip().lower()
-            if response in ('', 'interactive'):
-                update_preference = 'interactive'
-                break
-            elif response in ('yes', 'y'):
-                update_preference = 'yes'
-                break
-            elif response in ('no', 'n'):
-                update_preference = 'no'
-                break
-            else:
-                print_error("Invalid choice. Please enter 'interactive', 'yes', or 'no'.")
+        # In CI mode, default to 'no' without prompting
+        if hasattr(self, '_ci_mode') and self._ci_mode:
+            update_preference = 'no'
+            print_info("CI mode: Setting repository update preference to 'no' (no updates)")
+        else:
+            # Prompt for repository update preference in interactive mode
+            print("\n🔄 Repository Update Preference")
+            print("=" * 45)
+            print("Choose how to handle repository updates:")
+            print("  • yes        : Always pull the latest pysetup.py from repository")
+            print("  • no         : Never pull the latest pysetup.py")
+            print("  • interactive: Ask each time (default)")
+            print()
+            
+            while True:
+                response = input("Repository update preference [interactive/yes/no]: ").strip().lower()
+                if response in ('', 'interactive'):
+                    update_preference = 'interactive'
+                    break
+                elif response in ('yes', 'y'):
+                    update_preference = 'yes'
+                    break
+                elif response in ('no', 'n'):
+                    update_preference = 'no'
+                    break
+                else:
+                    print_error("Invalid choice. Please enter 'interactive', 'yes', or 'no'.")
         
         # Save the preference
         self.ca_settings["repo_update_preference"] = update_preference
@@ -1808,26 +2277,28 @@ break-system-packages = true
         Returns:
             str: The environment action preference ('clean', 'reuse', or 'upgrade')
         """
+        # In CI mode, always use 'clean' without prompting
+        if hasattr(self, '_ci_mode') and self._ci_mode:
+            print_info("Running in CI mode, using 'clean' environment action preference.")
+            return 'clean'
+            
         # Check if environment action preference is already configured
         env_preference = self.ca_settings.get("env_action_preference")
         
         if env_preference and not force_prompt:
-            # Use existing preference without prompting
-            print_info(f"Using stored environment action preference: {env_preference}")
+            print_info(f"Using existing environment action preference: {env_preference}")
             return env_preference
-        
-        # Prompt for environment action preference
-        print("\n🔧 Environment Action Preference")
-        print("=" * 45)
-        print("Choose how to handle the virtual environment:")
-        print("  • clean  : Remove and recreate the environment if it exists")
-        print("  • reuse  : Keep existing environment and only update if needed")
-        print("  • upgrade: Keep environment but upgrade all packages")
-        print()
+            
+        # Prompt for preference
+        print_header("Environment Setup")
+        print("How would you like to handle the virtual environment?")
+        print("  reuse  - Use the existing environment if it exists")
+        print("  clean  - Remove and recreate the environment")
+        print("  upgrade - Keep the environment but upgrade all packages")
         
         while True:
             response = input("Environment action preference [reuse/clean/upgrade]: ").strip().lower()
-            if response in ('', 'reuse'):
+            if response in ('reuse', ''):
                 env_preference = 'reuse'
                 break
             elif response in ('clean'):
@@ -1859,10 +2330,9 @@ break-system-packages = true
         try:
             # Handle environment based on preference
             if env_preference == 'clean' and Path(VENV).exists():
-                import shutil
                 print(f"🗑️  Removing existing virtual environment at {VENV}...")
-                shutil.rmtree(VENV)
-                print_success(f"Removed {VENV}")
+                if _remove_directory(VENV):
+                    print_success(f"Removed {VENV}")
                 subprocess.run(["python3", "-m", "venv", VENV], check=True)
                 self._store_python_interpreter_path()
             elif not Path(VENV).exists():
