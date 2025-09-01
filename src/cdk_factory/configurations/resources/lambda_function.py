@@ -11,7 +11,9 @@ from aws_lambda_powertools import Logger
 import aws_cdk
 from aws_cdk import aws_lambda
 from cdk_factory.configurations.resources.docker import DockerConfig
-from cdk_factory.configurations.resources.apigateway import ApiGatewayConfig
+from cdk_factory.configurations.resources.apigateway_route_config import (
+    ApiGatewayConfigRouteConfig,
+)
 from cdk_factory.configurations.resources.ecr import ECRConfig
 from cdk_factory.configurations.resources.sqs import SQS
 from cdk_factory.configurations.resources.lambda_triggers import LambdaTriggersConfig
@@ -35,7 +37,12 @@ class LambdaFunctionConfig:
     ) -> None:
         self.__config = config
         self.docker: DockerConfig = DockerConfig(config=config.get("docker", {}))
-        self.api: ApiGatewayConfig = ApiGatewayConfig(config=config.get("api", {}))
+        self.api: ApiGatewayConfigRouteConfig | None = None
+
+        api_route_config = config.get("api", None)
+        if api_route_config and isinstance(api_route_config, dict):
+            self.api = ApiGatewayConfigRouteConfig(config=api_route_config)
+
         self.ecr: ECRConfig = ECRConfig(
             config=config.get("ecr", {}), deployment=deployment
         )

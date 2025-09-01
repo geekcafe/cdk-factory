@@ -194,3 +194,4 @@ cdk.out
 .pysetup.json
 .delete
 activate.sh
+.lambda_package

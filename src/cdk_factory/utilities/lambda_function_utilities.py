@@ -20,6 +20,7 @@ from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
 )
 from cdk_factory.configurations.pipeline import PipelineConfig
+from cdk_factory.configurations.workload import WorkloadConfig as Workload
 
 logger = Logger(__name__)
 
@@ -29,8 +30,9 @@ class LambdaFunctionUtilities:
     Lambda wrapper
     """
 
-    def __init__(self, deployment: Deployment) -> None:
+    def __init__(self, deployment: Deployment, workload: Workload) -> None:
         self.deployment: Deployment = deployment
+        self.workload: Workload = workload
 
     def create(
         self,
@@ -66,13 +68,20 @@ class LambdaFunctionUtilities:
         project_root = Path(__file__).parents[3]
 
         lambda_directory = lambda_config.src
+        lambda_directory = lambda_config.src
         if not os.path.exists(lambda_directory):
-            lambda_directory = os.path.join(project_root, lambda_directory)
-
-        if not os.path.exists(lambda_directory):
-            raise FileNotFoundError(
-                f"Lambda Build Failure. Failed to find lambda directory {lambda_directory}."
+            lambda_directory = FileOperations.find_file(
+                self.workload.paths, lambda_directory
             )
+            if not os.path.exists(lambda_directory):
+                print(f"❌ Lambda code path does not exist: {lambda_directory}")
+                print(f"\t 👉 Searched Paths: {self.workload.paths}")
+                print(f"\t 👉 Project Root: {project_root}")
+                print(f"\t 👉 Lambda Files {lambda_config.handler}")
+                raise FileNotFoundError(
+                    f"Lambda code path does not exist: {lambda_directory}"
+                )
+
         lambda_relative_directory = lambda_directory.replace(
             str(project_root), ""
         ).removeprefix("/")

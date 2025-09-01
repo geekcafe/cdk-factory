@@ -4,11 +4,10 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
-
 from typing import Dict, Any
 
 
-class ApiGatewayConfig:
+class ApiGatewayConfigRouteConfig:
     """API Gateway Configuration for Lambda Functions"""
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -49,8 +48,33 @@ class ApiGatewayConfig:
         """Request parameters configuration"""
         return self._config.get("request_parameters", {})
 
+    @property
+    def skip_authorizer(self) -> bool:
+        """Whether to skip authorizer setup"""
+        return self._config.get("skip_authorizer", False)
+
+    @property
+    def routes(self) -> str:
+        """API Gateway routes (alias for route)"""
+        return self.route
+
+    @property
+    def existing_api_gateway_id(self) -> str:
+        """Existing API Gateway ID"""
+        return self._config.get("existing_api_gateway_id", "")
+
+    @property
+    def existing_authorizer_id(self) -> str:
+        """Existing authorizer ID"""
+        return self._config.get("existing_authorizer_id", "")
+
     def __get(self, key: str) -> Any:
         """Helper method to get config values"""
         if self._config and isinstance(self._config, dict):
             return self._config.get(key)
         return None
+
+    @property
+    def user_pool_id(self) -> str | None:
+        """User pool ID for existing authorizers"""
+        return self._config.get("user_pool_id")

@@ -17,6 +17,7 @@ from cdk_factory.constructs.lambdas.lambda_function_role_construct import (
 )
 
 from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
+from cdk_factory.configurations.workload import WorkloadConfig as Workload
 from cdk_factory.utilities.lambda_function_utilities import LambdaFunctionUtilities
 from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
@@ -35,12 +36,14 @@ class LambdaConstruct(Construct):
         id: str,  # pylint: disable=W0622
         *,
         deployment: Deployment,
+        workload: Workload,
         **kwargs,
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
         self.scope = scope
         self.deployment = deployment
+        self.workload = workload
 
     def create_function(
         self,
@@ -64,7 +67,7 @@ class LambdaConstruct(Construct):
         # create the standard role
         role = self.__check_role(role=role, unique_id=id, lambda_config=lambda_config)
 
-        utilities = LambdaFunctionUtilities(deployment=self.deployment)
+        utilities = LambdaFunctionUtilities(deployment=self.deployment, workload=self.workload)
 
         function = utilities.create(
             scope=self.scope,
