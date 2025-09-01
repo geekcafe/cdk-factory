@@ -51,7 +51,7 @@ class LambdaFunctionUtilities:
             lambda_config (LambdaFunctionConfig): A lambda configuration object
             layers (Sequence[str], optional): List of Lambda Layers. Defaults to None.
             requirements_files (Sequence[str], optional): List of Requirements files. Defaults to None.
-            role (iam.Role, optional): The IAM Role for the Lamnda Function. Defaults to None.
+            role (iam.Role, optional): The IAM Role for the Lambda Function. Defaults to None.
 
 
         Raises:
@@ -123,7 +123,7 @@ class LambdaFunctionUtilities:
                     "message": (
                         "The description is longer than 256 characters which includes "
                         "the function name as part of the description (automatically added). "
-                        "It's been automatically truncated to 253 characters and an elipse (...) "
+                        "It's been automatically truncated to 253 characters and an ellipse (...) "
                         "to indicate more information was present."
                     ),
                     "length": length,
