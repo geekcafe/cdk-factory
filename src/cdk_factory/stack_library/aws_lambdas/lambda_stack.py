@@ -7,12 +7,12 @@ from typing import List
 import aws_cdk
 
 from aws_cdk import aws_iam as iam
-from aws_cdk import aws_lambda
+from aws_cdk import aws_lambda as _lambda
 
 from aws_cdk import aws_sqs as sqs
 from aws_cdk import aws_lambda_event_sources as event_sources
 from aws_cdk import aws_events as events
-from aws_cdk import aws_events_targets
+from aws_cdk import aws_events_targets as targets
 from aws_lambda_powertools import Logger
 from constructs import Construct
 from cdk_factory.constructs.lambdas.lambda_function_construct import LambdaConstruct
@@ -100,17 +100,17 @@ class LambdaStack(IStack):
 
     def __setup_lambdas(
         self, lambda_functions: List[LambdaFunctionConfig]
-    ) -> List[aws_lambda.Function | aws_lambda.DockerImageFunction]:
+    ) -> List[_lambda.Function | _lambda.DockerImageFunction]:
         """
         Setup the Lambda functions
         """
 
-        functions: List[aws_lambda.Function | aws_lambda.DockerImageFunction] = []
+        functions: List[_lambda.Function | _lambda.DockerImageFunction] = []
 
         # loop through each function and create the lambda
         # we may want to move this to a general lambda setup
         for function_config in lambda_functions:
-            lambda_function: aws_lambda.Function | aws_lambda.DockerImageFunction
+            lambda_function: _lambda.Function | _lambda.DockerImageFunction
 
             if function_config.docker.file:
                 lambda_function = self.__setup_lambda_docker_file(
@@ -199,7 +199,7 @@ class LambdaStack(IStack):
     def __set_event_bridge_event(
         self,
         trigger: LambdaTriggersConfig,
-        lambda_function: aws_lambda.Function | aws_lambda.DockerImageFunction,
+        lambda_function: _lambda.Function | _lambda.DockerImageFunction,
         name: str,
     ):
         if trigger.resource_type == "event-bridge":
@@ -474,7 +474,7 @@ class LambdaStack(IStack):
 
     def __setup_lambda_docker_image(
         self, lambda_config: LambdaFunctionConfig
-    ) -> aws_lambda.DockerImageFunction:
+    ) -> _lambda.DockerImageFunction:
         lambda_docker: LambdaDockerConstruct = LambdaDockerConstruct(
             scope=self,
             id=f"{lambda_config.name}-construct",
@@ -526,7 +526,7 @@ class LambdaStack(IStack):
 
     def __setup_lambda_code_asset(
         self, lambda_config: LambdaFunctionConfig
-    ) -> aws_lambda.Function:
+    ) -> _lambda.Function:
         construct: LambdaConstruct = LambdaConstruct(
             scope=self,
             id=f"{lambda_config.name}-construct",
@@ -628,7 +628,7 @@ class LambdaStack(IStack):
 
     def __trigger_lambda_by_sqs(
         self,
-        lambda_function: aws_lambda.Function | aws_lambda.DockerImageFunction,
+        lambda_function: _lambda.Function | _lambda.DockerImageFunction,
         sqs_config: SQSConfig,
     ):
         # typically you have one (scalable) consumer and 1 or more producers
@@ -658,7 +658,7 @@ class LambdaStack(IStack):
 
     def __permit_adding_message_to_sqs(
         self,
-        lambda_function: aws_lambda.Function | aws_lambda.DockerImageFunction,
+        lambda_function: _lambda.Function | _lambda.DockerImageFunction,
         sqs_config: SQSConfig,
         function_config: LambdaFunctionConfig,
     ):
