@@ -31,6 +31,8 @@ from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
     SQS as SQSConfig,
 )
+from aws_cdk import aws_apigateway as apigateway
+from aws_cdk import aws_cognito as cognito
 
 from cdk_factory.utilities.docker_utilities import DockerUtilities
 from cdk_factory.stack.stack_module_registry import register_stack
@@ -270,23 +272,52 @@ class LambdaStack(IStack):
 
             rule = events.Rule(
                 self,
-                id=f"{name}-event-bridge-trigger",
+                f"{function_config.name}-schedule-rule",
                 schedule=schedule,
             )
+            rule.add_target(targets.LambdaFunction(lambda_function))
 
-            rule.add_target(aws_events_targets.LambdaFunction(lambda_function))
+        # newer more flexible, where a function can be a consumer
+        # and a producer
+        if function_config.sqs.queues:
+            for queue in function_config.sqs.queues:
+                if queue.is_consumer:
+                    self.__trigger_lambda_by_sqs(
+                        lambda_function=lambda_function,
+                        sqs_config=queue,
+                    )
+                elif queue.is_producer:
+                    self.__permit_adding_message_to_sqs(
+                        lambda_function=lambda_function,
+                        sqs_config=queue,
+                        function_config=function_config,
+                    )
 
-    def __setup_lambda_docker_file(
-        self, lambda_config: LambdaFunctionConfig
-    ) -> aws_lambda.DockerImageFunction:
+        if function_config.triggers:
+            trigger_id: int = 0
+            trigger: LambdaTriggersConfig
+            for trigger in function_config.triggers:
+                trigger_id += 1
+                if trigger.resource_type.lower() == "s3":
+                    raise NotImplementedError("S3 triggers are implemented yet.")
 
-        tag_or_digest = lambda_config.docker.tag
-        lambda_docker: LambdaDockerConstruct = LambdaDockerConstruct(
-            scope=self,
-            id=f"{lambda_config.name}-construct",
-            deployment=self.deployment,
-            workload=self.workload,
-        )
+                elif trigger.resource_type == "event-bridge":
+                    self.__set_event_bridge_event(
+                        trigger=trigger,
+                        lambda_function=lambda_function,
+                        name=f"{function_config.name}-{trigger_id}",
+                    )
+                else:
+                    raise ValueError(
+                        f"Trigger type {trigger.resource_type} is not supported"
+                    )
+
+        # Handle API Gateway integration if configured
+        if function_config.api:
+            self.__setup_api_gateway_integration(
+                lambda_function=lambda_function,
+                function_config=function_config,
+            )
 
         docker_image_function = lambda_docker.function(
             scope=self,
@@ -296,6 +327,150 @@ class LambdaStack(IStack):
         )
 
         return docker_image_function
+
+    def __setup_api_gateway_integration(
+        self, lambda_function: _lambda.Function, function_config: LambdaFunctionConfig
+    ) -> None:
+        """Setup API Gateway integration for Lambda function"""
+        api_config = function_config.api
+        
+        # Get or create API Gateway
+        api_gateway = self.__get_or_create_api_gateway(api_config)
+        
+        # Get or create authorizer if needed
+        authorizer = None
+        if not api_config.skip_authorizer:
+            authorizer = self.__get_or_create_authorizer(api_gateway, api_config)
+        
+        # Create integration
+        integration = apigateway.LambdaIntegration(
+            lambda_function,
+            proxy=True,
+            allow_test_invoke=True,
+        )
+        
+        # Add method to API Gateway
+        resource = self.__get_or_create_resource(api_gateway, api_config.routes)
+        method = resource.add_method(
+            api_config.method.upper(),
+            integration,
+            authorizer=authorizer,
+            api_key_required=api_config.api_key_required,
+            request_parameters=api_config.request_parameters,
+        )
+        
+        # Store integration info for potential cross-stack references
+        self.api_gateway_integrations.append({
+            "function_name": function_config.name,
+            "api_gateway": api_gateway,
+            "method": method,
+            "resource": resource,
+            "integration": integration,
+        })
+        
+        logger.info(f"Created API Gateway integration for {function_config.name}")
+
+    def __get_or_create_api_gateway(self, api_config) -> apigateway.RestApi:
+        """Get existing API Gateway or create new one"""
+        # Check if we should reference existing API Gateway
+        if hasattr(api_config, 'existing_api_gateway_id') and api_config.existing_api_gateway_id:
+            # Import existing API Gateway
+            return apigateway.RestApi.from_rest_api_id(
+                self,
+                f"imported-api-{api_config.existing_api_gateway_id}",
+                api_config.existing_api_gateway_id,
+            )
+        
+        # Create new API Gateway if not already created in this stack
+        api_id = f"{self.stack_config.name}-api"
+        existing_api = None
+        
+        # Check if we already created an API in this stack
+        for integration in self.api_gateway_integrations:
+            if integration.get("api_gateway"):
+                existing_api = integration["api_gateway"]
+                break
+        
+        if existing_api:
+            return existing_api
+        
+        # Create new REST API
+        api = apigateway.RestApi(
+            self,
+            api_id,
+            rest_api_name=f"{self.stack_config.name}-api",
+            description=f"API Gateway for {self.stack_config.name} Lambda functions",
+            default_cors_preflight_options=apigateway.CorsOptions(
+                allow_origins=apigateway.Cors.ALL_ORIGINS,
+                allow_methods=apigateway.Cors.ALL_METHODS,
+                allow_headers=["Content-Type", "X-Amz-Date", "Authorization", "X-Api-Key"],
+            ),
+        )
+        
+        return api
+
+    def __get_or_create_authorizer(self, api_gateway: apigateway.RestApi, api_config) -> apigateway.CognitoUserPoolsAuthorizer:
+        """Get existing authorizer or create new one"""
+        # Check if we should reference existing authorizer
+        if hasattr(api_config, 'existing_authorizer_id') and api_config.existing_authorizer_id:
+            # Import existing authorizer
+            return apigateway.CognitoUserPoolsAuthorizer.from_cognito_user_pools_authorizer_id(
+                self,
+                f"imported-authorizer-{api_config.existing_authorizer_id}",
+                api_config.existing_authorizer_id,
+            )
+        
+        # Check if authorizer already exists for this API
+        authorizer_id = f"{api_gateway.node.id}-authorizer"
+        
+        # Get user pool from environment or config
+        user_pool_id = self.deployment.get_env_var("COGNITO_USER_POOL_ID")
+        if not user_pool_id:
+            raise ValueError("COGNITO_USER_POOL_ID environment variable is required for API Gateway authorizer")
+        
+        user_pool = cognito.UserPool.from_user_pool_id(
+            self,
+            f"{authorizer_id}-user-pool",
+            user_pool_id,
+        )
+        
+        # Create Cognito authorizer
+        authorizer = apigateway.CognitoUserPoolsAuthorizer(
+            self,
+            authorizer_id,
+            cognito_user_pools=[user_pool],
+            identity_source="method.request.header.Authorization",
+        )
+        
+        return authorizer
+
+    def __get_or_create_resource(self, api_gateway: apigateway.RestApi, route_path: str) -> apigateway.Resource:
+        """Get or create API Gateway resource for the given route path"""
+        if not route_path or route_path == "/":
+            return api_gateway.root
+        
+        # Remove leading slash and split path
+        path_parts = route_path.lstrip("/").split("/")
+        current_resource = api_gateway.root
+        
+        # Navigate/create nested resources
+        for part in path_parts:
+            if not part:  # Skip empty parts
+                continue
+                
+            # Check if resource already exists
+            existing_resource = None
+            for child in current_resource.node.children:
+                if hasattr(child, 'path_part') and child.path_part == part:
+                    existing_resource = child
+                    break
+            
+            if existing_resource:
+                current_resource = existing_resource
+            else:
+                current_resource = current_resource.add_resource(part)
+        
+        return current_resource
 
     def __setup_lambda_docker_image(
         self, lambda_config: LambdaFunctionConfig
