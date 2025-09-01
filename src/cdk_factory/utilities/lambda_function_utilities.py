@@ -66,30 +66,36 @@ class LambdaFunctionUtilities:
         """
 
         project_root = Path(__file__).parents[3]
+        paths = self.workload.paths
 
-        lambda_directory = lambda_config.src
-        lambda_directory = lambda_config.src
-        if not os.path.exists(lambda_directory):
-            lambda_directory = FileOperations.find_file(
-                self.workload.paths, lambda_directory
-            )
-            if not os.path.exists(lambda_directory):
-                print(f"❌ Lambda code path does not exist: {lambda_directory}")
-                print(f"\t 👉 Searched Paths: {self.workload.paths}")
+        if len(self.workload.paths) == 0:
+            print("‼️ No workload paths defined, using project root only.")
+            paths = [str(project_root)]
+        # find the lambda code path
+
+        relative_path = lambda_config.src
+
+        if not os.path.exists(relative_path):
+            relative_path = FileOperations.find_directory(paths, relative_path)
+            if relative_path is None or not os.path.exists(relative_path):
+                print(f"❌ Lambda code path does not exist: {relative_path}")
+                print(f"\t 👉 Searched Paths: {paths}")
                 print(f"\t 👉 Project Root: {project_root}")
+                print(f"\t 👉 Lambda Directory {lambda_config.src}")
                 print(f"\t 👉 Lambda Files {lambda_config.handler}")
                 raise FileNotFoundError(
-                    f"Lambda code path does not exist: {lambda_directory}"
+                    f"Lambda code path does not exist: {relative_path}"
                 )
 
-        lambda_relative_directory = lambda_directory.replace(
-            str(project_root), ""
-        ).removeprefix("/")
+        lambda_directory = relative_path.replace(f"/{lambda_config.handler}", "")
+
+        # get os temp directory for building the lambda package
+        temp_dir = os.environ.get("TMPDIR", "/tmp")
+        if not os.path.exists(temp_dir):
+            temp_dir = "/tmp"
 
         output_dir = os.path.join(
-            str(project_root),
-            ".lambda_package",
-            lambda_relative_directory,
+            temp_dir, "cdk-factory", "lambda-builds", lambda_config.name
         )
 
         self.__validate_directories(
@@ -216,7 +222,7 @@ class LambdaFunctionUtilities:
         for file in requirement_files:
             if not os.path.exists(file):
                 raise FileNotFoundError(
-                    f"Lambda Layer Build Failrure. Failed to find requirements file {file}."
+                    f"Lambda Layer Build Failure. Failed to find requirements file {file}."
                 )
         project_root = Path(__file__).parents[3]
         lambda_relative_directory = lambda_directory.replace(
@@ -324,7 +330,7 @@ class LambdaFunctionUtilities:
             if os.path.exists(req_file):
                 requirements_files = [req_file]
 
-        # dependcies as layers or directly added
+        # dependencies as layers or directly added
         if (
             requirements_files
             and dependencies_to_layer
@@ -343,8 +349,8 @@ class LambdaFunctionUtilities:
                 layers.append(dependency_layer)
         elif requirements_files:
             logger.info("installing requirements directly into the lambda package area")
-            for requirment in requirements_files:
-                if os.path.exists(requirment):
+            for requirement in requirements_files:
+                if os.path.exists(requirement):
                     pipelineConfig: PipelineConfig = PipelineConfig(
                         self.deployment.pipeline, self.deployment.workload
                     )
@@ -353,14 +359,14 @@ class LambdaFunctionUtilities:
                         commands = login.split()
                         subprocess.check_call(commands)
 
-                    commands = f"pip install -r {requirment} -t {output_dir}".split()
+                    commands = f"pip install -r {requirement} -t {output_dir}".split()
                     subprocess.check_call(commands)
                 else:
                     logger.warning(
                         {
                             "lambda": f"{handler}",
                             "path": lambda_directory,
-                            "requirements": requirment,
+                            "requirements": requirement,
                             "message": "a requirement file was attached but could not be found.",
                         }
                     )

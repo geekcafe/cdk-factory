@@ -268,3 +268,12 @@ class FileOperations:
                 return file_path
 
         return None
+
+    @staticmethod
+    def find_directory(directories: List[str], relative_directory: str) -> str | None:
+        for directory in directories:
+            sub_dir = os.path.join(directory, relative_directory)
+            if os.path.exists(sub_dir):
+                return sub_dir
+
+        return None

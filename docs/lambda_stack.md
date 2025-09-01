@@ -43,15 +43,15 @@ The Lambda Stack (`lambda_stack.py`) provides comprehensive AWS Lambda function 
 ```json
 {
   "name": "my-function",
-  "source_directory": "src/handlers/my_function",
+  "src": "src/handlers/my_function",
   "handler": "handler.lambda_handler",
   "description": "My Lambda Function",
   "runtime": "python3.11",
   "timeout": 30,
   "memory_size": 256,
-  "environment_variables": {
-    "ENV_VAR": "value"
-  },
+  "environment_variables": [
+    {"name": "ENV_VAR", "value": "value"}
+  ],
   "api": {
     "routes": "/api/my-endpoint",
     "method": "POST",
@@ -106,29 +106,56 @@ When an `api` configuration is present in a Lambda function, the stack automatic
 | `skip_authorizer` | boolean | Skip Cognito authorizer setup | `false` |
 | `api_key_required` | boolean | Require API key for access | `false` |
 | `request_parameters` | object | Request parameter validation rules | `{}` |
+| `existing_api_gateway_id` | string | Reference existing API Gateway by ID | `null` |
+| `existing_authorizer_id` | string | Reference existing Cognito authorizer by ID | `null` |
 
 ### Existing Infrastructure Integration
 
-To integrate with existing API Gateway infrastructure:
+#### Option 1: Stack-Level Configuration
+Configure existing API Gateway at the stack level:
 
 ```json
 {
   "api_gateway": {
     "existing_api_id": "abc123def456",
-    "existing_api_arn": "arn:aws:apigateway:region::/restapis/abc123def456",
-    "authorizer": {
-      "id": "xyz789",
-      "type": "COGNITO_USER_POOLS"
-    }
+    "existing_api_arn": "arn:aws:apigateway:region::/restapis/abc123def456"
   }
 }
 ```
 
+#### Option 2: Function-Level Configuration
+Configure existing infrastructure per Lambda function:
+
+```json
+{
+  "name": "my-function",
+  "src": "src/handlers/my_function",
+  "handler": "handler.lambda_handler",
+  "api": {
+    "route": "/api/endpoint",
+    "method": "POST",
+    "existing_api_gateway_id": "abc123def456",
+    "existing_authorizer_id": "auth789xyz",
+    "skip_authorizer": false
+  }
+}
+```
+
+#### Existing Authorizer Support
+
+The Lambda Stack supports referencing existing Cognito User Pool authorizers using L1 CDK constructs:
+
+- **New Authorizers**: When `existing_authorizer_id` is not provided, creates new `CognitoUserPoolsAuthorizer` using L2 constructs
+- **Existing Authorizers**: When `existing_authorizer_id` is provided, uses L1 `CfnMethod` construct with `authorizer_id` parameter
+
+**Technical Implementation:**
+- L2 constructs (`resource.add_method()`) are used for new authorizers with full CDK integration
+- L1 constructs (`apigateway.CfnMethod`) are used for existing authorizers to bypass L2 limitations
+- L1 approach creates CloudFormation resources directly with `AuthorizerId` property
+- Lambda permissions are automatically configured for both approaches
+
 **Environment Variables Required:**
-- `API_GATEWAY_ID`: Existing API Gateway ID
-- `API_GATEWAY_ARN`: Existing API Gateway ARN
-- `COGNITO_AUTHORIZER_ID`: Existing Cognito authorizer ID
-- `COGNITO_USER_POOL_ID`: Cognito User Pool ID for new authorizers
+- `COGNITO_USER_POOL_ID`: Cognito User Pool ID for new authorizers (not required for existing authorizers)
 
 ## Event Triggers
 
@@ -303,11 +330,11 @@ The stack performs validation on:
 ```json
 {
   "name": "user-service",
-  "source_directory": "src/handlers/users",
+  "src": "src/handlers/users",
   "handler": "users.lambda_handler",
   "description": "User management service",
   "api": {
-    "routes": "/users",
+    "route": "/users",
     "method": "GET"
   }
 }
@@ -318,7 +345,7 @@ The stack performs validation on:
 ```json
 {
   "name": "event-processor",
-  "source_directory": "src/handlers/events",
+  "src": "src/handlers/events",
   "handler": "processor.lambda_handler",
   "description": "Process application events",
   "triggers": [
@@ -338,7 +365,7 @@ The stack performs validation on:
 ```json
 {
   "name": "batch-processor",
-  "source_directory": "src/handlers/batch",
+  "src": "src/handlers/batch",
   "handler": "batch.lambda_handler",
   "description": "Batch processing job",
   "schedule": {
@@ -356,6 +383,23 @@ The stack performs validation on:
 }
 ```
 
+### Lambda with Existing Authorizer
+
+```json
+{
+  "name": "secure-api",
+  "src": "src/handlers/secure",
+  "handler": "secure.lambda_handler",
+  "description": "Secure API using existing authorizer",
+  "api": {
+    "route": "/secure/data",
+    "method": "GET",
+    "existing_authorizer_id": "auth123xyz789",
+    "skip_authorizer": false
+  }
+}
+```
+
 ## Troubleshooting
 
 ### Deployment Issues
@@ -366,15 +410,27 @@ The stack performs validation on:
 
 ### API Gateway Issues
 
-1. **CORS Errors**: Verify CORS configuration matches client requirements
-2. **Authorization Failures**: Check Cognito User Pool configuration
-3. **Route Conflicts**: Ensure route paths don't conflict with existing routes
+1. **CORS Errors**: Configure CORS settings in API Gateway configuration
+2. **Authorization Failures**: Verify Cognito User Pool and authorizer configuration
+3. **Route Conflicts**: Check for overlapping API routes
+4. **Existing Authorizer Issues**: 
+   - Ensure `existing_authorizer_id` is valid and accessible
+   - Verify authorizer belongs to the same API Gateway
+   - Check that authorization type is `COGNITO_USER_POOLS`
+
+### Testing and Validation
+
+The Lambda Stack now uses real CDK synthesis testing instead of mocks:
+
+- Tests validate actual CloudFormation template generation
+- Synthesis tests catch authorization type mismatches and resource conflicts
+- Environment variables are properly validated during testing
+- Both L1 and L2 construct approaches are tested for authorizer integration
 
 ### Runtime Issues
 
 1. **Import Errors**: Verify all dependencies are included in deployment package
 2. **Environment Variables**: Check environment variable configuration and values
-3. **Memory Errors**: Increase memory allocation if functions are running out of memory
 
 ## Migration Guide
 

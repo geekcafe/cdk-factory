@@ -69,12 +69,14 @@ class TestLambdaStackReal:
             "resources": [
                 {
                     "name": "test-function",
-                    "src": "src/handlers/test",
-                    "handler": "handler.lambda_handler",
+                    "src": "tests/unit/files/lambda",
+                    "handler": "app.lambda_handler",
                     "runtime": "python3.11",
                     "timeout": 30,
                     "memory_size": 256,
-                    "environment_variables": [{"name": "TEST_VAR", "value": "test_value"}],
+                    "environment_variables": [
+                        {"name": "TEST_VAR", "value": "test_value"}
+                    ],
                     "triggers": [],
                     "sqs": {"queues": []},
                     "schedule": None,
@@ -96,12 +98,14 @@ class TestLambdaStackReal:
             "resources": [
                 {
                     "name": "test-function-api",
-                    "src": "src/handlers/test",
-                    "handler": "handler.lambda_handler",
+                    "src": "tests/unit/files/lambda",
+                    "handler": "app.lambda_handler",
                     "runtime": "python3.11",
                     "timeout": 30,
                     "memory_size": 256,
-                    "environment_variables": [{"name": "TEST_VAR", "value": "test_value"}],
+                    "environment_variables": [
+                        {"name": "TEST_VAR", "value": "test_value"}
+                    ],
                     "triggers": [],
                     "sqs": {"queues": []},
                     "schedule": None,
@@ -143,7 +147,7 @@ class TestLambdaStackReal:
     ):
         """Test Lambda stack builds with basic Lambda function using real CDK synthesis."""
         from aws_cdk.assertions import Template
-        
+
         stack = LambdaStack(
             scope=app,
             id="test-lambda-stack",
@@ -166,12 +170,15 @@ class TestLambdaStackReal:
         assert len(stack.api_gateway_integrations) == 0
 
         # Verify CloudFormation resources are created
-        template.has_resource_properties("AWS::Lambda::Function", {
-            "Handler": "handler.lambda_handler",
-            "Runtime": "python3.11",
-            "Timeout": 30,
-            "MemorySize": 256,
-        })
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            {
+                "Handler": "app.lambda_handler",
+                "Runtime": "python3.11",
+                "Timeout": 30,
+                "MemorySize": 256,
+            },
+        )
 
         # Should not have API Gateway resources for basic lambda
         template.resource_count_is("AWS::ApiGateway::RestApi", 0)
@@ -186,7 +193,7 @@ class TestLambdaStackReal:
     ):
         """Test Lambda stack builds with API Gateway integration using real CDK synthesis."""
         from aws_cdk.assertions import Template
-        
+
         # Set required environment variable for authorizer
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
@@ -216,26 +223,35 @@ class TestLambdaStackReal:
 
         # Verify CloudFormation resources are created
         # Lambda function should be present
-        template.has_resource_properties("AWS::Lambda::Function", {
-            "Handler": "handler.lambda_handler",
-            "Runtime": "python3.11",
-            "Timeout": 30,
-            "MemorySize": 256,
-        })
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            {
+                "Handler": "app.lambda_handler",
+                "Runtime": "python3.11",
+                "Timeout": 30,
+                "MemorySize": 256,
+            },
+        )
 
         # API Gateway should be present
         template.has_resource("AWS::ApiGateway::RestApi", {})
-        
+
         # API Gateway method should be present
-        template.has_resource_properties("AWS::ApiGateway::Method", {
-            "HttpMethod": "POST",
-        })
+        template.has_resource_properties(
+            "AWS::ApiGateway::Method",
+            {
+                "HttpMethod": "POST",
+            },
+        )
 
         # Lambda permission for API Gateway should be present
-        template.has_resource_properties("AWS::Lambda::Permission", {
-            "Action": "lambda:InvokeFunction",
-            "Principal": "apigateway.amazonaws.com",
-        })
+        template.has_resource_properties(
+            "AWS::Lambda::Permission",
+            {
+                "Action": "lambda:InvokeFunction",
+                "Principal": "apigateway.amazonaws.com",
+            },
+        )
 
         # Since skip_authorizer is True, no authorizer should be created
         template.resource_count_is("AWS::ApiGateway::Authorizer", 0)
@@ -249,7 +265,7 @@ class TestLambdaStackReal:
     ):
         """Test Lambda stack builds with API Gateway authorizer using real CDK synthesis."""
         from aws_cdk.assertions import Template
-        
+
         # Set required environment variable for authorizer
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
@@ -264,12 +280,14 @@ class TestLambdaStackReal:
             "resources": [
                 {
                     "name": "test-function-auth",
-                    "src": "src/handlers/test",
-                    "handler": "handler.lambda_handler",
+                    "src": "tests/unit/files/lambda",
+                    "handler": "app.lambda_handler",
                     "runtime": "python3.11",
                     "timeout": 30,
                     "memory_size": 256,
-                    "environment_variables": [{"name": "TEST_VAR", "value": "test_value"}],
+                    "environment_variables": [
+                        {"name": "TEST_VAR", "value": "test_value"}
+                    ],
                     "triggers": [],
                     "sqs": {"queues": []},
                     "schedule": None,
@@ -306,23 +324,32 @@ class TestLambdaStackReal:
 
         # Verify CloudFormation resources are created
         # Lambda function should be present
-        template.has_resource_properties("AWS::Lambda::Function", {
-            "Handler": "handler.lambda_handler",
-            "Runtime": "python3.11",
-        })
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            {
+                "Handler": "app.lambda_handler",
+                "Runtime": "python3.11",
+            },
+        )
 
         # API Gateway should be present
         template.has_resource("AWS::ApiGateway::RestApi", {})
 
         # API Gateway method should be present
-        template.has_resource_properties("AWS::ApiGateway::Method", {
-            "HttpMethod": "GET",
-        })
+        template.has_resource_properties(
+            "AWS::ApiGateway::Method",
+            {
+                "HttpMethod": "GET",
+            },
+        )
 
         # Cognito User Pool Authorizer should be present
-        template.has_resource_properties("AWS::ApiGateway::Authorizer", {
-            "Type": "COGNITO_USER_POOLS",
-        })
+        template.has_resource_properties(
+            "AWS::ApiGateway::Authorizer",
+            {
+                "Type": "COGNITO_USER_POOLS",
+            },
+        )
 
         # Verify the __setup_api_gateway_integration method was executed
         assert len(stack.api_gateway_integrations) == 1
@@ -337,7 +364,7 @@ class TestLambdaStackReal:
         """Test Lambda stack correctly handles existing authorizer ID (currently unsupported)."""
         import pytest
         from aws_cdk.assertions import Template
-        
+
         # Set required environment variable for authorizer (even though we're using existing)
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
@@ -352,12 +379,14 @@ class TestLambdaStackReal:
             "resources": [
                 {
                     "name": "test-function-existing-auth",
-                    "src": "src/handlers/test",
-                    "handler": "handler.lambda_handler",
+                    "src": "tests/unit/files/lambda",
+                    "handler": "app.lambda_handler",
                     "runtime": "python3.11",
                     "timeout": 30,
                     "memory_size": 256,
-                    "environment_variables": [{"name": "TEST_VAR", "value": "test_value"}],
+                    "environment_variables": [
+                        {"name": "TEST_VAR", "value": "test_value"}
+                    ],
                     "triggers": [],
                     "sqs": {"queues": []},
                     "schedule": None,
@@ -394,33 +423,42 @@ class TestLambdaStackReal:
 
         # Verify CloudFormation resources are created
         # Lambda function should be present
-        template.has_resource_properties("AWS::Lambda::Function", {
-            "Handler": "handler.lambda_handler",
-            "Runtime": "python3.11",
-        })
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            {
+                "Handler": "app.lambda_handler",
+                "Runtime": "python3.11",
+            },
+        )
 
         # API Gateway should be present
         template.has_resource("AWS::ApiGateway::RestApi", {})
 
         # API Gateway method should be present with existing authorizer ID
-        template.has_resource_properties("AWS::ApiGateway::Method", {
-            "HttpMethod": "POST",
-            "AuthorizationType": "COGNITO_USER_POOLS",
-            "AuthorizerId": "abc123def456",  # Should reference existing authorizer
-        })
+        template.has_resource_properties(
+            "AWS::ApiGateway::Method",
+            {
+                "HttpMethod": "POST",
+                "AuthorizationType": "COGNITO_USER_POOLS",
+                "AuthorizerId": "abc123def456",  # Should reference existing authorizer
+            },
+        )
 
         # Lambda permission for API Gateway should be present
-        template.has_resource_properties("AWS::Lambda::Permission", {
-            "Action": "lambda:InvokeFunction",
-            "Principal": "apigateway.amazonaws.com",
-        })
+        template.has_resource_properties(
+            "AWS::Lambda::Permission",
+            {
+                "Action": "lambda:InvokeFunction",
+                "Principal": "apigateway.amazonaws.com",
+            },
+        )
 
         # No new authorizer should be created since we're using existing one
         template.resource_count_is("AWS::ApiGateway::Authorizer", 0)
 
         # Verify the __setup_api_gateway_integration method was executed
         assert len(stack.api_gateway_integrations) == 1
-        
+
         # Verify that the integration references the existing authorizer
         integration = stack.api_gateway_integrations[0]
         assert integration["function_name"] == "test-function-existing-auth"
@@ -429,8 +467,8 @@ class TestLambdaStackReal:
         """Test LambdaFunctionConfig creation with real config."""
         config_dict = {
             "name": "test-function",
-            "source": "src/handlers/test",
-            "handler": "handler.lambda_handler",
+            "source": "tests/unit/files/lambda",
+            "handler": "app.lambda_handler",
             "runtime": "python3.11",
             "timeout": 30,
             "memory_size": 256,
@@ -445,7 +483,7 @@ class TestLambdaStackReal:
         )
 
         assert lambda_config.name == "test-function"
-        assert lambda_config.handler == "handler.lambda_handler"
+        assert lambda_config.handler == "app.lambda_handler"
         assert lambda_config.runtime.name == "python3.11"
         assert lambda_config.timeout.to_seconds() == 30
         assert lambda_config.memory_size == 256
@@ -456,8 +494,8 @@ class TestLambdaStackReal:
         """Test LambdaFunctionConfig creation with API Gateway config."""
         config_dict = {
             "name": "test-function-api",
-            "src": "src/handlers/test",
-            "handler": "handler.lambda_handler",
+            "src": "tests/unit/files/lambda",
+            "handler": "app.lambda_handler",
             "runtime": "python3.11",
             "timeout": 30,
             "memory_size": 256,
