@@ -80,6 +80,10 @@ class LambdaStack(IStack):
         self.deployment = deployment
         self.workload = workload
         resources = stack_config.dictionary.get("resources", [])
+        if len(resources) == 0:
+            resources = stack_config.dictionary.get("lambdas", [])
+            if len(resources) == 0:
+                raise ValueError("No resources found in stack config")
 
         lambda_functions: List[LambdaFunctionConfig] = []
         for resource in resources:
