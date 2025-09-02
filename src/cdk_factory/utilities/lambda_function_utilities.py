@@ -199,6 +199,12 @@ class LambdaFunctionUtilities:
 
         return role.without_policy_updates()
 
+    def _remove_profile_from_command(self, command: str) -> str:
+        """Remove --profile and its value from a command string."""
+        import re
+        # Remove --profile followed by any non-space characters
+        return re.sub(r'\s*--profile\s+\S+', '', command).strip()
+
     def create_dependencies_layer(
         self,
         scope: Construct,
@@ -246,9 +252,15 @@ class LambdaFunctionUtilities:
                     self.deployment.pipeline, self.deployment.workload
                 )
                 logins = pipelineConfig.code_artifact_logins()
+                
                 for login in logins:
                     commands = login.split()
-                    subprocess.check_call(commands)
+                    try:
+                        logger.info(f"Executing CodeArtifact login: {login}")
+                        subprocess.check_call(commands)
+                    except subprocess.CalledProcessError as e:
+                        logger.warning(f"CodeArtifact login failed (continuing): {e}")
+                        # Continue with other logins or pip install
                 commands = f"pip install -r {file} -t {output_dir}/python".split()
                 subprocess.check_call(commands)
 
@@ -355,9 +367,15 @@ class LambdaFunctionUtilities:
                         self.deployment.pipeline, self.deployment.workload
                     )
                     logins = pipelineConfig.code_artifact_logins()
+                    
                     for login in logins:
                         commands = login.split()
-                        subprocess.check_call(commands)
+                        try:
+                            logger.info(f"Executing CodeArtifact login: {login}")
+                            subprocess.check_call(commands)
+                        except subprocess.CalledProcessError as e:
+                            logger.warning(f"CodeArtifact login failed (continuing): {e}")
+                            # Continue with other logins or pip install
 
                     commands = f"pip install -r {requirement} -t {output_dir}".split()
                     subprocess.check_call(commands)

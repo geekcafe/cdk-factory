@@ -148,11 +148,15 @@ class PipelineConfig:
         """
         Returns the code artifact logins (if any)
         """
-        # todo
-
-        logins = self.pipeline.get("code_artifact_logins", [])
-
-        if not isinstance(logins, list):
-            logins = [logins]
-
-        return logins
+        from cdk_factory.configurations.resources.code_artifact_login import CodeArtifactLoginConfig
+        
+        logins_config = self.pipeline.get("code_artifact_logins", [])
+        
+        if not logins_config:
+            return []
+        
+        # Create enhanced config object
+        login_config = CodeArtifactLoginConfig(logins_config)
+        
+        # Return commands appropriate for current environment
+        return login_config.get_commands_for_environment()
