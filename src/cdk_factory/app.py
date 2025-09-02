@@ -12,6 +12,7 @@ from aws_cdk.cx_api import CloudAssembly
 from cdk_factory.utilities.commandline_args import CommandlineArgs
 from cdk_factory.workload.workload_factory import WorkloadFactory
 from cdk_factory.utilities.configuration_loader import ConfigurationLoader
+from cdk_factory.version import __version__
 
 
 class CdkAppFactory:
@@ -44,6 +45,8 @@ class CdkAppFactory:
         Returns:
             CloudAssembly: CDK CloudAssembly
         """
+
+        print(f"👋 Synthesizing CDK App from the cdk-factory version: {__version__}")
 
         if not paths:
             paths = []
