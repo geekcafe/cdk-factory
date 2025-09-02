@@ -59,14 +59,14 @@ class ApiGatewayConfigRouteConfig:
         return self.route
 
     @property
-    def existing_api_gateway_id(self) -> str:
-        """Existing API Gateway ID"""
-        return self._config.get("existing_api_gateway_id", "")
+    def api_gateway_id(self) -> str:
+        """API Gateway ID for existing gateways"""
+        return self._config.get("api_gateway_id", "") or self._config.get("api_gateway_id", "")
 
     @property
-    def existing_authorizer_id(self) -> str:
-        """Existing authorizer ID"""
-        return self._config.get("existing_authorizer_id", "")
+    def authorizer_id(self) -> str:
+        """Authorizer ID for existing authorizers"""
+        return self._config.get("authorizer_id", "") or self._config.get("authorizer_id", "")
 
     def __get(self, key: str) -> Any:
         """Helper method to get config values"""

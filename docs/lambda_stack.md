@@ -106,8 +106,8 @@ When an `api` configuration is present in a Lambda function, the stack automatic
 | `skip_authorizer` | boolean | Skip Cognito authorizer setup | `false` |
 | `api_key_required` | boolean | Require API key for access | `false` |
 | `request_parameters` | object | Request parameter validation rules | `{}` |
-| `existing_api_gateway_id` | string | Reference existing API Gateway by ID | `null` |
-| `existing_authorizer_id` | string | Reference existing Cognito authorizer by ID | `null` |
+| `api_gateway_id` | string | Reference existing API Gateway by ID | `null` |
+| `authorizer_id` | string | Reference existing Cognito authorizer by ID | `null` |
 
 ### Existing Infrastructure Integration
 
@@ -117,10 +117,20 @@ Configure existing API Gateway at the stack level:
 ```json
 {
   "api_gateway": {
-    "existing_api_id": "abc123def456",
-    "existing_api_arn": "arn:aws:apigateway:region::/restapis/abc123def456"
+    "id": "abc123def456",
+    "arn": "arn:aws:apigateway:region::/restapis/abc123def456",
+    "root_resource_id": "abc123def456root",
+    "authorizer": {
+      "id": "auth789xyz",
+      "type": "COGNITO_USER_POOLS"
+    }
   }
 }
+```
+
+**Important:** The `root_resource_id` is required for proper API Gateway import. You can find it using:
+```bash
+aws apigateway get-resources --rest-api-id abc123def456 --query 'items[?path==`/`].id' --output text
 ```
 
 #### Option 2: Function-Level Configuration
@@ -134,8 +144,8 @@ Configure existing infrastructure per Lambda function:
   "api": {
     "route": "/api/endpoint",
     "method": "POST",
-    "existing_api_gateway_id": "abc123def456",
-    "existing_authorizer_id": "auth789xyz",
+    "api_gateway_id": "abc123def456",
+    "authorizer_id": "auth789xyz",
     "skip_authorizer": false
   }
 }
@@ -145,8 +155,8 @@ Configure existing infrastructure per Lambda function:
 
 The Lambda Stack supports referencing existing Cognito User Pool authorizers using L1 CDK constructs:
 
-- **New Authorizers**: When `existing_authorizer_id` is not provided, creates new `CognitoUserPoolsAuthorizer` using L2 constructs
-- **Existing Authorizers**: When `existing_authorizer_id` is provided, uses L1 `CfnMethod` construct with `authorizer_id` parameter
+- **New Authorizers**: When `authorizer_id` is not provided, creates new `CognitoUserPoolsAuthorizer` using L2 constructs
+- **Existing Authorizers**: When `authorizer_id` is provided, uses L1 `CfnMethod` construct with `authorizer_id` parameter
 
 **Technical Implementation:**
 - L2 constructs (`resource.add_method()`) are used for new authorizers with full CDK integration
@@ -394,7 +404,7 @@ The stack performs validation on:
   "api": {
     "route": "/secure/data",
     "method": "GET",
-    "existing_authorizer_id": "auth123xyz789",
+    "authorizer_id": "auth123xyz789",
     "skip_authorizer": false
   }
 }
@@ -414,7 +424,7 @@ The stack performs validation on:
 2. **Authorization Failures**: Verify Cognito User Pool and authorizer configuration
 3. **Route Conflicts**: Check for overlapping API routes
 4. **Existing Authorizer Issues**: 
-   - Ensure `existing_authorizer_id` is valid and accessible
+   - Ensure `authorizer_id` is valid and accessible
    - Verify authorizer belongs to the same API Gateway
    - Check that authorization type is `COGNITO_USER_POOLS`
 

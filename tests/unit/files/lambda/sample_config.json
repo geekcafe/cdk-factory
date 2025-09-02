@@ -1,0 +1,204 @@
+{
+    "cdk": {
+      "parameters": [
+        {
+          "placeholder": "{{ENVIRONMENT}}",
+          "env_var_name": "ENVIRONMENT",
+          "cdk_parameter_name": "Environment"
+        },
+        {
+          "placeholder": "{{WORKLOAD_NAME}}",
+          "env_var_name": "WORKLOAD_NAME",
+          "cdk_parameter_name": "WorkloadName"
+        },
+        {
+          "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+          "value": "./commands/cdk_synth.sh",
+          "cdk_parameter_name": "CdkSynthCommandFile"
+        },
+        {
+          "placeholder": "{{AWS_ACCOUNT}}",
+          "env_var_name": "AWS_ACCOUNT",
+          "cdk_parameter_name": "AccountNumber"
+        },
+        {
+          "placeholder": "{{AWS_REGION}}",
+          "env_var_name": "AWS_REGION",
+          "cdk_parameter_name": "AccountRegion"
+        },
+        {
+          "placeholder": "{{HOSTED_ZONE_ID}}",
+          "env_var_name": "HOSTED_ZONE_ID",
+          "cdk_parameter_name": "HostedZoneId"
+        },
+        {
+          "placeholder": "{{HOSTED_ZONE_NAME}}",
+          "env_var_name": "HOSTED_ZONE_NAME",
+          "cdk_parameter_name": "HostedZoneName"
+        },
+        {
+          "placeholder": "{{DNS_ALIAS}}",
+          "env_var_name": "DNS_ALIAS",
+          "cdk_parameter_name": "DnsAlias"
+        },
+        {
+          "placeholder": "{{CODE_REPOSITORY_NAME}}",
+          "env_var_name": "CODE_REPOSITORY_NAME",
+          "cdk_parameter_name": "CodeRepoName"
+        },
+        {
+          "placeholder": "{{CODE_REPOSITORY_ARN}}",
+          "env_var_name": "CODE_REPOSITORY_ARN",
+          "cdk_parameter_name": "CodeRepoArn"
+        },
+        {
+          "placeholder": "{{GIT_BRANCH}}",
+          "env_var_name": "GIT_BRANCH",
+          "cdk_parameter_name": "GitBranch"
+        },
+        {
+          "placeholder": "{{API_GATEWAY_ID}}",
+          "env_var_name": "API_GATEWAY_ID",
+          "cdk_parameter_name": "ApiGatewayId"
+        },
+        {
+          "placeholder": "{{API_GATEWAY_ARN}}",
+          "env_var_name": "API_GATEWAY_ARN",
+          "cdk_parameter_name": "ApiGatewayArn"
+        },
+        {
+          "placeholder": "{{COGNITO_AUTHORIZER_ID}}",
+          "env_var_name": "COGNITO_AUTHORIZER_ID",
+          "cdk_parameter_name": "CognitoAuthorizerId"
+        },
+        {
+          "placeholder": "{{COGNITO_USER_POOL_ID}}",
+          "env_var_name": "COGNITO_USER_POOL_ID",
+          "cdk_parameter_name": "CognitoUserPoolId"
+        },
+        {
+          "placeholder": "{{APP_TABLE_NAME}}",
+          "env_var_name": "APP_TABLE_NAME",
+          "cdk_parameter_name": "AppTableName"
+        }
+      ]
+    },
+    "workload": {
+      "name": "factory-lambda",
+      "description": "General info about this app/workload",
+      "devops": {
+        "account": "123456789012",
+        "region": "us-east-1",
+        "code_repository": {
+          "name": "geekcafe/factory-saas-lambda",
+          "type": "connector_arn",
+          "connector_arn": "arn:aws:codeconnections:us-east-1:123456789012:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
+        },
+        "commands": [
+          {
+            "name": "cdk_synth",
+            "commands": [],
+            "file": "./commands/cdk_synth.sh"
+          }
+        ]
+      },
+      "stacks": [
+        {}
+      ],
+      "deployments": [
+        {
+          "name": "factory-lambda-dev-pipeline",
+          "environment": "dev",
+          "account": "123456789012",
+          "region": "us-east-1",
+          "mode": "pipeline",
+          "pipeline": {
+            "name": "factory-lambda-dev-pipeline",
+            "branch": "main",
+            "enabled": true,
+            "code_artifact_logins": [
+              {
+                "domain": "geekcafe",
+                "repository": "gc-development-repo",
+                "region": "us-east-1",
+                "tool": "pip",
+                "profile": "gc-development",
+                "duration_seconds": 43200
+              },
+              {
+                "domain": "geekcafe",
+                "repository": "gc-development-repo",
+                "region": "us-east-1",
+                "tool": "pip"
+              }
+            ],
+            "stages": [
+              {
+                "name": "deploy-lambdas",
+                "stacks": [
+                  {
+                    "name": "factory-lambda-dev-lambdas",
+                    "module": "lambda_stack",
+                    "enabled": true,
+                    "api_gateway": {
+                      "id": "wm4ctmgbu7",
+                      "arn": "arn:aws:apigateway:us-east-1::/restapis/wm4ctmgbu7",
+                      "root_resource_id": "wm4ctmgbu7root",
+                      "authorizer": {
+                        "id": "8m223r",
+                        "type": "COGNITO_USER_POOLS"
+                      }
+                    },
+                    "resources": [
+                      {
+                        "name": "list-groups",
+                        "src": "./src/factory_saas_lambda/handlers/groups",
+                        "handler": "list_groups.lambda_handler",
+                        "description": "Groups: List Groups",
+                        "api": {
+                          "route": "/tenants/{tenant-id}/users/{user-id}/groups",
+                          "method": "GET",
+                          "authorization_type": "COGNITO",
+                          "cors": {
+                            "origins": [
+                              "*"
+                            ],
+                            "methods": [
+                              "GET",
+                              "OPTIONS"
+                            ],
+                            "headers": [
+                              "Content-Type",
+                              "Authorization"
+                            ]
+                          }
+                        },
+                        "permissions": [
+                          "dynamodb_read"
+                        ],
+                        "environment_variables": [
+                          {
+                            "name": "ENVIRONMENT",
+                            "value": "dev"
+                          },
+                          {
+                            "name": "APP_TABLE_NAME",
+                            "value": "factory-dev"
+                          },
+                          {
+                            "name": "COGNITO_USER_POOL",
+                            "value": "vEnLKZbLQ"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "enabled": true
+        }
+      ]
+    }
+  }

@@ -115,8 +115,8 @@ class TestLambdaStackReal:
                         "skip_authorizer": True,
                         "api_key_required": False,
                         "request_parameters": {},
-                        "existing_api_gateway_id": None,
-                        "existing_authorizer_id": None,
+                        "api_gateway_id": None,
+                        "authorizer_id": None,
                     },
                 }
             ],
@@ -297,8 +297,8 @@ class TestLambdaStackReal:
                         "skip_authorizer": False,  # Enable authorizer
                         "api_key_required": False,
                         "request_parameters": {},
-                        "existing_api_gateway_id": None,
-                        "existing_authorizer_id": None,
+                        "gateway_id": None,
+                        "authorizer_id": None,
                     },
                 }
             ],
@@ -396,8 +396,8 @@ class TestLambdaStackReal:
                         "skip_authorizer": False,
                         "api_key_required": False,
                         "request_parameters": {},
-                        "existing_api_gateway_id": None,
-                        "existing_authorizer_id": "abc123def456",  # Use existing authorizer
+                        "api_gateway_id": None,
+                        "authorizer_id": "abc123def456",  # Use existing authorizer
                     },
                 }
             ],
@@ -490,7 +490,7 @@ class TestLambdaStackReal:
         # assert lambda_config.api.routes
         assert lambda_config.triggers == []
 
-    def test_lambda_function_config_with_api(self, deployment_config):
+    def test_lambda_function_config_creation_with_api(self):
         """Test LambdaFunctionConfig creation with API Gateway config."""
         config_dict = {
             "name": "test-function-api",
@@ -500,29 +500,91 @@ class TestLambdaStackReal:
             "timeout": 30,
             "memory_size": 256,
             "environment_variables": [{"name": "TEST_VAR", "value": "test_value"}],
-            "triggers": [],
-            "sqs": {"queues": []},
-            "schedule": None,
             "api": {
-                "route": "/test/endpoint",
+                "route": "/api/endpoint",
                 "method": "POST",
                 "skip_authorizer": False,
                 "api_key_required": False,
                 "request_parameters": {},
-                "existing_api_gateway_id": None,
-                "existing_authorizer_id": None,
+                "api_gateway_id": None,
+                "authorizer_id": None,
             },
         }
 
-        lambda_config = LambdaFunctionConfig(
-            config=config_dict, deployment=deployment_config
-        )
+        lambda_config = LambdaFunctionConfig(config_dict)
 
         assert lambda_config.name == "test-function-api"
-        assert lambda_config.api is not None
-        assert lambda_config.api.route == "/test/endpoint"
+        assert lambda_config.handler == "app.lambda_handler"
+        assert lambda_config.api.routes == "/api/endpoint"
         assert lambda_config.api.method == "POST"
-        assert lambda_config.api.skip_authorizer is False
+        assert not lambda_config.api.skip_authorizer
+
+    def test_lambda_stack_with_real_sample_config(self, monkeypatch):
+        """Test Lambda stack with real sample config using CdkAppFactory pattern."""
+        from aws_cdk.assertions import Template
+        from cdk_factory.app import CdkAppFactory
+        import tempfile
+        import os
+
+        # Set required environment variables from the sample config
+        monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
+        monkeypatch.setenv("ENVIRONMENT", "dev")
+        monkeypatch.setenv("WORKLOAD_NAME", "factory-lambda")
+        monkeypatch.setenv("AWS_ACCOUNT", "123456789012")
+        monkeypatch.setenv("AWS_REGION", "us-east-1")
+        monkeypatch.setenv("HOSTED_ZONE_ID", "Z123456789")
+        monkeypatch.setenv("HOSTED_ZONE_NAME", "example.com")
+        monkeypatch.setenv("DNS_ALIAS", "api.example.com")
+        monkeypatch.setenv("CODE_REPOSITORY_NAME", "geekcafe/factory-saas-lambda")
+        monkeypatch.setenv(
+            "CODE_REPOSITORY_ARN",
+            "arn:aws:codeconnections:us-east-1:123456789012:connection/test",
+        )
+        monkeypatch.setenv("GIT_BRANCH", "main")
+        monkeypatch.setenv("API_GATEWAY_ID", "wm4ctmgbu7")
+        monkeypatch.setenv(
+            "API_GATEWAY_ARN", "arn:aws:apigateway:us-east-1::/restapis/wm4ctmgbu7"
+        )
+        monkeypatch.setenv("COGNITO_AUTHORIZER_ID", "8m223r")
+        monkeypatch.setenv("APP_TABLE_NAME", "factory-dev")
+
+        # Use the real sample config file
+        config_path = "tests/unit/files/lambda/sample_config.json"
+
+        # Create a temporary directory for CDK output
+        with tempfile.TemporaryDirectory() as temp_dir:
+            outdir = os.path.join(temp_dir, "cdk.out")
+
+            # Create the factory using the real pattern
+            factory = CdkAppFactory(
+                config_path=config_path,
+                runtime_directory="tests/unit/files/lambda",
+                outdir=outdir,
+            )
+
+            # This should reproduce the ValidationError with fromRestApiId()
+            try:
+                cloud_assembly = factory.synth(
+                    paths=["tests/unit/files/lambda"], cdk_app_file="cdk_app.py"
+                )
+
+                # If we get here, our fix worked - no ValidationError occurred
+                assert cloud_assembly is not None
+                print(
+                    "✅ Stack synthesis succeeded with existing API Gateway - ValidationError fixed!"
+                )
+
+                # The key success is that we didn't get the ValidationError
+                # The actual CDK synthesis succeeded with existing API Gateway import
+
+            except Exception as e:
+                # Check if this is the ValidationError we're trying to fix
+                if "fromRestApiId" in str(e) or "ValidationError" in str(e):
+                    print(f"❌ Caught the ValidationError we need to fix: {e}")
+                    raise AssertionError(f"ValidationError still occurs: {e}")
+                else:
+                    # Some other error - re-raise it
+                    raise
 
     def test_stack_config_validation(self, deployment_config, workload_config):
         """Test that stack config validation works correctly."""

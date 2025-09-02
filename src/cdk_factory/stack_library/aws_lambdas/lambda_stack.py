@@ -318,7 +318,7 @@ class LambdaStack(IStack):
         resource = self.__get_or_create_resource(api_gateway, api_config.routes)
 
         # Handle existing authorizer ID using L1 constructs
-        if api_config.existing_authorizer_id:
+        if self._get_existing_authorizer_id(api_config):
             method = self.__create_method_with_existing_authorizer(
                 api_gateway, resource, lambda_function, api_config
             )
@@ -352,19 +352,74 @@ class LambdaStack(IStack):
 
         logger.info(f"Created API Gateway integration for {function_config.name}")
 
+    def _get_existing_api_gateway_id(
+        self, api_config: ApiGatewayConfigRouteConfig
+    ) -> str:
+        """Get existing API Gateway ID from config"""
+        if api_config.api_gateway_id:
+            logger.info(
+                f"Using existing API Gateway ID from route config (api): {api_config.api_gateway_id}"
+            )
+            return api_config.api_gateway_id
+        else:
+            api_gateway_id = self.stack_config.dictionary.get("api_gateway", {}).get(
+                "id", None
+            )
+            if api_gateway_id:
+                logger.info(
+                    f"Using existing API Gateway ID from stack config (api_gateway): {api_gateway_id}"
+                )
+                return api_gateway_id
+
+        return None
+
     def __get_or_create_api_gateway(
         self, api_config: ApiGatewayConfigRouteConfig
     ) -> apigateway.RestApi:
         """Get existing API Gateway or create new one"""
         # Check if we should reference existing API Gateway
 
-        if api_config.existing_api_gateway_id:
-            # Import existing API Gateway
-            return apigateway.RestApi.from_rest_api_id(
-                self,
-                f"imported-api-{api_config.existing_api_gateway_id}",
-                api_config.existing_api_gateway_id,
-            )
+        api_gateway_id = self._get_existing_api_gateway_id(api_config)
+        if api_gateway_id:
+            # Import existing API Gateway using attributes to avoid ValidationError
+            # Get root resource ID from stack config if available
+            api_gateway_config = self.stack_config.dictionary.get("api_gateway", {})
+            root_resource_id = api_gateway_config.get("root_resource_id")
+            
+            if root_resource_id:
+                return apigateway.RestApi.from_rest_api_attributes(
+                    self,
+                    f"imported-api-{api_gateway_id}",
+                    rest_api_id=api_gateway_id,
+                    root_resource_id=root_resource_id,
+                )
+            else:
+                # When no root_resource_id is provided, we need to use a different approach
+                # The safest option is to fall back to from_rest_api_id with a workaround
+                logger.warning(
+                    f"No root_resource_id provided for API Gateway {api_gateway_id}. "
+                    "Using from_rest_api_id() - this may cause validation issues in some CDK versions."
+                )
+                try:
+                    return apigateway.RestApi.from_rest_api_id(
+                        self,
+                        f"imported-api-{api_gateway_id}",
+                        api_gateway_id,
+                    )
+                except Exception as e:
+                    if "ValidationError" in str(e) and "root is not configured" in str(e):
+                        # This is the exact error we're trying to solve
+                        # We need to provide a dummy root resource ID or use a different approach
+                        logger.error(
+                            f"Cannot import API Gateway {api_gateway_id} without root_resource_id. "
+                            "Please add 'root_resource_id' to your api_gateway configuration."
+                        )
+                        raise ValueError(
+                            f"API Gateway {api_gateway_id} requires 'root_resource_id' in configuration. "
+                            "Add 'root_resource_id' to your api_gateway config section."
+                        ) from e
+                    else:
+                        raise
 
         # Create new API Gateway if not already created in this stack
         api_id = f"{self.stack_config.name}-api"
@@ -399,12 +454,35 @@ class LambdaStack(IStack):
 
         return api
 
+    def _get_existing_authorizer_id(
+        self, api_config: ApiGatewayConfigRouteConfig
+    ) -> str:
+        """Get existing authorizer ID from config"""
+        if api_config.authorizer_id:
+            logger.info(
+                f"Using existing authorizer ID from route config (api): {api_config.authorizer_id}"
+            )
+            return api_config.authorizer_id
+        else:
+            authorizer_id = (
+                self.stack_config.dictionary.get("api_gateway", {})
+                .get("authorizer", {})
+                .get("id", None)
+            )
+            if authorizer_id:
+                logger.info(
+                    f"Using existing authorizer ID from stack config (api_gateway.authorizer): {authorizer_id}"
+                )
+                return authorizer_id
+
+        return None
+
     def __get_or_create_authorizer(
         self, api_gateway: apigateway.RestApi, api_config: ApiGatewayConfigRouteConfig
     ) -> apigateway.Authorizer:
         """Get existing authorizer or create new one"""
         # Check if we should reference existing authorizer
-        if api_config.existing_authorizer_id:
+        if self._get_existing_authorizer_id(api_config):
             # For existing authorizers, we'll handle this in the method creation
             # using L1 constructs which support authorizer_id parameter
             return None
@@ -459,7 +537,7 @@ class LambdaStack(IStack):
             resource_id=resource.resource_id,
             rest_api_id=api_gateway.rest_api_id,
             authorization_type="COGNITO_USER_POOLS",
-            authorizer_id=api_config.existing_authorizer_id,
+            authorizer_id=self._get_existing_authorizer_id(api_config),
             api_key_required=api_config.api_key_required,
             request_parameters=api_config.request_parameters,
             integration=integration_props,

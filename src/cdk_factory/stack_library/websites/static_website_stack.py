@@ -157,6 +157,9 @@ class StaticWebSiteStack(IStack):
             # and the deployment will take ~5 minutes to complete
             distribution=cloudfront_distribution.distribution,  # Invalidation triggered here
             distribution_paths=["/*"],  # Invalidate all paths
+            memory_limit=int(
+                deployment.config.get("distribution_lambda_memory_limit", 1024)
+            ),
         )
 
         if hosted_zone and cloudfront_distribution.distribution:
