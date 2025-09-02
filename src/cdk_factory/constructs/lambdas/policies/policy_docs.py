@@ -148,72 +148,9 @@ class PolicyDocuments:
         # TODO: this all needs refactoring for flexibity
 
         permissions_map = {
-            "dynamodb_read": {
-                "name": "DynamoDB",
-                "description": "DynamoDB Read",
-                "sid": "DynamoDbReadAccess",
-                "actions": ["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:Query"],
-                "resources": [
-                    # f"arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}",
-                    # f"arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}/index/*",
-                ],
-                "nag": {
-                    "id": "AwsSolutions-IAM5",
-                    "reason": (
-                        "This wildcard permission is necessary for our use case because for indexes. "
-                        "Alteratively, we could define the specific index(es)"
-                    ),
-                    "resources": [
-                        # f"Resource::arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}",
-                        # f"Resource::arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}/index/*",
-                    ],
-                },
-            },
-            "dynamodb_write": {
-                "name": "DynamoDB",
-                "description": "DynamoDB Write",
-                "sid": "DynamoDbWriteAccess",
-                "actions": [
-                    "dynamodb:BatchWriteItem",
-                    "dynamodb:PutItem",
-                    "dynamodb:UpdateItem",
-                ],
-                "resources": [
-                    # f"arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}",
-                    # f"arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}/index/*",
-                ],
-                "nag": {
-                    "id": "AwsSolutions-IAM5",
-                    "reason": (
-                        "This wildcard permission is necessary for our use case because for indexes. "
-                        "Alteratively, we could define the specific index(es)"
-                    ),
-                    "resources": [
-                        # f"Resource::arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}",
-                        # f"Resource::arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}/index/*",
-                    ],
-                },
-            },
-            "dynamodb_delete": {
-                "name": "DynamoDB",
-                "description": "DynamoDB Delete",
-                "sid": "DynamoDbDeleteAccess",
-                "actions": [
-                    "dynamodb:DeleteItem",
-                ],
-                "resources": [
-                    # f"arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}",
-                    # f"arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}/index/*",
-                ],
-                "nag": {
-                    "id": "AwsSolutions-IAM5",
-                    "reason": "This wildcard permission is necessary for our use case because for indexes.",
-                    "resources": [
-                        # f"Resource::arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}",
-                        # f"Resource::arn:aws:dynamodb:*:*:table/{self.deployment.dynamodb.name}/index/*",
-                    ],
-                },
-            },
+            "dynamodb_read": self._get_dynamodb_read_permissions(),
+            "dynamodb_write": self._get_dynamodb_write_permissions(),
+            "dynamodb_delete": self._get_dynamodb_delete_permissions(),
             # "s3_read_workload": self.__s3_read_permissions(
             #     self.deployment.get_workload_bucket_name()
             # ),
@@ -275,6 +212,120 @@ class PolicyDocuments:
             permission_details = self.get_permission_details_from_dict(permission)
 
         return permission_details or {}
+
+    def _get_dynamodb_write_permissions(self) -> dict:
+        """Get DynamoDB write permissions with proper resource validation."""
+        import os
+        
+        table_name = os.getenv('APP_TABLE_NAME')
+        aws_region = os.getenv('AWS_REGION', '*')
+        aws_account = os.getenv('AWS_ACCOUNT', '*')
+        
+        if not table_name:
+            raise ValueError(
+                "DynamoDB table name not found. Please ensure 'APP_TABLE_NAME' environment variable is set. "
+                "This is required for 'dynamodb_write' permission to generate proper PolicyStatement resources."
+            )
+        
+        table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
+        index_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
+        
+        return {
+            "name": "DynamoDB",
+            "description": "DynamoDB Write",
+            "sid": "DynamoDbWriteAccess",
+            "actions": [
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+            ],
+            "resources": [table_arn, index_arn],
+            "nag": {
+                "id": "AwsSolutions-IAM5",
+                "reason": (
+                    "This wildcard permission is necessary for our use case because of DynamoDB indexes. "
+                    "Alternatively, we could define the specific index(es)"
+                ),
+                "resources": [
+                    f"Resource::{table_arn}",
+                    f"Resource::{index_arn}",
+                ],
+            },
+        }
+
+    def _get_dynamodb_delete_permissions(self) -> dict:
+        """Get DynamoDB delete permissions with proper resource validation."""
+        import os
+        
+        table_name = os.getenv('APP_TABLE_NAME')
+        aws_region = os.getenv('AWS_REGION', '*')
+        aws_account = os.getenv('AWS_ACCOUNT', '*')
+        
+        if not table_name:
+            raise ValueError(
+                "DynamoDB table name not found. Please ensure 'APP_TABLE_NAME' environment variable is set. "
+                "This is required for 'dynamodb_delete' permission to generate proper PolicyStatement resources."
+            )
+        
+        table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
+        index_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
+        
+        return {
+            "name": "DynamoDB",
+            "description": "DynamoDB Delete",
+            "sid": "DynamoDbDeleteAccess",
+            "actions": [
+                "dynamodb:DeleteItem",
+            ],
+            "resources": [table_arn, index_arn],
+            "nag": {
+                "id": "AwsSolutions-IAM5",
+                "reason": "This wildcard permission is necessary for our use case because of DynamoDB indexes.",
+                "resources": [
+                    f"Resource::{table_arn}",
+                    f"Resource::{index_arn}",
+                ],
+            },
+        }
+
+    def _get_dynamodb_read_permissions(self) -> dict:
+        """Get DynamoDB read permissions with proper resource validation."""
+        import os
+        
+        # Try to get table name from environment variables
+        table_name = os.getenv('APP_TABLE_NAME')
+        aws_region = os.getenv('AWS_REGION', '*')
+        aws_account = os.getenv('AWS_ACCOUNT', '*')
+        
+        if not table_name:
+            # Provide helpful error message
+            raise ValueError(
+                "DynamoDB table name not found. Please ensure 'APP_TABLE_NAME' environment variable is set. "
+                "This is required for 'dynamodb_read' permission to generate proper PolicyStatement resources."
+            )
+        
+        # Construct proper resource ARNs
+        table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
+        index_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
+        
+        return {
+            "name": "DynamoDB",
+            "description": "DynamoDB Read",
+            "sid": "DynamoDbReadAccess",
+            "actions": ["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:Query", "dynamodb:BatchGetItem"],
+            "resources": [table_arn, index_arn],
+            "nag": {
+                "id": "AwsSolutions-IAM5",
+                "reason": (
+                    "This wildcard permission is necessary for our use case because of DynamoDB indexes. "
+                    "Alternatively, we could define the specific index(es)"
+                ),
+                "resources": [
+                    f"Resource::{table_arn}",
+                    f"Resource::{index_arn}",
+                ],
+            },
+        }
 
     def __s3_read_permissions(
         self, bucket_name: str, sid: str | None = None
