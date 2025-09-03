@@ -27,19 +27,16 @@ from cdk_factory.constructs.sqs.policies.sqs_policies import SqsPolicies
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.workload import WorkloadConfig
-from cdk_factory.configurations.resources.api_gateway import ApiGatewayConfig
-from cdk_factory.configurations.resources.apigateway_route_config import (
-    ApiGatewayConfigRouteConfig,
-)
+
+
 from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
     SQS as SQSConfig,
 )
-from cdk_factory.configurations.resources.lambda_functions import (
-    LambdaFunctionConfig,
-    ApiGatewayConfigRouteConfig,
+
+from cdk_factory.utilities.api_gateway_integration_utility import (
+    ApiGatewayIntegrationUtility,
 )
-from cdk_factory.utilities.api_gateway_integration_utility import ApiGatewayIntegrationUtility
 from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_cognito as cognito
 
@@ -92,7 +89,7 @@ class LambdaStack(IStack):
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
-        
+
         # Initialize integration utility for consistent API Gateway behavior
         self.integration_utility = ApiGatewayIntegrationUtility(self)
         resources = stack_config.dictionary.get("resources", [])

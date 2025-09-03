@@ -12,25 +12,27 @@ from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_cognito as cognito
 from aws_lambda_powertools import Logger
 from constructs import Construct
-from cdk_factory.configurations.resources.lambda_functions import ApiGatewayConfigRouteConfig
+from cdk_factory.configurations.resources.apigateway_route_config import (
+    ApiGatewayConfigRouteConfig,
+)
 
 logger = Logger(service="ApiGatewayIntegrationUtility")
 
 
 class ApiGatewayIntegrationUtility:
     """Utility class for API Gateway Lambda integrations"""
-    
+
     def __init__(self, scope: Construct):
         self.scope = scope
         self.region = scope.region
         self.account = scope.account
-    
+
     def setup_lambda_integration(
-        self, 
-        lambda_function: _lambda.Function, 
+        self,
+        lambda_function: _lambda.Function,
         api_config: ApiGatewayConfigRouteConfig,
         api_gateway: apigateway.RestApi,
-        stack_config
+        stack_config,
     ) -> dict:
         """Setup API Gateway integration for Lambda function"""
         if not api_config:
@@ -39,7 +41,9 @@ class ApiGatewayIntegrationUtility:
         # Get or create authorizer if needed
         authorizer = None
         if not api_config.skip_authorizer:
-            authorizer = self.get_or_create_authorizer(api_gateway, api_config, stack_config)
+            authorizer = self.get_or_create_authorizer(
+                api_gateway, api_config, stack_config
+            )
 
         # Create integration
         integration = apigateway.LambdaIntegration(
@@ -82,22 +86,21 @@ class ApiGatewayIntegrationUtility:
         }
 
     def get_or_create_api_gateway(
-        self, 
+        self,
         api_config: ApiGatewayConfigRouteConfig,
         stack_config,
-        existing_integrations: list = None
+        existing_integrations: list = None,
     ) -> apigateway.RestApi:
         """Get existing API Gateway or create new one"""
         # Check for existing API Gateway ID
         api_gateway_id = self._get_existing_api_gateway_id(api_config, stack_config)
-        
+
         if api_gateway_id:
             # Import existing API Gateway
-            root_resource_id = (
-                stack_config.dictionary.get("api_gateway", {})
-                .get("root_resource_id", None)
+            root_resource_id = stack_config.dictionary.get("api_gateway", {}).get(
+                "root_resource_id", None
             )
-            
+
             if root_resource_id:
                 logger.info(
                     f"Using existing API Gateway {api_gateway_id} with root resource {root_resource_id}"
@@ -120,7 +123,9 @@ class ApiGatewayIntegrationUtility:
                         api_gateway_id,
                     )
                 except Exception as e:
-                    if "ValidationError" in str(e) and "root is not configured" in str(e):
+                    if "ValidationError" in str(e) and "root is not configured" in str(
+                        e
+                    ):
                         logger.error(
                             f"Cannot import API Gateway {api_gateway_id} without root_resource_id. "
                             "Please add 'root_resource_id' to your api_gateway configuration."
@@ -160,10 +165,10 @@ class ApiGatewayIntegrationUtility:
         return api
 
     def get_or_create_authorizer(
-        self, 
-        api_gateway: apigateway.RestApi, 
+        self,
+        api_gateway: apigateway.RestApi,
         api_config: ApiGatewayConfigRouteConfig,
-        stack_config
+        stack_config,
     ) -> Optional[apigateway.Authorizer]:
         """Get existing authorizer or create new one"""
         # Check if we should reference existing authorizer
@@ -199,9 +204,7 @@ class ApiGatewayIntegrationUtility:
         return authorizer
 
     def get_or_create_resource(
-        self, 
-        api_gateway: apigateway.RestApi, 
-        route_path: str
+        self, api_gateway: apigateway.RestApi, route_path: str
     ) -> apigateway.Resource:
         """Get or create API Gateway resource for the given route path"""
         if not route_path or route_path == "/":
@@ -231,9 +234,7 @@ class ApiGatewayIntegrationUtility:
         return current_resource
 
     def _get_existing_api_gateway_id(
-        self, 
-        api_config: ApiGatewayConfigRouteConfig,
-        stack_config
+        self, api_config: ApiGatewayConfigRouteConfig, stack_config
     ) -> Optional[str]:
         """Get existing API Gateway ID from config"""
         if api_config.api_gateway_id:
@@ -254,9 +255,7 @@ class ApiGatewayIntegrationUtility:
         return None
 
     def _get_existing_authorizer_id(
-        self, 
-        api_config: ApiGatewayConfigRouteConfig,
-        stack_config
+        self, api_config: ApiGatewayConfigRouteConfig, stack_config
     ) -> Optional[str]:
         """Get existing authorizer ID from config"""
         if api_config.authorizer_id:
@@ -284,7 +283,7 @@ class ApiGatewayIntegrationUtility:
         resource: apigateway.Resource,
         lambda_function: _lambda.Function,
         api_config: ApiGatewayConfigRouteConfig,
-        stack_config
+        stack_config,
     ) -> apigateway.CfnMethod:
         """Create API Gateway method using L1 constructs to support existing authorizer ID"""
 
@@ -299,9 +298,11 @@ class ApiGatewayIntegrationUtility:
         # Ensure HTTP method is not empty
         http_method = api_config.method.upper() if api_config.method else "GET"
         if not http_method or http_method.strip() == "":
-            logger.warning(f"Empty HTTP method detected for {lambda_function.function_name}, defaulting to GET")
+            logger.warning(
+                f"Empty HTTP method detected for {lambda_function.function_name}, defaulting to GET"
+            )
             http_method = "GET"
-        
+
         # Create method using L1 construct with existing authorizer ID
         method = apigateway.CfnMethod(
             self.scope,
