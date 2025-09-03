@@ -10,6 +10,7 @@ from typing import Optional
 from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ssm as ssm
 from aws_lambda_powertools import Logger
 from constructs import Construct
 from cdk_factory.configurations.resources.apigateway_route_config import (
@@ -180,11 +181,46 @@ class ApiGatewayIntegrationUtility:
         # Check if authorizer already exists for this API
         authorizer_id = f"{api_gateway.node.id}-authorizer"
 
-        # Get user pool from environment or config
+        # Get user pool from multiple sources with SSM support
+        user_pool_id = None
+        user_pool_arn = None
+
+        # First try to get from api_config
         user_pool_id = api_config.user_pool_id or os.getenv("COGNITO_USER_POOL_ID")
+
+        # Check if stack config has cognito_authorizer configuration
+        cognito_config = stack_config.dictionary.get("cognito_authorizer", {})
+        if not cognito_config:
+            cognito_config = stack_config.dictionary.get("api_gateway", {}).get(
+                "cognito_authorizer", {}
+            )
+        if cognito_config:
+            # Try to get user_pool_arn directly
+            user_pool_arn = cognito_config.get("user_pool_arn")
+
+            # If not found, try SSM parameter lookup
+            if not user_pool_arn:
+                ssm_path = cognito_config.get("user_pool_arn_ssm_path")
+                if ssm_path:
+                    logger.info(
+                        f"Looking up user pool ARN from SSM parameter: {ssm_path}"
+                    )
+                    user_pool_arn = ssm.StringParameter.from_string_parameter_name(
+                        self.scope, f"{authorizer_id}-user-pool-arn-param", ssm_path
+                    ).string_value
+
+            # Extract user pool ID from ARN if we have it
+            if user_pool_arn and not user_pool_id:
+                # ARN format: arn:aws:cognito-idp:region:account:userpool/pool_id
+                user_pool_id = user_pool_arn.split("/")[-1]
+
+        # Final validation
         if not user_pool_id:
             raise ValueError(
-                "COGNITO_USER_POOL_ID environment variable or config setting is required for API Gateway authorizer"
+                "User pool ID is required for API Gateway authorizer. "
+                "Provide via COGNITO_USER_POOL_ID environment variable, "
+                "api_config.user_pool_id, stack_config.cognito_authorizer.user_pool_arn, "
+                "or stack_config.cognito_authorizer.user_pool_arn_ssm_path"
             )
 
         user_pool = cognito.UserPool.from_user_pool_id(

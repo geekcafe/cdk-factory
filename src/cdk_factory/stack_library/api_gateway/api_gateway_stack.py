@@ -125,12 +125,12 @@ class ApiGatewayStack(IStack):
             "cloud_watch_role_removal_policy": self.api_config.cloud_watch_role_removal_policy,
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
-        api = apigateway.RestApi(
+        api_gateway = apigateway.RestApi(
             self,
             id=api_id,
             **kwargs,
         )
-        logger.info(f"Created API Gateway: {api.rest_api_name}")
+        logger.info(f"Created API Gateway: {api_gateway.rest_api_name}")
         # Add resources and methods if specified
         if self.api_config.resources:
             for resource_config in self.api_config.resources:
@@ -139,7 +139,11 @@ class ApiGatewayStack(IStack):
                     continue
 
                 # Create the resource
-                resource = api.root.resource_for_path(path) if path != "/" else api.root
+                resource = (
+                    api_gateway.root.resource_for_path(path)
+                    if path != "/"
+                    else api_gateway.root
+                )
 
                 # Add methods to the resource
                 methods = resource_config.get("methods", [])
@@ -278,7 +282,7 @@ class ApiGatewayStack(IStack):
                     description=plan_config.get("description"),
                     api_stages=[
                         apigateway.UsagePlanPerApiStage(
-                            api=api, stage=api.deployment_stage
+                            api=api_gateway, stage=api_gateway.deployment_stage
                         )
                     ],
                     throttle=throttle,
@@ -293,35 +297,41 @@ class ApiGatewayStack(IStack):
         # Cognito authorizer setup
         authorizer = None
         if self.api_config.cognito_authorizer:
-            user_pool_arn = self.api_config.cognito_authorizer.get("user_pool_arn")
-            if not user_pool_arn:
-                ssm_path = self.api_config.cognito_authorizer.get(
-                    "user_pool_arn_ssm_path"
-                )
-                if not ssm_path:
-                    raise ValueError(
-                        "user_pool_arn or user_pool_arn_ssm_path must be provided"
-                    )
-                user_pool_arn = ssm.StringParameter.from_string_parameter_name(
-                    self, "UserPoolArn", ssm_path
-                ).string_value
-            authorizer_name = self.api_config.cognito_authorizer.get(
-                "authorizer_name", "CognitoAuthorizer"
-            )
-            identity_source = self.api_config.cognito_authorizer.get(
-                "identity_source", "method.request.header.Authorization"
-            )
 
-            user_pool = cognito.UserPool.from_user_pool_arn(
-                self, f"{api_id}-userpool", user_pool_arn
+            route_config = ApiGatewayConfigRouteConfig({})
+
+            authorizer = self.integration_utility.get_or_create_authorizer(
+                api_gateway, route_config, self.stack_config
             )
-            authorizer = apigateway.CognitoUserPoolsAuthorizer(
-                self,
-                f"{api_id}-authorizer",
-                cognito_user_pools=[user_pool],
-                authorizer_name=authorizer_name,
-                identity_source=identity_source,
-            )
+            # user_pool_arn = self.api_config.cognito_authorizer.get("user_pool_arn")
+            # if not user_pool_arn:
+            #     ssm_path = self.api_config.cognito_authorizer.get(
+            #         "user_pool_arn_ssm_path"
+            #     )
+            #     if not ssm_path:
+            #         raise ValueError(
+            #             "user_pool_arn or user_pool_arn_ssm_path must be provided"
+            #         )
+            #     user_pool_arn = ssm.StringParameter.from_string_parameter_name(
+            #         self, "UserPoolArn", ssm_path
+            #     ).string_value
+            # authorizer_name = self.api_config.cognito_authorizer.get(
+            #     "authorizer_name", "CognitoAuthorizer"
+            # )
+            # identity_source = self.api_config.cognito_authorizer.get(
+            #     "identity_source", "method.request.header.Authorization"
+            # )
+
+            # user_pool = cognito.UserPool.from_user_pool_arn(
+            #     self, f"{api_id}-userpool", user_pool_arn
+            # )
+            # authorizer = apigateway.CognitoUserPoolsAuthorizer(
+            #     self,
+            #     f"{api_id}-authorizer",
+            #     cognito_user_pools=[user_pool],
+            #     authorizer_name=authorizer_name,
+            #     identity_source=identity_source,
+            # )
 
         for route in routes:
 
@@ -337,9 +347,9 @@ class ApiGatewayStack(IStack):
 
             route_path = route["path"]
             resource = (
-                api.root.resource_for_path(route_path)
+                api_gateway.root.resource_for_path(route_path)
                 if route_path != "/"
-                else api.root
+                else api_gateway.root
             )
             authorization_type = route.get("authorization_type")
             method_options = {}
@@ -347,9 +357,6 @@ class ApiGatewayStack(IStack):
             # Use shared utility for consistent Lambda integration behavior
             if route.get("src"):
                 # Create API config for this route to use shared utility
-                from cdk_factory.configurations.resources.apigateway_route_config import (
-                    ApiGatewayConfigRouteConfig,
-                )
 
                 api_route_config = ApiGatewayConfigRouteConfig(
                     {
@@ -368,7 +375,7 @@ class ApiGatewayStack(IStack):
 
                 # Use shared utility for consistent behavior
                 integration_info = self.integration_utility.setup_lambda_integration(
-                    lambda_fn, api_route_config, api, self.stack_config
+                    lambda_fn, api_route_config, api_gateway, self.stack_config
                 )
 
                 # Store integration info
@@ -409,7 +416,7 @@ class ApiGatewayStack(IStack):
                 origins_list=origins,
             )
 
-        return api
+        return api_gateway
 
     def _create_http_api(self, api_id: str, routes: List[Dict[str, Any]]):
         # HTTP API (v2)
