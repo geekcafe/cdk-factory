@@ -35,6 +35,11 @@ from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
     SQS as SQSConfig,
 )
+from cdk_factory.configurations.resources.lambda_functions import (
+    LambdaFunctionConfig,
+    ApiGatewayConfigRouteConfig,
+)
+from cdk_factory.utilities.api_gateway_integration_utility import ApiGatewayIntegrationUtility
 from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_cognito as cognito
 
@@ -70,6 +75,7 @@ class LambdaStack(IStack):
         self.deployment: DeploymentConfig | None = None
         self.workload: WorkloadConfig | None = None
         self.api_gateway_integrations: list = []
+        self.integration_utility = None
 
         self.__nag_rule_suppressions()
 
@@ -86,6 +92,9 @@ class LambdaStack(IStack):
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
+        
+        # Initialize integration utility for consistent API Gateway behavior
+        self.integration_utility = ApiGatewayIntegrationUtility(self)
         resources = stack_config.dictionary.get("resources", [])
         if len(resources) == 0:
             resources = stack_config.dictionary.get("lambdas", [])
@@ -293,304 +302,27 @@ class LambdaStack(IStack):
     def __setup_api_gateway_integration(
         self, lambda_function: _lambda.Function, function_config: LambdaFunctionConfig
     ) -> None:
-        """Setup API Gateway integration for Lambda function"""
+        """Setup API Gateway integration for Lambda function using shared utility"""
         api_config = function_config.api
 
         if not api_config:
             raise ValueError("API Gateway config is missing in Lambda function config")
 
-        # Get or create API Gateway
-        api_gateway = self.__get_or_create_api_gateway(api_config)
-
-        # Get or create authorizer if needed
-        authorizer = None
-        if not api_config.skip_authorizer:
-            authorizer = self.__get_or_create_authorizer(api_gateway, api_config)
-
-        # Create integration
-        integration = apigateway.LambdaIntegration(
-            lambda_function,
-            proxy=True,
-            allow_test_invoke=True,
+        # Get or create API Gateway using shared utility
+        api_gateway = self.integration_utility.get_or_create_api_gateway(
+            api_config, self.stack_config, self.api_gateway_integrations
         )
 
-        # Add method to API Gateway
-        resource = self.__get_or_create_resource(api_gateway, api_config.routes)
-
-        # Handle existing authorizer ID using L1 constructs
-        if self._get_existing_authorizer_id(api_config):
-            method = self.__create_method_with_existing_authorizer(
-                api_gateway, resource, lambda_function, api_config
-            )
-        else:
-            # Use L2 constructs for new authorizers
-            # Determine authorization type based on whether authorizer is provided
-            if authorizer:
-                auth_type = apigateway.AuthorizationType.COGNITO
-            else:
-                auth_type = apigateway.AuthorizationType[api_config.authorization_type]
-
-            method = resource.add_method(
-                api_config.method.upper(),
-                integration,
-                authorizer=authorizer,
-                api_key_required=api_config.api_key_required,
-                request_parameters=api_config.request_parameters,
-                authorization_type=auth_type,
-            )
+        # Setup the integration using shared utility
+        integration_info = self.integration_utility.setup_lambda_integration(
+            lambda_function, api_config, api_gateway, self.stack_config
+        )
 
         # Store integration info for potential cross-stack references
-        self.api_gateway_integrations.append(
-            {
-                "function_name": function_config.name,
-                "api_gateway": api_gateway,
-                "method": method,
-                "resource": resource,
-                "integration": integration,
-            }
-        )
+        integration_info["function_name"] = function_config.name
+        self.api_gateway_integrations.append(integration_info)
 
         logger.info(f"Created API Gateway integration for {function_config.name}")
-
-    def _get_existing_api_gateway_id(
-        self, api_config: ApiGatewayConfigRouteConfig
-    ) -> str:
-        """Get existing API Gateway ID from config"""
-        if api_config.api_gateway_id:
-            logger.info(
-                f"Using existing API Gateway ID from route config (api): {api_config.api_gateway_id}"
-            )
-            return api_config.api_gateway_id
-        else:
-            api_gateway_id = self.stack_config.dictionary.get("api_gateway", {}).get(
-                "id", None
-            )
-            if api_gateway_id:
-                logger.info(
-                    f"Using existing API Gateway ID from stack config (api_gateway): {api_gateway_id}"
-                )
-                return api_gateway_id
-
-        return None
-
-    def __get_or_create_api_gateway(
-        self, api_config: ApiGatewayConfigRouteConfig
-    ) -> apigateway.RestApi:
-        """Get existing API Gateway or create new one"""
-        # Check if we should reference existing API Gateway
-
-        api_gateway_id = self._get_existing_api_gateway_id(api_config)
-        if api_gateway_id:
-            # Import existing API Gateway using attributes to avoid ValidationError
-            # Get root resource ID from stack config if available
-            api_gateway_config = self.stack_config.dictionary.get("api_gateway", {})
-            root_resource_id = api_gateway_config.get("root_resource_id")
-            
-            if root_resource_id:
-                return apigateway.RestApi.from_rest_api_attributes(
-                    self,
-                    f"imported-api-{api_gateway_id}",
-                    rest_api_id=api_gateway_id,
-                    root_resource_id=root_resource_id,
-                )
-            else:
-                # When no root_resource_id is provided, we need to use a different approach
-                # The safest option is to fall back to from_rest_api_id with a workaround
-                logger.warning(
-                    f"No root_resource_id provided for API Gateway {api_gateway_id}. "
-                    "Using from_rest_api_id() - this may cause validation issues in some CDK versions."
-                )
-                try:
-                    return apigateway.RestApi.from_rest_api_id(
-                        self,
-                        f"imported-api-{api_gateway_id}",
-                        api_gateway_id,
-                    )
-                except Exception as e:
-                    if "ValidationError" in str(e) and "root is not configured" in str(e):
-                        # This is the exact error we're trying to solve
-                        # We need to provide a dummy root resource ID or use a different approach
-                        logger.error(
-                            f"Cannot import API Gateway {api_gateway_id} without root_resource_id. "
-                            "Please add 'root_resource_id' to your api_gateway configuration."
-                        )
-                        raise ValueError(
-                            f"API Gateway {api_gateway_id} requires 'root_resource_id' in configuration. "
-                            "Add 'root_resource_id' to your api_gateway config section."
-                        ) from e
-                    else:
-                        raise
-
-        # Create new API Gateway if not already created in this stack
-        api_id = f"{self.stack_config.name}-api"
-        existing_api = None
-
-        # Check if we already created an API in this stack
-        for integration in self.api_gateway_integrations:
-            if integration.get("api_gateway"):
-                existing_api = integration["api_gateway"]
-                break
-
-        if existing_api:
-            return existing_api
-
-        # Create new REST API
-        api = apigateway.RestApi(
-            self,
-            api_id,
-            rest_api_name=f"{self.stack_config.name}-api",
-            description=f"API Gateway for {self.stack_config.name} Lambda functions",
-            default_cors_preflight_options=apigateway.CorsOptions(
-                allow_origins=apigateway.Cors.ALL_ORIGINS,
-                allow_methods=apigateway.Cors.ALL_METHODS,
-                allow_headers=[
-                    "Content-Type",
-                    "X-Amz-Date",
-                    "Authorization",
-                    "X-Api-Key",
-                ],
-            ),
-        )
-
-        return api
-
-    def _get_existing_authorizer_id(
-        self, api_config: ApiGatewayConfigRouteConfig
-    ) -> str:
-        """Get existing authorizer ID from config"""
-        if api_config.authorizer_id:
-            logger.info(
-                f"Using existing authorizer ID from route config (api): {api_config.authorizer_id}"
-            )
-            return api_config.authorizer_id
-        else:
-            authorizer_id = (
-                self.stack_config.dictionary.get("api_gateway", {})
-                .get("authorizer", {})
-                .get("id", None)
-            )
-            if authorizer_id:
-                logger.info(
-                    f"Using existing authorizer ID from stack config (api_gateway.authorizer): {authorizer_id}"
-                )
-                return authorizer_id
-
-        return None
-
-    def __get_or_create_authorizer(
-        self, api_gateway: apigateway.RestApi, api_config: ApiGatewayConfigRouteConfig
-    ) -> apigateway.Authorizer:
-        """Get existing authorizer or create new one"""
-        # Check if we should reference existing authorizer
-        if self._get_existing_authorizer_id(api_config):
-            # For existing authorizers, we'll handle this in the method creation
-            # using L1 constructs which support authorizer_id parameter
-            return None
-
-        # Check if authorizer already exists for this API
-        authorizer_id = f"{api_gateway.node.id}-authorizer"
-
-        # Get user pool from environment or config
-        user_pool_id = api_config.user_pool_id or os.getenv("COGNITO_USER_POOL_ID")
-        if not user_pool_id:
-            raise ValueError(
-                "COGNITO_USER_POOL_ID environment variable or config setting is required for API Gateway authorizer"
-            )
-
-        user_pool = cognito.UserPool.from_user_pool_id(
-            self,
-            f"{authorizer_id}-user-pool",
-            user_pool_id,
-        )
-
-        # Create Cognito authorizer
-        authorizer = apigateway.CognitoUserPoolsAuthorizer(
-            self,
-            authorizer_id,
-            cognito_user_pools=[user_pool],
-            identity_source="method.request.header.Authorization",
-        )
-
-        return authorizer
-
-    def __create_method_with_existing_authorizer(
-        self,
-        api_gateway: apigateway.RestApi,
-        resource: apigateway.Resource,
-        lambda_function: _lambda.Function,
-        api_config: ApiGatewayConfigRouteConfig,
-    ) -> apigateway.CfnMethod:
-        """Create API Gateway method using L1 constructs to support existing authorizer ID"""
-
-        # Convert L2 integration to L1 integration properties
-        # Note: For CfnMethod integration, property names use camelCase
-        integration_props = {
-            "type": "AWS_PROXY",
-            "integrationHttpMethod": "POST",
-            "uri": f"arn:aws:apigateway:{self.region}:lambda:path/2015-03-31/functions/{lambda_function.function_arn}/invocations",
-        }
-
-        # Ensure HTTP method is not empty
-        http_method = api_config.method.upper() if api_config.method else "GET"
-        if not http_method or http_method.strip() == "":
-            logger.warning(f"Empty HTTP method detected for {lambda_function.function_name}, defaulting to GET")
-            http_method = "GET"
-        
-        # Create method using L1 construct with existing authorizer ID
-        method = apigateway.CfnMethod(
-            self,
-            f"method-{http_method.lower()}-{resource.node.id}-existing-auth",
-            http_method=http_method,
-            resource_id=resource.resource_id,
-            rest_api_id=api_gateway.rest_api_id,
-            authorization_type="COGNITO_USER_POOLS",
-            authorizer_id=self._get_existing_authorizer_id(api_config),
-            api_key_required=api_config.api_key_required,
-            request_parameters=api_config.request_parameters,
-            integration=integration_props,
-        )
-
-        # Add Lambda permission for API Gateway to invoke the function
-        lambda_permission = _lambda.CfnPermission(
-            self,
-            f"lambda-permission-{api_config.method.lower()}-{resource.node.id}-existing-auth",
-            action="lambda:InvokeFunction",
-            function_name=lambda_function.function_name,
-            principal="apigateway.amazonaws.com",
-            source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{api_config.method.upper()}{resource.path}",
-        )
-
-        return method
-
-    def __get_or_create_resource(
-        self, api_gateway: apigateway.RestApi, route_path: str
-    ) -> apigateway.Resource:
-        """Get or create API Gateway resource for the given route path"""
-        if not route_path or route_path == "/":
-            return api_gateway.root
-
-        # Remove leading slash and split path
-        path_parts = route_path.lstrip("/").split("/")
-        current_resource = api_gateway.root
-
-        # Navigate/create nested resources
-        for part in path_parts:
-            if not part:  # Skip empty parts
-                continue
-
-            # Check if resource already exists
-            existing_resource = None
-            for child in current_resource.node.children:
-                if hasattr(child, "path_part") and child.path_part == part:
-                    existing_resource = child
-                    break
-
-            if existing_resource:
-                current_resource = existing_resource
-            else:
-                current_resource = current_resource.add_resource(part)
-
-        return current_resource
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig

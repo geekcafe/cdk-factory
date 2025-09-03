@@ -107,7 +107,7 @@ class ApiGatewayConfig:
 
     @property
     def routes(self) -> list[dict]:
-        """List of route definitions (path, method, lambda_code_path)"""
+        """List of route definitions (path, method)"""
         return self.__config.get("routes", [])
 
     @property

@@ -83,7 +83,8 @@
             {
               "path": "/secure",
               "method": "GET",
-              "lambda_code_path": "../../src/cdk_factory/lambdas/health_handler.py",
+              "src": "../../src/cdk_factory/lambdas",
+              "handler": "health_handler.lambda_handler",
               "cors": {
                 "methods": [
                   "GET"
@@ -96,7 +97,8 @@
             {
               "path": "/public",
               "method": "GET",
-              "lambda_code_path": "../../src/cdk_factory/lambdas/health_handler.py",
+              "src": "../../src/cdk_factory/lambdas",
+              "handler": "health_handler.lambda_handler",
               "authorization_type": "NONE",
               "cors": {
                 "methods": [

@@ -28,6 +28,8 @@ from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
 from cdk_factory.utilities.file_operations import FileOperations
+from cdk_factory.utilities.api_gateway_integration_utility import ApiGatewayIntegrationUtility
+from cdk_factory.configurations.resources.lambda_functions import ApiGatewayConfigRouteConfig
 
 logger = Logger(service="ApiGatewayStack")
 
@@ -46,6 +48,8 @@ class ApiGatewayStack(IStack):
         self.stack_config = None
         self.deployment = None
         self.workload = None
+        self.api_gateway_integrations = []
+        self.integration_utility = None
 
     def build(self, stack_config, deployment, workload) -> None:
         self._build(stack_config, deployment, workload)
@@ -58,13 +62,16 @@ class ApiGatewayStack(IStack):
         self.api_config = ApiGatewayConfig(
             stack_config.dictionary.get("api_gateway", {})
         )
+        
+        # Initialize integration utility
+        self.integration_utility = ApiGatewayIntegrationUtility(self)
 
         api_type = self.api_config.api_type
         api_name = self.api_config.api_gateway_name or "api-gateway"
         api_id = deployment.build_resource_name(api_name)
 
         routes = self.api_config.routes or [
-            {"path": "/health", "method": "GET", "lambda_code_path": None}
+            {"path": "/health", "method": "GET", "src": None, "handler": None}
         ]
         if api_type == "HTTP":
             api = self._create_http_api(api_id, routes)
@@ -286,11 +293,13 @@ class ApiGatewayStack(IStack):
         for route in routes:
 
             suffix = route["path"].strip("/").replace("/", "-") or "health"
+            src = route.get("src")
+            handler = route.get("handler")
             lambda_fn = self.create_lambda(
                 api_id=api_id,
-                lambda_path=route.get("lambda_code_path"),
+                src_dir=src,
                 id_suffix=suffix,
-                handler=route.get("handler"),
+                handler=handler,
             )
 
             route_path = route["path"]
@@ -302,22 +311,45 @@ class ApiGatewayStack(IStack):
             authorization_type = route.get("authorization_type")
             method_options = {}
             
-            # Set up the integration
-            integration = apigateway.LambdaIntegration(lambda_fn)
-            
-            # Handle authorization type
-            if authorizer and authorization_type and authorization_type.upper() != "NONE":
-                method_options["authorization_type"] = apigateway.AuthorizationType.COGNITO
-                method_options["authorizer"] = authorizer
-            else:
-                method_options["authorization_type"] = apigateway.AuthorizationType.NONE
+            # Use shared utility for consistent Lambda integration behavior
+            if route.get("src"):
+                # Create API config for this route to use shared utility
+                from cdk_factory.configurations.resources.lambda_functions import ApiGatewayConfigRouteConfig
                 
-            # Add the method with proper options
-            resource.add_method(
-                route["method"].upper(),
-                integration,
-                **method_options
-            )
+                api_route_config = ApiGatewayConfigRouteConfig({
+                    "method": route["method"],
+                    "routes": route_path,
+                    "authorization_type": authorization_type.name if authorization_type else "NONE",
+                    "api_key_required": False,
+                    "skip_authorizer": not authorizer,
+                    "user_pool_id": os.getenv("COGNITO_USER_POOL_ID") if authorizer else None
+                })
+                
+                # Use shared utility for consistent behavior
+                integration_info = self.integration_utility.setup_lambda_integration(
+                    lambda_fn, api_route_config, api, self.stack_config
+                )
+                
+                # Store integration info
+                integration_info["function_name"] = f"{api_id}-lambda-{suffix}"
+                self.api_gateway_integrations.append(integration_info)
+            else:
+                # Fallback to original method for non-Lambda integrations
+                integration = apigateway.LambdaIntegration(lambda_fn)
+                
+                # Handle authorization type
+                if authorizer and authorization_type and authorization_type.upper() != "NONE":
+                    method_options["authorization_type"] = apigateway.AuthorizationType.COGNITO
+                    method_options["authorizer"] = authorizer
+                else:
+                    method_options["authorization_type"] = apigateway.AuthorizationType.NONE
+                    
+                # Add the method with proper options
+                resource.add_method(
+                    route["method"].upper(),
+                    integration,
+                    **method_options
+                )
             # Add CORS mock OPTIONS method if requested or default
 
             cors_cfg = route.get("cors")
@@ -344,9 +376,12 @@ class ApiGatewayStack(IStack):
         logger.info(f"Created HTTP API Gateway: {api.api_name}")
         # Add routes
         for route in routes:
+            src = os.path.join(route.get("src"))
+            if not src:
+                continue
             lambda_fn = self.create_lambda(
                 api_id=api_id,
-                lambda_path=route.get("lambda_code_path"),
+                src_dir=src,
                 id_suffix=route["path"].strip("/").replace("/", "-") or "health",
                 handler=route.get("handler"),
             )
@@ -360,7 +395,7 @@ class ApiGatewayStack(IStack):
     def create_lambda(
         self,
         api_id: str,
-        lambda_path=None,
+        src_dir=None,
         id_suffix="health",
         handler: str | None = None,
     ):
