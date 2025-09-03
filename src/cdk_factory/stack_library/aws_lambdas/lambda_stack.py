@@ -523,17 +523,24 @@ class LambdaStack(IStack):
         """Create API Gateway method using L1 constructs to support existing authorizer ID"""
 
         # Convert L2 integration to L1 integration properties
+        # Note: For CfnMethod integration, property names use camelCase
         integration_props = {
             "type": "AWS_PROXY",
-            "integration_http_method": "POST",
+            "integrationHttpMethod": "POST",
             "uri": f"arn:aws:apigateway:{self.region}:lambda:path/2015-03-31/functions/{lambda_function.function_arn}/invocations",
         }
 
+        # Ensure HTTP method is not empty
+        http_method = api_config.method.upper() if api_config.method else "GET"
+        if not http_method or http_method.strip() == "":
+            logger.warning(f"Empty HTTP method detected for {lambda_function.function_name}, defaulting to GET")
+            http_method = "GET"
+        
         # Create method using L1 construct with existing authorizer ID
         method = apigateway.CfnMethod(
             self,
-            f"method-{api_config.method.lower()}-{resource.node.id}-existing-auth",
-            http_method=api_config.method.upper(),
+            f"method-{http_method.lower()}-{resource.node.id}-existing-auth",
+            http_method=http_method,
             resource_id=resource.resource_id,
             rest_api_id=api_gateway.rest_api_id,
             authorization_type="COGNITO_USER_POOLS",
