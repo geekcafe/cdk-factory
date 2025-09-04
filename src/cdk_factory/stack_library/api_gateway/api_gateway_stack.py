@@ -456,13 +456,14 @@ class ApiGatewayStack(IStack):
         path = Path(__file__).parents[2]
 
         src_dir = src_dir or os.path.join(path, "lambdas")
+        # src_dir = FileOperations.find_directory(self.workload.paths, src_dir)
         handler = handler or "health_handler.lambda_handler"
         # code_path = lambda_path or os.path.join(path, "lambdas/health_handler.py")
         # handler = handler or "health_handler.lambda_handler"
-        # if not os.path.exists(code_path):
-        #     code_path = FileOperations.find_file(self.workload.paths, code_path)
-        #     if not os.path.exists(code_path):
-        #         raise Exception(f"Lambda code path does not exist: {code_path}")
+        if not os.path.exists(src_dir):
+            src_dir = FileOperations.find_directory(self.workload.paths, src_dir)
+            if not os.path.exists(src_dir):
+                raise Exception(f"Lambda code path does not exist: {src_dir}")
         return _lambda.Function(
             self,
             f"{api_id}-lambda-{id_suffix}",
