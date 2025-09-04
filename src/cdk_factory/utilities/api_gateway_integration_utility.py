@@ -28,6 +28,11 @@ class ApiGatewayIntegrationUtility:
         self.region = scope.region
         self.account = scope.account
 
+        self.authorizer = None
+        self.api_gateway = None
+        self.user_pool_arn = None
+        self.user_pool_id = None
+
     def setup_lambda_integration(
         self,
         lambda_function: _lambda.Function,
@@ -40,9 +45,9 @@ class ApiGatewayIntegrationUtility:
             raise ValueError("API Gateway config is missing in Lambda function config")
 
         # Get or create authorizer if needed
-        authorizer = None
-        if not api_config.skip_authorizer:
-            authorizer = self.get_or_create_authorizer(
+
+        if not api_config.skip_authorizer and not self.authorizer:
+            self.authorizer = self.get_or_create_authorizer(
                 api_gateway, api_config, stack_config
             )
 
@@ -64,20 +69,22 @@ class ApiGatewayIntegrationUtility:
         else:
             # Use L2 constructs for new authorizers
             # Determine authorization type based on whether authorizer is provided
-            if authorizer:
+            if self.authorizer:
                 auth_type = apigateway.AuthorizationType.COGNITO
             else:
                 auth_type = apigateway.AuthorizationType[api_config.authorization_type]
-
-            method = resource.add_method(
-                api_config.method.upper(),
-                integration,
-                authorizer=authorizer,
-                api_key_required=api_config.api_key_required,
-                request_parameters=api_config.request_parameters,
-                authorization_type=auth_type,
-            )
-
+            method = None
+            try:
+                method = resource.add_method(
+                    api_config.method.upper(),
+                    integration,
+                    authorizer=self.authorizer,
+                    api_key_required=api_config.api_key_required,
+                    request_parameters=api_config.request_parameters,
+                    authorization_type=auth_type,
+                )
+            except Exception as e:
+                print(str(e))
         # Return integration info for potential cross-stack references
         return {
             "api_gateway": api_gateway,
@@ -94,6 +101,10 @@ class ApiGatewayIntegrationUtility:
     ) -> apigateway.RestApi:
         """Get existing API Gateway or create new one"""
         # Check for existing API Gateway ID
+
+        if self.api_gateway:
+            return self.api_gateway
+
         api_gateway_id = self._get_existing_api_gateway_id(api_config, stack_config)
 
         if api_gateway_id:
@@ -106,23 +117,25 @@ class ApiGatewayIntegrationUtility:
                 logger.info(
                     f"Using existing API Gateway {api_gateway_id} with root resource {root_resource_id}"
                 )
-                return apigateway.RestApi.from_rest_api_attributes(
+                self.api_gateway = apigateway.RestApi.from_rest_api_attributes(
                     self.scope,
                     f"imported-api-{api_gateway_id}",
                     rest_api_id=api_gateway_id,
                     root_resource_id=root_resource_id,
                 )
+                return self.api_gateway
             else:
                 logger.warning(
                     f"No root_resource_id provided for API Gateway {api_gateway_id}. "
                     "Using from_rest_api_id() - this may cause validation issues in some CDK versions."
                 )
                 try:
-                    return apigateway.RestApi.from_rest_api_id(
+                    self.api_gateway = apigateway.RestApi.from_rest_api_id(
                         self.scope,
                         f"imported-api-{api_gateway_id}",
                         api_gateway_id,
                     )
+                    return self.api_gateway
                 except Exception as e:
                     if "ValidationError" in str(e) and "root is not configured" in str(
                         e
@@ -146,7 +159,7 @@ class ApiGatewayIntegrationUtility:
 
         # Create new REST API
         api_id = f"{stack_config.name}-api"
-        api = apigateway.RestApi(
+        self.api_gateway = apigateway.RestApi(
             self.scope,
             api_id,
             rest_api_name=f"{stack_config.name}-api",
@@ -163,7 +176,7 @@ class ApiGatewayIntegrationUtility:
             ),
         )
 
-        return api
+        return self.api_gateway
 
     def get_or_create_authorizer(
         self,
@@ -173,6 +186,10 @@ class ApiGatewayIntegrationUtility:
     ) -> Optional[apigateway.Authorizer]:
         """Get existing authorizer or create new one"""
         # Check if we should reference existing authorizer
+
+        if self.authorizer:
+            return self.authorizer
+
         if self._get_existing_authorizer_id(api_config, stack_config):
             # For existing authorizers, we'll handle this in the method creation
             # using L1 constructs which support authorizer_id parameter
@@ -230,14 +247,14 @@ class ApiGatewayIntegrationUtility:
         )
 
         # Create Cognito authorizer
-        authorizer = apigateway.CognitoUserPoolsAuthorizer(
+        self.authorizer = apigateway.CognitoUserPoolsAuthorizer(
             self.scope,
             authorizer_id,
             cognito_user_pools=[user_pool],
             identity_source="method.request.header.Authorization",
         )
 
-        return authorizer
+        return self.authorizer
 
     def get_or_create_resource(
         self, api_gateway: apigateway.RestApi, route_path: str

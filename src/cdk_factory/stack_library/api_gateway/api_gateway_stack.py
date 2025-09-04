@@ -224,14 +224,18 @@ class ApiGatewayStack(IStack):
                     if method_responses:
                         method_options["method_responses"] = method_responses
 
-                    resource.add_method(
-                        http_method,
-                        integration,
-                        authorization_type=authorization_type,
-                        api_key_required=method_config.get("api_key_required", False),
-                        **method_options,
-                    )
-
+                    try:
+                        resource.add_method(
+                            http_method,
+                            integration,
+                            authorization_type=authorization_type,
+                            api_key_required=method_config.get(
+                                "api_key_required", False
+                            ),
+                            **method_options,
+                        )
+                    except Exception as e:
+                        print(str(e))
         # Create API keys if specified
         api_keys = []
         if self.api_config.api_keys:
@@ -363,7 +367,7 @@ class ApiGatewayStack(IStack):
                         "method": route["method"],
                         "routes": route_path,
                         "authorization_type": (
-                            authorization_type.name if authorization_type else "NONE"
+                            authorization_type if authorization_type else "NONE"
                         ),
                         "api_key_required": False,
                         "skip_authorizer": not authorizer,
@@ -401,9 +405,12 @@ class ApiGatewayStack(IStack):
                     )
 
                 # Add the method with proper options
-                resource.add_method(
-                    route["method"].upper(), integration, **method_options
-                )
+                try:
+                    resource.add_method(
+                        route["method"].upper(), integration, **method_options
+                    )
+                except Exception as e:
+                    print(str(e))
             # Add CORS mock OPTIONS method if requested or default
 
             cors_cfg = route.get("cors")
