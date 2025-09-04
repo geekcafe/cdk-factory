@@ -3,15 +3,17 @@ Geek Cafe, LLC
 Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class CloudFrontConfig:
+class CloudFrontConfig(EnhancedBaseConfig):
     """
     Static cloudfront information from AWS
     """
 
-    def __init__(self, cloudfront: dict) -> None:
-        self.__cloudfront = cloudfront
+    def __init__(self, config: dict = None) -> None:
+        super().__init__(config or {}, resource_type="cloudfront", resource_name=config.get("name", "cloudfront") if config else "cloudfront")
+        self.__cloudfront = config
 
     @property
     def description(self):

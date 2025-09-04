@@ -20,6 +20,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.auto_scaling import AutoScalingConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -28,7 +29,7 @@ logger = Logger(service="AutoScalingStack")
 
 @register_stack("auto_scaling_library_module")
 @register_stack("auto_scaling_stack")
-class AutoScalingStack(IStack):
+class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
     """
     Reusable stack for AWS Auto Scaling Groups.
     Supports creating EC2 Auto Scaling Groups with customizable configurations.

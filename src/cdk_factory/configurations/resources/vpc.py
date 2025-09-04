@@ -5,18 +5,18 @@ MIT License. See Project Root for license information.
 """
 
 from typing import Any, Dict, List, Optional
-from cdk_factory.configurations.base_config import BaseConfig
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class VpcConfig(BaseConfig):
+class VpcConfig(EnhancedBaseConfig):
     """
     VPC Configuration - supports VPC settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
     def __init__(self, config: dict = None, deployment=None) -> None:
-        super().__init__(config or {})
-        self.__deployment = deployment
+        super().__init__(config or {}, resource_type="vpc", resource_name=config.get("name", "vpc") if config else "vpc")
+        self.__deployment = config
 
     @property
     def name(self) -> str:
@@ -105,7 +105,7 @@ class VpcConfig(BaseConfig):
 
     @property
     def ssm_parameters(self) -> Dict[str, str]:
-        """SSM parameter paths for VPC resources"""
+        """SSM parameter paths for VPC resources (legacy compatibility)"""
         return self.get("ssm_parameters", {})
 
     @property

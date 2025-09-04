@@ -43,7 +43,7 @@ class SQS:
 
     @name.setter
     def name(self, value: str) -> None:
-        self.__name = value
+        self.__name = config
 
     @property
     def resource_id(self) -> str:

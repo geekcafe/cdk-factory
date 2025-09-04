@@ -5,17 +5,17 @@ MIT License. See Project Root for license information.
 """
 
 from typing import Any, Dict, List, Optional
-from cdk_factory.configurations.base_config import BaseConfig
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class AutoScalingConfig(BaseConfig):
+class AutoScalingConfig(EnhancedBaseConfig):
     """
     Auto Scaling Group Configuration - supports EC2 Auto Scaling Group settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
-    def __init__(self, config: dict = None, deployment=None) -> None:
-        super().__init__(config)
+    def __init__(self, config: dict, deployment) -> None:
+        super().__init__(config or {}, resource_type="auto_scaling", resource_name=config.get("name", "auto_scaling") if config else "auto_scaling")
         self.__config = config or {}
         self.__deployment = deployment
 

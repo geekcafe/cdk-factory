@@ -15,6 +15,7 @@ from aws_cdk import Size
 from aws_cdk import aws_lambda as _lambda
 from constructs import Construct
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from aws_lambda_powertools import Logger
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
@@ -40,7 +41,7 @@ logger = Logger(service="ApiGatewayStack")
 
 @register_stack("api_gateway_library_module")
 @register_stack("api_gateway_stack")
-class ApiGatewayStack(IStack):
+class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
     """
     Reusable stack for AWS API Gateway (REST API).
     Supports all major RestApi parameters.

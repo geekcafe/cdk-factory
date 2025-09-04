@@ -6,12 +6,14 @@ MIT License.  See Project Root for the license information.
 
 from typing import List
 from cdk_factory.configurations.deployment import DeploymentConfig
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class DynamoDBConfig:
+class DynamoDBConfig(EnhancedBaseConfig):
     """DynamoDB Resource"""
 
-    def __init__(self, config: dict, deployment: DeploymentConfig) -> None:
+    def __init__(self, config: dict, deployment) -> None:
+        super().__init__(config or {}, resource_type="dynamodb", resource_name=config.get("name", "dynamodb") if config else "dynamodb")
         self.__config = config
         self.__deployment = deployment
 

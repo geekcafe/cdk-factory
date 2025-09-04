@@ -5,15 +5,17 @@ MIT License.  See Project Root for the license information.
 """
 
 from typing import Dict, Any
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class CognitoConfig:
+class CognitoConfig(EnhancedBaseConfig):
     """
     Cognito Configuration - supports all major UserPool settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict = None) -> None:
+        super().__init__(config or {}, resource_type="cognito", resource_name=config.get("name", "cognito") if config else "cognito")
         self.__config = config or {}
 
     @property

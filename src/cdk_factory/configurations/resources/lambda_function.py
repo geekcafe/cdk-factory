@@ -11,6 +11,7 @@ from aws_lambda_powertools import Logger
 import aws_cdk
 from aws_cdk import aws_lambda
 from cdk_factory.configurations.resources.docker import DockerConfig
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 from cdk_factory.configurations.resources.apigateway_route_config import (
     ApiGatewayConfigRouteConfig,
 )
@@ -29,12 +30,17 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 logger = Logger()
 
 
-class LambdaFunctionConfig:
+class LambdaFunctionConfig(EnhancedBaseConfig):
     """Lambda Function Config Settings"""
 
     def __init__(
         self, config: dict, deployment: DeploymentConfig | None = None
     ) -> None:
+        super().__init__(
+            config or {},
+            resource_type="lambda",
+            resource_name=config.get("name", "lambda") if config else "lambda",
+        )
         self.__config = config
         self.docker: DockerConfig = DockerConfig(config=config.get("docker", {}))
         self.api: ApiGatewayConfigRouteConfig | None = None
@@ -54,7 +60,7 @@ class LambdaFunctionConfig:
         self.__name: str | None = None
         self.__execution_role_arn: str | None = None
         self.__execution_role_name: str | None = None
-        self.__deployment = deployment
+        self.__deployment = config
         self.__load()
 
     def __load(self) -> None:
@@ -91,7 +97,7 @@ class LambdaFunctionConfig:
 
     @name.setter
     def name(self, value: str) -> None:
-        self.__name = value
+        self.__name = config
 
     @property
     def resource_policies(self) -> List[dict]:

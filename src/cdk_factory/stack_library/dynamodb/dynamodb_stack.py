@@ -9,6 +9,7 @@ import aws_cdk as cdk
 from aws_cdk import aws_dynamodb as dynamodb
 from constructs import Construct
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from aws_lambda_powertools import Logger
 from cdk_factory.stack.stack_module_registry import register_stack
 from typing import List, Dict, Any, Optional
@@ -22,7 +23,7 @@ logger = Logger(service="DynamoDBStack")
 
 @register_stack("dynamodb_stack")
 @register_stack("dynamodb_library_module")
-class DynamoDBStack(IStack):
+class DynamoDBStack(IStack, EnhancedSsmParameterMixin):
     """
     Reusable stack for AWS DynamoDB tables.
     Supports all major DynamoDB table parameters.

@@ -7,7 +7,7 @@ MIT License.  See Project Root for the license information.
 
 class Management:
     """
-    Management Account Infomration
+    Management Account Information
     """
 
     def __init__(self, management: dict) -> None:
@@ -16,41 +16,41 @@ class Management:
     @property
     def account(self) -> str | None:
         """
-        Returns the managment account id
+        Returns the management account id
         """
         return self.__management.get("account")
 
     @property
     def region(self) -> str | None:
         """
-        Returns the managment region
+        Returns the management region
         """
         return self.__management.get("region")
 
     @property
     def cross_account_role_arn(self) -> str | None:
         """
-        Returns the managment cross_account_role_arn
+        Returns the management cross_account_role_arn
         """
         return self.__management.get("cross_account_role_arn")
 
     @property
-    def cross_accout_role_name(self) -> str | None:
+    def cross_account_role_name(self) -> str | None:
         """
-        Returns the managment cross_account_role_name
+        Returns the management cross_account_role_name
         """
         return self.__management.get("cross_account_role_name")
 
     @property
     def hosted_zone_id(self) -> str | None:
         """
-        Returns the managment hosted_zone_id
+        Returns the management hosted_zone_id
         """
         return self.__management.get("hosted_zone_id")
 
     @property
     def description(self) -> str | None:
         """
-        Returns the managment description
+        Returns the management description
         """
         return self.__management.get("description")

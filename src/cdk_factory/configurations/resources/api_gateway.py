@@ -5,15 +5,17 @@ MIT License. See Project Root for license information.
 """
 
 from typing import Any
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class ApiGatewayConfig:
+class ApiGatewayConfig(EnhancedBaseConfig):
     """
     API Gateway Configuration - supports all major RestApi settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict = None) -> None:
+        super().__init__(config or {}, resource_type="api_gateway", resource_name=config.get("name", "api_gateway") if config else "api_gateway")
         self.__config = config or {}
 
     @property

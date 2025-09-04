@@ -15,6 +15,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.security_group import SecurityGroupConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -23,7 +24,7 @@ logger = Logger(service="SecurityGroupStack")
 
 @register_stack("security_group_library_module")
 @register_stack("security_group_stack")
-class SecurityGroupStack(IStack):
+class SecurityGroupStack(IStack, EnhancedSsmParameterMixin):
     """
     Reusable stack for AWS Security Groups.
     Supports creating security groups with customizable rules.

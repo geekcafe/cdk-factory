@@ -5,16 +5,18 @@ MIT License.  See Project Root for the license information.
 """
 
 from cdk_factory.configurations.deployment import DeploymentConfig
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class ECRConfig:
+class ECRConfig(EnhancedBaseConfig):
     """ECR Configuration"""
 
     def __init__(
         self, config: dict, deployment: DeploymentConfig | None = None
     ) -> None:
+        super().__init__(config, resource_type="ecr", resource_name=config.get("name", "ecr") if config else "ecr")
         self.__config = config
-        self.__deployment = deployment
+        self.__deployment = config
         self.__ssm_prefix_template = config.get("ssm_prefix_template", None)
 
     @property
@@ -117,20 +119,8 @@ class ECRConfig:
             raise RuntimeError("Region is not defined")
         return value
         
-    @property
-    def ssm_exports(self) -> dict:
-        """Get SSM parameter paths for exporting values"""
-        if self.__config and isinstance(self.__config, dict):
-            return self.__config.get("ssm_exports", {})
-        return {}
-        
-    @property
-    def ssm_imports(self) -> dict:
-        """Get SSM parameter paths for importing values"""
-        if self.__config and isinstance(self.__config, dict):
-            return self.__config.get("ssm_imports", {})
-        return {}
-        
+    # SSM properties are now inherited from EnhancedBaseConfig
+    # Keeping these for any direct access patterns in existing code
     @property
     def ssm_parameters(self) -> dict:
         """Get legacy SSM parameter paths (for backward compatibility)"""

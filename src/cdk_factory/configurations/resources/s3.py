@@ -8,12 +8,18 @@ import aws_cdk as cdk
 from aws_cdk import aws_s3 as s3
 
 from cdk_factory.utilities.json_loading_utility import JsonLoadingUtility
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class S3BucketConfig:
+class S3BucketConfig(EnhancedBaseConfig):
     """S3 Resource Configuration"""
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict = None) -> None:
+        super().__init__(
+            config or {},
+            resource_type="s3",
+            resource_name=config.get("name", "s3") if config else "s3",
+        )
         self.__config = config
 
         if self.__config is None:

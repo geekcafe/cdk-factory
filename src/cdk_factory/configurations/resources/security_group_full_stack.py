@@ -15,7 +15,7 @@ class SecurityGroupFullStackConfig:
 
     def __init__(self, config: dict = None, deployment=None) -> None:
         self.__config = config or {}
-        self.__deployment = deployment
+        self.__deployment = config
 
     @property
     def name(self) -> str:

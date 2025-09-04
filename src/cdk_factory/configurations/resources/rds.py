@@ -5,15 +5,17 @@ MIT License. See Project Root for license information.
 """
 
 from typing import Any, Dict, List, Optional
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class RdsConfig:
+class RdsConfig(EnhancedBaseConfig):
     """
     RDS Configuration - supports RDS database settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
-    def __init__(self, config: dict = None, deployment=None) -> None:
+    def __init__(self, config: dict, deployment) -> None:
+        super().__init__(config or {}, resource_type="rds", resource_name=config.get("name", "rds") if config else "rds")
         self.__config = config or {}
         self.__deployment = deployment
 

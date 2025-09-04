@@ -5,15 +5,17 @@ MIT License. See Project Root for license information.
 """
 
 from typing import Any, Dict, List, Optional
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 
-class SecurityGroupConfig:
+class SecurityGroupConfig(EnhancedBaseConfig):
     """
     Security Group Configuration - supports Security Group settings.
     Each property reads from the config dict and provides a sensible default if not set.
     """
 
-    def __init__(self, config: dict = None, deployment=None) -> None:
+    def __init__(self, config: dict, deployment) -> None:
+        super().__init__(config or {}, resource_type="security_group", resource_name=config.get("name", "security_group") if config else "security_group")
         self.__config = config or {}
         self.__deployment = deployment
 

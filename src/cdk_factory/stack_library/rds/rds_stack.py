@@ -17,6 +17,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.rds import RdsConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -25,7 +26,7 @@ logger = Logger(service="RdsStack")
 
 @register_stack("rds_library_module")
 @register_stack("rds_stack")
-class RdsStack(IStack):
+class RdsStack(IStack, EnhancedSsmParameterMixin):
     """
     Reusable stack for AWS RDS.
     Supports creating RDS instances with customizable configurations.

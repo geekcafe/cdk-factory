@@ -15,6 +15,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.vpc import VpcConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -23,7 +24,7 @@ logger = Logger(service="VpcStack")
 
 @register_stack("vpc_library_module")
 @register_stack("vpc_stack")
-class VpcStack(IStack):
+class VpcStack(IStack, EnhancedSsmParameterMixin):
     """
     Reusable stack for AWS VPC.
     Supports creating VPCs with customizable CIDR blocks, subnets, and networking components.
@@ -59,6 +60,19 @@ class VpcStack(IStack):
 
         self.vpc_config = VpcConfig(stack_config.dictionary.get("vpc", {}), deployment)
         vpc_name = deployment.build_resource_name(self.vpc_config.name)
+
+        # Setup enhanced SSM integration
+        self.setup_enhanced_ssm_integration(self, self.vpc_config)
+
+        # Import any required resources from SSM
+        imported_resources = self.auto_import_resources({
+            "deployment_name": deployment.name,
+            "environment": deployment.environment,
+            "workload_name": workload.name
+        })
+        
+        if imported_resources:
+            logger.info(f"Imported resources from SSM: {list(imported_resources.keys())}")
 
         # Create the VPC
         self.vpc = self._create_vpc(vpc_name)
@@ -211,7 +225,7 @@ class VpcStack(IStack):
             self._export_ssm_parameters(vpc_name)
 
     def _export_ssm_parameters(self, vpc_name: str) -> None:
-        """Export VPC resources to SSM Parameter Store if configured"""
+        """Export VPC resources to SSM Parameter Store using enhanced auto-export"""
         if not self.vpc:
             return
 
@@ -237,10 +251,24 @@ class VpcStack(IStack):
                 [subnet.subnet_id for subnet in self.vpc.isolated_subnets]
             )
 
-        # Use the new clearer method for exporting resources to SSM
-        self.export_resource_to_ssm(
-            scope=self,
-            resource_values=vpc_resources,
-            config=self.vpc_config,
-            resource_name=vpc_name,
-        )
+        # Use enhanced auto-export with context
+        context = {
+            "deployment_name": self.deployment.name,
+            "environment": self.deployment.environment,
+            "workload_name": self.workload.name
+        }
+        
+        exported_params = self.auto_export_resources(vpc_resources, context)
+        
+        if exported_params:
+            logger.info(f"Auto-exported VPC resources to SSM: {list(exported_params.keys())}")
+        else:
+            # Fall back to legacy method for backward compatibility
+            self.export_resource_to_ssm(
+                scope=self,
+                resource_values=vpc_resources,
+                config=self.vpc_config,
+                resource_name=vpc_name,
+                resource_type="vpc",
+                context=context
+            )
