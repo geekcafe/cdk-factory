@@ -88,49 +88,10 @@ class ApiGatewayStack(IStack):
             raise ValueError(f"Unsupported api_type: {api_type}")
 
     def _create_rest_api(self, api_id: str, routes: List[Dict[str, Any]]):
-        # Get the API name from the config
-        api_name = self.api_config.api_gateway_name or "api-gateway"
-        # REST API
-        endpoint_types = self.api_config.endpoint_types
-        if endpoint_types:
-            endpoint_types = [
-                apigateway.EndpointType[e] if isinstance(e, str) else e
-                for e in endpoint_types
-            ]
-        min_compression_size = self.api_config.min_compression_size
-        if isinstance(min_compression_size, int):
-
-            min_compression_size = Size.mebibytes(min_compression_size)
-        kwargs = {
-            "rest_api_name": api_name,
-            "description": self.api_config.description,
-            "deploy": self.api_config.deploy,
-            "deploy_options": self._deploy_options(),
-            "endpoint_types": endpoint_types,
-            "api_key_source_type": self.api_config.api_key_source_type,
-            "binary_media_types": self.api_config.binary_media_types,
-            "cloud_watch_role": self.api_config.cloud_watch_role,
-            "default_cors_preflight_options": self.api_config.default_cors_preflight_options,
-            "default_method_options": self.api_config.default_method_options,
-            "default_integration": self.api_config.default_integration,
-            "disable_execute_api_endpoint": self.api_config.disable_execute_api_endpoint,
-            "endpoint_export_name": self.api_config.endpoint_export_name,
-            "fail_on_warnings": self.api_config.fail_on_warnings,
-            "min_compression_size": min_compression_size,
-            "parameters": self.api_config.parameters,
-            "policy": self.api_config.policy,
-            "retain_deployments": self.api_config.retain_deployments,
-            "rest_api_id": self.api_config.rest_api_id,
-            "root_resource_id": self.api_config.root_resource_id,
-            "cloud_watch_role_removal_policy": self.api_config.cloud_watch_role_removal_policy,
-        }
-        kwargs = {k: v for k, v in kwargs.items() if v is not None}
-        api_gateway = apigateway.RestApi(
-            self,
-            id=api_id,
-            **kwargs,
+        # Use shared utility for consistent API Gateway creation
+        api_gateway = self.integration_utility.create_api_gateway_with_config(
+            api_id, self.api_config, self.stack_config
         )
-        logger.info(f"Created API Gateway: {api_gateway.rest_api_name}")
         # Add resources and methods if specified
         if self.api_config.resources:
             for resource_config in self.api_config.resources:
@@ -422,6 +383,13 @@ class ApiGatewayStack(IStack):
                 http_method_list=methods,
                 origins_list=origins,
             )
+
+        # Export API Gateway configuration to SSM parameters for cross-stack references
+        if self.api_config.export_to_ssm:
+            exported_params = self.integration_utility.export_api_gateway_to_ssm(
+                api_gateway, authorizer, self.stack_config
+            )
+            logger.info(f"Exported API Gateway configuration to SSM: {exported_params}")
 
         return api_gateway
 

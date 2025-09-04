@@ -1,0 +1,238 @@
+{
+    "cdk": {
+      "parameters": [
+        {
+          "placeholder": "{{ENVIRONMENT}}",
+          "env_var_name": "ENVIRONMENT",
+          "cdk_parameter_name": "Environment"
+        },
+        {
+          "placeholder": "{{WORKLOAD_NAME}}",
+          "env_var_name": "WORKLOAD_NAME",
+          "cdk_parameter_name": "WorkloadName"
+        },
+        {
+          "placeholder": "{{AWS_ACCOUNT}}",
+          "env_var_name": "AWS_ACCOUNT",
+          "cdk_parameter_name": "AccountNumber"
+        },
+        {
+          "placeholder": "{{AWS_REGION}}",
+          "env_var_name": "AWS_REGION",
+          "cdk_parameter_name": "AccountRegion"
+        },
+        {
+          "placeholder": "{{API_GATEWAY_ID}}",
+          "env_var_name": "API_GATEWAY_ID",
+          "cdk_parameter_name": "ApiGatewayId"
+        },
+        {
+          "placeholder": "{{COGNITO_AUTHORIZER_ID}}",
+          "env_var_name": "COGNITO_AUTHORIZER_ID",
+          "cdk_parameter_name": "CognitoAuthorizerId"
+        },
+        {
+          "placeholder": "{{COGNITO_USER_POOL_ID}}",
+          "env_var_name": "COGNITO_USER_POOL_ID",
+          "cdk_parameter_name": "CognitoUserPoolId"
+        },
+        {
+          "placeholder": "{{APP_TABLE_NAME}}",
+          "env_var_name": "APP_TABLE_NAME",
+          "cdk_parameter_name": "AppTableName"
+        }
+      ]
+    },
+    "workload": {
+      "name": "overlapping-routes-test",
+      "description": "Test config for overlapping API Gateway routes",
+      "devops": {
+        "account": "123456789012",
+        "region": "us-east-1"
+      },
+      "stacks": [
+        {
+          "name": "overlapping-routes-test-lambdas",
+          "module": "lambda_stack",
+          "enabled": true,
+          "api_gateway": {
+            "id": "{{API_GATEWAY_ID}}",
+            "root_resource_id": "{{API_GATEWAY_ID}}root",
+            "authorizer": {
+              "id": "{{COGNITO_AUTHORIZER_ID}}",
+              "type": "COGNITO_USER_POOLS"
+            }
+          },
+          "resources": [
+            {
+              "name": "list-groups",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "list_groups.lambda_handler",
+              "description": "Groups: List Groups",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups",
+                "method": "GET",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_read"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            },
+            {
+              "name": "create-group",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "create_group.lambda_handler",
+              "description": "Groups: Create Group",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups",
+                "method": "POST",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_write"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            },
+            {
+              "name": "get-group",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "get_group.lambda_handler",
+              "description": "Groups: Get Group",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups/{group-id}",
+                "method": "GET",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_read"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            },
+            {
+              "name": "update-group",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "update_group.lambda_handler",
+              "description": "Groups: Update Group",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups/{group-id}",
+                "method": "PUT",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_write"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            },
+            {
+              "name": "delete-group",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "delete_group.lambda_handler",
+              "description": "Groups: Delete Group",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups/{group-id}",
+                "method": "DELETE",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_write"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            },
+            {
+              "name": "search-groups",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "search_groups.lambda_handler",
+              "description": "Groups: Search Groups",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups/search",
+                "method": "GET",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_read"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            },
+            {
+              "name": "duplicate-group",
+              "src": "./src/factory_saas_lambda/handlers/groups",
+              "handler": "duplicate_group.lambda_handler",
+              "description": "Groups: Duplicate Group",
+              "api": {
+                "route": "/tenants/{tenant-id}/users/{user-id}/groups/{group-id}/duplicate",
+                "method": "POST",
+                "authorization_type": "COGNITO"
+              },
+              "permissions": ["dynamodb_write"],
+              "environment_variables": [
+                {
+                  "name": "ENVIRONMENT",
+                  "value": "{{ENVIRONMENT}}"
+                },
+                {
+                  "name": "APP_TABLE_NAME",
+                  "value": "{{APP_TABLE_NAME}}"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "deployments": [
+        {
+          "name": "overlapping-routes-test-dev",
+          "environment": "dev",
+          "account": "{{AWS_ACCOUNT}}",
+          "region": "{{AWS_REGION}}",
+          "mode": "stack",
+          "stacks": [
+            "overlapping-routes-test-lambdas"
+          ],
+          "enabled": true
+        }
+      ]
+    }
+  }

@@ -138,3 +138,8 @@ class ApiGatewayConfig:
     def usage_plans(self) -> list[dict]:
         """List of usage plan definitions"""
         return self.__config.get("usage_plans", [])
+        
+    @property
+    def export_to_ssm(self) -> bool:
+        """Whether to export API Gateway configuration to SSM parameters for cross-stack references"""
+        return self.__config.get("export_to_ssm", False)

@@ -574,24 +574,181 @@ class TestLambdaStackReal:
                     "✅ Stack synthesis succeeded with existing API Gateway - ValidationError fixed!"
                 )
 
-                # The key success is that we didn't get the ValidationError
-                # The actual CDK synthesis succeeded with existing API Gateway import
+                # Verify that all stacks were created
+                stacks = cloud_assembly.stacks
+                assert len(stacks) > 0, "No stacks were created"
+
+                # Find the lambda stack - debug stack names first
+                print(f"Available stacks: {[stack.stack_name for stack in stacks]}")
+                
+                # The sample config uses pipeline mode, so we need to find the pipeline stack
+                # Look for any stack that contains our Lambda resources
+                lambda_stack = None
+                for stack in stacks:
+                    template = stack.template
+                    lambda_functions = [
+                        res for res in template.get("Resources", {}).values()
+                        if res.get("Type") == "AWS::Lambda::Function"
+                    ]
+                    if len(lambda_functions) > 0:
+                        lambda_stack = stack
+                        break
+                
+                # If no stack has Lambda functions, just use the first stack for basic validation
+                if lambda_stack is None and len(stacks) > 0:
+                    lambda_stack = stacks[0]
+                    print(f"No Lambda functions found, using first stack for validation: {lambda_stack.stack_name}")
+
+                assert lambda_stack is not None, f"No stacks found. Available stacks: {[stack.stack_name for stack in stacks]}"
+                print(f"✅ Using stack: {lambda_stack.stack_name}")
+
+                # Verify the stack template contains the expected resources
+                template = lambda_stack.template
+                
+                # Debug: Print all resource types in the template
+                all_resources = template.get("Resources", {})
+                resource_types = {}
+                for res_name, res_data in all_resources.items():
+                    res_type = res_data.get("Type", "Unknown")
+                    if res_type not in resource_types:
+                        resource_types[res_type] = 0
+                    resource_types[res_type] += 1
+                
+                print(f"Template resource types: {resource_types}")
+                print(f"Total resources in template: {len(all_resources)}")
+                
+                # Check that Lambda functions were created (may be 0 for pipeline stacks)
+                lambda_functions = [
+                    res for res in template.get("Resources", {}).values()
+                    if res.get("Type") == "AWS::Lambda::Function"
+                ]
+                
+                print(f"✅ Found {len(lambda_functions)} Lambda functions")
+
+                # For pipeline mode, the main validation is that synthesis succeeded without ValidationError
+                print("✅ Main validation passed: Stack synthesis succeeded without ValidationError!")
 
             except Exception as e:
-                # Check if this is the ValidationError we're trying to fix
-                if "fromRestApiId" in str(e) or "ValidationError" in str(e):
-                    print(f"❌ Caught the ValidationError we need to fix: {e}")
-                    raise AssertionError(f"ValidationError still occurs: {e}")
-                else:
-                    # Some other error - re-raise it
-                    raise
+                print(f"❌ Overlapping routes test failed: {e}")
+                # Print more details about the error for debugging
+                import traceback
+                traceback.print_exc()
+                raise AssertionError(f"Overlapping routes handling failed: {e}") from e
+
+    def test_overlapping_api_gateway_routes(self, monkeypatch):
+        """Test that overlapping API Gateway routes don't cause resource conflicts"""
+        from aws_cdk.assertions import Template
+        from cdk_factory.app import CdkAppFactory
+        import tempfile
+        import os
+        
+        # Set up environment variables
+        monkeypatch.setenv("ENVIRONMENT", "dev")
+        monkeypatch.setenv("WORKLOAD_NAME", "overlapping-routes-test")
+        monkeypatch.setenv("AWS_ACCOUNT", "123456789012")
+        monkeypatch.setenv("AWS_REGION", "us-east-1")
+        monkeypatch.setenv("API_GATEWAY_ID", "test123abc")
+        monkeypatch.setenv("COGNITO_AUTHORIZER_ID", "auth456def")
+        monkeypatch.setenv("COGNITO_USER_POOL_ID", "pool789ghi")
+        monkeypatch.setenv("APP_TABLE_NAME", "test-table")
+
+        # Use the overlapping routes config file
+        config_path = "tests/unit/files/lambda/overlapping_routes_config.json"
+
+        # Create a temporary directory for CDK output
+        with tempfile.TemporaryDirectory() as temp_dir:
+            outdir = os.path.join(temp_dir, "cdk.out")
+
+            # Create the factory using the real pattern
+            factory = CdkAppFactory(
+                config_path=config_path,
+                runtime_directory="tests/unit/files/lambda",
+                outdir=outdir,
+            )
+
+            # This should handle overlapping routes without conflicts
+            try:
+                cloud_assembly = factory.synth(
+                    paths=["tests/unit/files/lambda"], cdk_app_file="cdk_app.py"
+                )
+
+                # If we get here, overlapping routes were handled correctly
+                assert cloud_assembly is not None
+                print("✅ Overlapping API Gateway routes handled successfully!")
+
+                # Verify that all stacks were created
+                stacks = cloud_assembly.stacks
+                assert len(stacks) > 0, "No stacks were created"
+
+                # Find the lambda stack
+                lambda_stack = None
+                for stack in stacks:
+                    template = stack.template
+                    lambda_functions = [
+                        res for res in template.get("Resources", {}).values()
+                        if res.get("Type") == "AWS::Lambda::Function"
+                    ]
+                    if len(lambda_functions) > 0:
+                        lambda_stack = stack
+                        break
+
+                assert lambda_stack is not None, "Lambda stack with functions not found"
+                print(f"✅ Lambda stack created: {lambda_stack.stack_name}")
+
+                # Verify the stack template contains the expected resources
+                template = lambda_stack.template
+                
+                # Check that Lambda functions were created
+                lambda_functions = [
+                    res for res in template.get("Resources", {}).values()
+                    if res.get("Type") == "AWS::Lambda::Function"
+                ]
+                
+                # We should have 7 Lambda functions for our overlapping routes
+                expected_functions = 7
+                assert len(lambda_functions) >= expected_functions, (
+                    f"Expected at least {expected_functions} Lambda functions, "
+                    f"but found {len(lambda_functions)}"
+                )
+                print(f"✅ Created {len(lambda_functions)} Lambda functions")
+
+                # Check that API Gateway methods were created without conflicts
+                api_methods = [
+                    res for res in template.get("Resources", {}).values()
+                    if res.get("Type") == "AWS::ApiGateway::Method"
+                ]
+                
+                # We should have methods for all our routes
+                assert len(api_methods) >= expected_functions, (
+                    f"Expected at least {expected_functions} API Gateway methods, "
+                    f"but found {len(api_methods)}"
+                )
+                print(f"✅ Created {len(api_methods)} API Gateway methods")
+
+                # Verify that resources with shared paths were created correctly
+                api_resources = [
+                    res for res in template.get("Resources", {}).values()
+                    if res.get("Type") == "AWS::ApiGateway::Resource"
+                ]
+                
+                # We should have resources for the path segments, but shared ones shouldn't be duplicated
+                print(f"✅ Created {len(api_resources)} API Gateway resources")
+
+                print("✅ All overlapping routes test validations passed!")
+
+            except Exception as e:
+                print(f"❌ Overlapping routes test failed: {e}")
+                # Print more details about the error for debugging
+                import traceback
+                traceback.print_exc()
+                raise AssertionError(f"Overlapping routes handling failed: {e}") from e
 
     def test_stack_config_validation(self, deployment_config, workload_config):
         """Test that stack config validation works correctly."""
         app = App()
         stack = LambdaStack(
             scope=app,
-            id="test-lambda-stack",
+            id="test-stack",
             env=Environment(account="123456789012", region="us-east-1"),
         )
 

@@ -7,6 +7,7 @@ MIT License. See Project Root for the license information.
 
 import os
 from typing import Optional
+import aws_cdk as cdk
 from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_cognito as cognito
@@ -60,7 +61,7 @@ class ApiGatewayIntegrationUtility:
         resource = self.get_or_create_resource(api_gateway, api_config.routes)
 
         # Handle existing authorizer ID using L1 constructs
-        if self._get_existing_authorizer_id(api_config, stack_config):
+        if self._get_existing_authorizer_id_with_ssm_fallback(api_config, stack_config):
             method = self._create_method_with_existing_authorizer(
                 api_gateway, resource, lambda_function, api_config, stack_config
             )
@@ -103,13 +104,11 @@ class ApiGatewayIntegrationUtility:
         if self.api_gateway:
             return self.api_gateway
 
-        api_gateway_id = self._get_existing_api_gateway_id(api_config, stack_config)
+        api_gateway_id = self._get_existing_api_gateway_id_with_ssm_fallback(api_config, stack_config)
 
         if api_gateway_id:
             # Import existing API Gateway
-            root_resource_id = stack_config.dictionary.get("api_gateway", {}).get(
-                "root_resource_id", None
-            )
+            root_resource_id = self._get_root_resource_id_with_ssm_fallback(stack_config)
 
             if root_resource_id:
                 logger.info(
@@ -155,26 +154,296 @@ class ApiGatewayIntegrationUtility:
                 if integration.get("api_gateway"):
                     return integration["api_gateway"]
 
-        # Create new REST API
+        # Create new REST API using centralized creation logic
         api_id = f"{stack_config.name}-api"
-        self.api_gateway = apigateway.RestApi(
+        self.api_gateway = self._create_rest_api_with_full_config(api_id, stack_config)
+
+        return self.api_gateway
+
+    def create_api_gateway_with_config(
+        self, api_id: str, api_config, stack_config
+    ) -> apigateway.RestApi:
+        """Create API Gateway using the full configuration from api_gateway_stack pattern"""
+        return self._create_rest_api_with_full_config_from_api_config(
+            api_id, api_config, stack_config
+        )
+
+    def _create_rest_api_with_full_config_from_api_config(
+        self, api_id: str, api_config, stack_config
+    ) -> apigateway.RestApi:
+        """Create REST API using ApiGatewayConfig object (from api_gateway_stack)"""
+        from aws_cdk import aws_logs as logs
+        from aws_cdk import aws_iam as iam
+        from aws_cdk import Size
+        import json
+
+        # Get the API name from the config
+        api_name = api_config.api_gateway_name or "api-gateway"
+
+        # Create log group for API Gateway access logs
+        log_group = logs.LogGroup(
             self.scope,
-            api_id,
-            rest_api_name=f"{stack_config.name}-api",
-            description=f"API Gateway for {stack_config.name} Lambda functions",
-            default_cors_preflight_options=apigateway.CorsOptions(
-                allow_origins=apigateway.Cors.ALL_ORIGINS,
-                allow_methods=apigateway.Cors.ALL_METHODS,
-                allow_headers=[
-                    "Content-Type",
-                    "X-Amz-Date",
-                    "Authorization",
-                    "X-Api-Key",
-                ],
+            f"{api_id}-log-group",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            retention=logs.RetentionDays.ONE_MONTH,
+        )
+
+        # Create log role for API Gateway
+        log_role = iam.Role(
+            self.scope,
+            f"{api_id}-log-role",
+            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+                )
+            ],
+        )
+
+        log_group.grant_write(iam.ServicePrincipal("apigateway.amazonaws.com"))
+        log_group.grant_write(log_role)
+
+        # Access log format
+        access_log_format = apigateway.AccessLogFormat.custom(
+            json.dumps(
+                {
+                    "requestId": "$context.requestId",
+                    "extendedRequestId": "$context.extendedRequestId",
+                    "method": "$context.httpMethod",
+                    "route": "$context.resourcePath",
+                    "status": "$context.status",
+                    "requestBody": "$input.body",
+                    "responseBody": "$context.responseLength",
+                    "headers": "$context.requestHeaders",
+                    "requestContext": "$context.requestContext",
+                }
+            )
+        )
+
+        # Stage options with comprehensive configuration
+        stage_options = apigateway.StageOptions(
+            access_log_destination=apigateway.LogGroupLogDestination(log_group),
+            access_log_format=access_log_format,
+            stage_name=api_config.deploy_options.get("stage_name", "prod"),
+            logging_level=apigateway.MethodLoggingLevel.ERROR,
+            data_trace_enabled=api_config.deploy_options.get(
+                "data_trace_enabled", False
+            ),
+            metrics_enabled=api_config.deploy_options.get("metrics_enabled", False),
+            tracing_enabled=api_config.deploy_options.get("tracing_enabled", True),
+            throttling_rate_limit=api_config.deploy_options.get(
+                "throttling_rate_limit", 1000
+            ),
+            throttling_burst_limit=api_config.deploy_options.get(
+                "throttling_burst_limit", 2000
             ),
         )
 
-        return self.api_gateway
+        # Handle endpoint types
+        endpoint_types = api_config.endpoint_types
+        if endpoint_types:
+            endpoint_types = [
+                apigateway.EndpointType[e] if isinstance(e, str) else e
+                for e in endpoint_types
+            ]
+
+        # Handle min compression size
+        min_compression_size = api_config.min_compression_size
+        if isinstance(min_compression_size, int):
+            min_compression_size = Size.mebibytes(min_compression_size)
+
+        # Build kwargs with all configuration options from ApiGatewayConfig
+        kwargs = {
+            "rest_api_name": api_name,
+            "description": api_config.description,
+            "deploy": api_config.deploy,
+            "deploy_options": stage_options,
+            "endpoint_types": endpoint_types,
+            "api_key_source_type": api_config.api_key_source_type,
+            "binary_media_types": api_config.binary_media_types,
+            "cloud_watch_role": api_config.cloud_watch_role,
+            "default_cors_preflight_options": api_config.default_cors_preflight_options,
+            "default_method_options": api_config.default_method_options,
+            "default_integration": api_config.default_integration,
+            "disable_execute_api_endpoint": api_config.disable_execute_api_endpoint,
+            "endpoint_export_name": api_config.endpoint_export_name,
+            "fail_on_warnings": api_config.fail_on_warnings,
+            "min_compression_size": min_compression_size,
+            "parameters": api_config.parameters,
+            "policy": api_config.policy,
+            "retain_deployments": api_config.retain_deployments,
+            "rest_api_id": api_config.rest_api_id,
+            "root_resource_id": api_config.root_resource_id,
+            "cloud_watch_role_removal_policy": api_config.cloud_watch_role_removal_policy,
+        }
+
+        # Remove None values
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+        # Create the REST API
+        api_gateway = apigateway.RestApi(
+            self.scope,
+            api_id,
+            **kwargs,
+        )
+
+        logger.info(f"Created API Gateway: {api_gateway.rest_api_name}")
+        return api_gateway
+
+    def _create_rest_api_with_full_config(
+        self, api_id: str, stack_config
+    ) -> apigateway.RestApi:
+        """Create REST API with full configuration options like api_gateway_stack"""
+        from aws_cdk import aws_logs as logs
+        from aws_cdk import aws_iam as iam
+        from aws_cdk import Size
+        import json
+
+        # Get API Gateway config from stack config, with sensible defaults
+        api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+
+        # API name
+        api_name = api_gateway_config.get(
+            "api_gateway_name", f"{stack_config.name}-api"
+        )
+
+        # Deployment options
+        deploy_options = api_gateway_config.get("deploy_options", {})
+        stage_name = deploy_options.get("stage_name", "prod")
+
+        # Create log group for API Gateway access logs
+        log_group = logs.LogGroup(
+            self.scope,
+            f"{api_id}-log-group",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            retention=logs.RetentionDays.ONE_MONTH,
+        )
+
+        # Create log role for API Gateway
+        log_role = iam.Role(
+            self.scope,
+            f"{api_id}-log-role",
+            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+                )
+            ],
+        )
+
+        log_group.grant_write(iam.ServicePrincipal("apigateway.amazonaws.com"))
+        log_group.grant_write(log_role)
+
+        # Access log format
+        access_log_format = apigateway.AccessLogFormat.custom(
+            json.dumps(
+                {
+                    "requestId": "$context.requestId",
+                    "extendedRequestId": "$context.extendedRequestId",
+                    "method": "$context.httpMethod",
+                    "route": "$context.resourcePath",
+                    "status": "$context.status",
+                    "requestBody": "$input.body",
+                    "responseBody": "$context.responseLength",
+                    "headers": "$context.requestHeaders",
+                    "requestContext": "$context.requestContext",
+                }
+            )
+        )
+
+        # Stage options with comprehensive configuration
+        stage_options = apigateway.StageOptions(
+            access_log_destination=apigateway.LogGroupLogDestination(log_group),
+            access_log_format=access_log_format,
+            stage_name=stage_name,
+            logging_level=apigateway.MethodLoggingLevel.ERROR,
+            data_trace_enabled=deploy_options.get("data_trace_enabled", False),
+            metrics_enabled=deploy_options.get("metrics_enabled", False),
+            tracing_enabled=deploy_options.get("tracing_enabled", True),
+            throttling_rate_limit=deploy_options.get("throttling_rate_limit", 1000),
+            throttling_burst_limit=deploy_options.get("throttling_burst_limit", 2000),
+        )
+
+        # Build kwargs with all possible configuration options
+        kwargs = {
+            "rest_api_name": api_name,
+            "description": api_gateway_config.get(
+                "description", f"API Gateway for {stack_config.name} Lambda functions"
+            ),
+            "deploy": api_gateway_config.get("deploy", True),
+            "deploy_options": stage_options,
+            "cloud_watch_role": api_gateway_config.get("cloud_watch_role", True),
+            "default_cors_preflight_options": self._get_default_cors_options(
+                api_gateway_config
+            ),
+            "fail_on_warnings": api_gateway_config.get("fail_on_warnings", False),
+            "retain_deployments": api_gateway_config.get("retain_deployments", False),
+        }
+
+        # Add optional parameters if they exist
+        if api_gateway_config.get("endpoint_types"):
+            endpoint_types = [
+                apigateway.EndpointType[e] if isinstance(e, str) else e
+                for e in api_gateway_config["endpoint_types"]
+            ]
+            kwargs["endpoint_types"] = endpoint_types
+
+        if api_gateway_config.get("api_key_source_type"):
+            kwargs["api_key_source_type"] = api_gateway_config["api_key_source_type"]
+
+        if api_gateway_config.get("binary_media_types"):
+            kwargs["binary_media_types"] = api_gateway_config["binary_media_types"]
+
+        if api_gateway_config.get("min_compression_size"):
+            min_compression_size = api_gateway_config["min_compression_size"]
+            if isinstance(min_compression_size, int):
+                min_compression_size = Size.mebibytes(min_compression_size)
+            kwargs["min_compression_size"] = min_compression_size
+
+        if api_gateway_config.get("parameters"):
+            kwargs["parameters"] = api_gateway_config["parameters"]
+
+        if api_gateway_config.get("policy"):
+            kwargs["policy"] = api_gateway_config["policy"]
+
+        if api_gateway_config.get("disable_execute_api_endpoint"):
+            kwargs["disable_execute_api_endpoint"] = api_gateway_config[
+                "disable_execute_api_endpoint"
+            ]
+
+        # Remove None values
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+        # Create the REST API
+        api_gateway = apigateway.RestApi(
+            self.scope,
+            api_id,
+            **kwargs,
+        )
+
+        logger.info(f"Created API Gateway: {api_gateway.rest_api_name}")
+        return api_gateway
+
+    def _get_default_cors_options(
+        self, api_gateway_config: dict
+    ) -> apigateway.CorsOptions:
+        """Get default CORS options with configuration override capability"""
+        cors_config = api_gateway_config.get("default_cors_preflight_options")
+
+        if cors_config:
+            return cors_config
+
+        # Default CORS configuration
+        return apigateway.CorsOptions(
+            allow_origins=apigateway.Cors.ALL_ORIGINS,
+            allow_methods=apigateway.Cors.ALL_METHODS,
+            allow_headers=[
+                "Content-Type",
+                "X-Amz-Date",
+                "Authorization",
+                "X-Api-Key",
+            ],
+        )
 
     def get_or_create_authorizer(
         self,
@@ -189,7 +458,7 @@ class ApiGatewayIntegrationUtility:
         if self.authorizer:
             return self.authorizer
 
-        if self._get_existing_authorizer_id(api_config, stack_config):
+        if self._get_existing_authorizer_id_with_ssm_fallback(api_config, stack_config):
             # For existing authorizers, we'll handle this in the method creation
             # using L1 constructs which support authorizer_id parameter
             return None
@@ -286,6 +555,19 @@ class ApiGatewayIntegrationUtility:
         if not route_path or route_path == "/":
             return api_gateway.root
 
+        # Use the built-in resource_for_path method which handles existing resources correctly
+        try:
+            # This method automatically creates the full path and reuses existing resources
+            return api_gateway.root.resource_for_path(route_path)
+        except Exception as e:
+            logger.warning(f"Failed to create resource for path {route_path}: {e}")
+            # Fallback to manual creation if needed
+            return self._create_resource_manually(api_gateway, route_path)
+
+    def _create_resource_manually(
+        self, api_gateway: apigateway.RestApi, route_path: str
+    ) -> apigateway.Resource:
+        """Manually create resource path as fallback"""
         # Remove leading slash and split path
         path_parts = route_path.lstrip("/").split("/")
         current_resource = api_gateway.root
@@ -295,19 +577,66 @@ class ApiGatewayIntegrationUtility:
             if not part:  # Skip empty parts
                 continue
 
-            # Check if resource already exists
+            # Check if resource already exists using a more robust method
             existing_resource = None
-            for child in current_resource.node.children:
-                if hasattr(child, "path_part") and child.path_part == part:
-                    existing_resource = child
-                    break
+            try:
+                # Try to find existing resource by checking all children
+                for child in current_resource.node.children:
+                    if (
+                        hasattr(child, "path_part")
+                        and getattr(child, "path_part", None) == part
+                    ):
+                        existing_resource = child
+                        break
 
-            if existing_resource:
-                current_resource = existing_resource
-            else:
-                current_resource = current_resource.add_resource(part)
+                if existing_resource:
+                    current_resource = existing_resource
+                else:
+                    # Create new resource
+                    current_resource = current_resource.add_resource(part)
+
+            except Exception as e:
+                logger.error(f"Error creating resource part '{part}': {e}")
+                # Try to continue with existing resource if creation fails
+                if existing_resource:
+                    current_resource = existing_resource
+                else:
+                    raise
 
         return current_resource
+
+    def _get_existing_api_gateway_id_with_ssm_fallback(
+        self, api_config: ApiGatewayConfigRouteConfig, stack_config
+    ) -> Optional[str]:
+        """Get existing API Gateway ID with SSM parameter fallback support"""
+        # First try direct config values
+        api_gateway_id = self._get_existing_api_gateway_id(api_config, stack_config)
+        if api_gateway_id:
+            return api_gateway_id
+
+        # Try SSM parameter lookup
+        api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+        ssm_path = api_gateway_config.get("id_ssm_path")
+        
+        if ssm_path:
+            logger.info(f"Looking up API Gateway ID from SSM parameter: {ssm_path}")
+            try:
+                api_gateway_id = ssm.StringParameter.from_string_parameter_name(
+                    self.scope, f"api-gateway-id-param-{hash(ssm_path) % 10000}", ssm_path
+                ).string_value
+                logger.info(f"Found API Gateway ID from SSM: {api_gateway_id}")
+                return api_gateway_id
+            except Exception as e:
+                logger.warning(f"Failed to retrieve API Gateway ID from SSM path {ssm_path}: {e}")
+
+        # Try environment variable fallback
+        env_var_name = api_gateway_config.get("id_env_var", "API_GATEWAY_ID")
+        env_api_gateway_id = os.getenv(env_var_name)
+        if env_api_gateway_id:
+            logger.info(f"Using API Gateway ID from environment variable {env_var_name}: {env_api_gateway_id}")
+            return env_api_gateway_id
+
+        return None
 
     def _get_existing_api_gateway_id(
         self, api_config: ApiGatewayConfigRouteConfig, stack_config
@@ -327,6 +656,42 @@ class ApiGatewayIntegrationUtility:
                     f"Using existing API Gateway ID from stack config (api_gateway): {api_gateway_id}"
                 )
                 return api_gateway_id
+
+        return None
+
+    def _get_existing_authorizer_id_with_ssm_fallback(
+        self, api_config: ApiGatewayConfigRouteConfig, stack_config
+    ) -> Optional[str]:
+        """Get existing authorizer ID with SSM parameter fallback support"""
+        # First try direct config values
+        authorizer_id = self._get_existing_authorizer_id(api_config, stack_config)
+        if authorizer_id:
+            return authorizer_id
+
+        # Try SSM parameter lookup
+        authorizer_config = (
+            stack_config.dictionary.get("api_gateway", {})
+            .get("authorizer", {})
+        )
+        ssm_path = authorizer_config.get("id_ssm_path")
+        
+        if ssm_path:
+            logger.info(f"Looking up authorizer ID from SSM parameter: {ssm_path}")
+            try:
+                authorizer_id = ssm.StringParameter.from_string_parameter_name(
+                    self.scope, f"authorizer-id-param-{hash(ssm_path) % 10000}", ssm_path
+                ).string_value
+                logger.info(f"Found authorizer ID from SSM: {authorizer_id}")
+                return authorizer_id
+            except Exception as e:
+                logger.warning(f"Failed to retrieve authorizer ID from SSM path {ssm_path}: {e}")
+
+        # Try environment variable fallback
+        env_var_name = authorizer_config.get("id_env_var", "COGNITO_AUTHORIZER_ID")
+        env_authorizer_id = os.getenv(env_var_name)
+        if env_authorizer_id:
+            logger.info(f"Using authorizer ID from environment variable {env_var_name}: {env_authorizer_id}")
+            return env_authorizer_id
 
         return None
 
@@ -352,6 +717,100 @@ class ApiGatewayIntegrationUtility:
                 return authorizer_id
 
         return None
+
+    def _get_root_resource_id_with_ssm_fallback(self, stack_config) -> Optional[str]:
+        """Get root resource ID with SSM parameter fallback support"""
+        # First try direct config value
+        api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+        root_resource_id = api_gateway_config.get("root_resource_id")
+        
+        if root_resource_id:
+            logger.info(f"Using root resource ID from config: {root_resource_id}")
+            return root_resource_id
+
+        # Try SSM parameter lookup
+        ssm_path = api_gateway_config.get("root_resource_id_ssm_path")
+        
+        if ssm_path:
+            logger.info(f"Looking up root resource ID from SSM parameter: {ssm_path}")
+            try:
+                root_resource_id = ssm.StringParameter.from_string_parameter_name(
+                    self.scope, f"root-resource-id-param-{hash(ssm_path) % 10000}", ssm_path
+                ).string_value
+                logger.info(f"Found root resource ID from SSM: {root_resource_id}")
+                return root_resource_id
+            except Exception as e:
+                logger.warning(f"Failed to retrieve root resource ID from SSM path {ssm_path}: {e}")
+
+        # Try environment variable fallback
+        env_var_name = api_gateway_config.get("root_resource_id_env_var", "API_GATEWAY_ROOT_RESOURCE_ID")
+        env_root_resource_id = os.getenv(env_var_name)
+        if env_root_resource_id:
+            logger.info(f"Using root resource ID from environment variable {env_var_name}: {env_root_resource_id}")
+            return env_root_resource_id
+
+        return None
+
+    def export_api_gateway_to_ssm(
+        self, 
+        api_gateway: apigateway.RestApi, 
+        authorizer: Optional[apigateway.Authorizer] = None,
+        stack_config = None,
+        export_prefix: str = None
+    ) -> dict:
+        """Export API Gateway configuration values to SSM parameters for cross-stack references"""
+        if not export_prefix:
+            stack_name = stack_config.name if stack_config else "api-gateway"
+            export_prefix = f"/movatra/{stack_name}/api-gateway"
+        
+        exported_params = {}
+        
+        # Export API Gateway ID
+        api_id_param = ssm.StringParameter(
+            self.scope,
+            f"ssm-export-api-id",
+            parameter_name=f"{export_prefix}/id",
+            string_value=api_gateway.rest_api_id,
+            description=f"API Gateway ID for {export_prefix}",
+        )
+        exported_params["api_gateway_id"] = api_id_param.parameter_name
+        logger.info(f"Exported API Gateway ID to SSM: {api_id_param.parameter_name}")
+        
+        # Export API Gateway ARN
+        api_arn_param = ssm.StringParameter(
+            self.scope,
+            f"ssm-export-api-arn",
+            parameter_name=f"{export_prefix}/arn",
+            string_value=api_gateway.rest_api_arn,
+            description=f"API Gateway ARN for {export_prefix}",
+        )
+        exported_params["api_gateway_arn"] = api_arn_param.parameter_name
+        logger.info(f"Exported API Gateway ARN to SSM: {api_arn_param.parameter_name}")
+        
+        # Export root resource ID
+        root_resource_param = ssm.StringParameter(
+            self.scope,
+            f"ssm-export-root-resource-id",
+            parameter_name=f"{export_prefix}/root-resource-id",
+            string_value=api_gateway.root.resource_id,
+            description=f"API Gateway root resource ID for {export_prefix}",
+        )
+        exported_params["root_resource_id"] = root_resource_param.parameter_name
+        logger.info(f"Exported root resource ID to SSM: {root_resource_param.parameter_name}")
+        
+        # Export authorizer ID if provided
+        if authorizer:
+            authorizer_id_param = ssm.StringParameter(
+                self.scope,
+                f"ssm-export-authorizer-id",
+                parameter_name=f"{export_prefix}/authorizer/id",
+                string_value=authorizer.authorizer_id,
+                description=f"API Gateway authorizer ID for {export_prefix}",
+            )
+            exported_params["authorizer_id"] = authorizer_id_param.parameter_name
+            logger.info(f"Exported authorizer ID to SSM: {authorizer_id_param.parameter_name}")
+        
+        return exported_params
 
     def _create_method_with_existing_authorizer(
         self,
@@ -387,7 +846,7 @@ class ApiGatewayIntegrationUtility:
             resource_id=resource.resource_id,
             rest_api_id=api_gateway.rest_api_id,
             authorization_type="COGNITO_USER_POOLS",
-            authorizer_id=self._get_existing_authorizer_id(api_config, stack_config),
+            authorizer_id=self._get_existing_authorizer_id_with_ssm_fallback(api_config, stack_config),
             api_key_required=api_config.api_key_required,
             request_parameters=api_config.request_parameters,
             integration=integration_props,
