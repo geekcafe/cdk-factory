@@ -305,7 +305,7 @@ class ApiGatewayStack(IStack):
             route_config = ApiGatewayConfigRouteConfig({})
 
             authorizer = self.integration_utility.get_or_create_authorizer(
-                api_gateway, route_config, self.stack_config
+                api_gateway, route_config, self.stack_config, api_id
             )
             # user_pool_arn = self.api_config.cognito_authorizer.get("user_pool_arn")
             # if not user_pool_arn:

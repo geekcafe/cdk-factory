@@ -30,8 +30,6 @@ class ApiGatewayIntegrationUtility:
 
         self.authorizer = None
         self.api_gateway = None
-        self.user_pool_arn = None
-        self.user_pool_id = None
 
     def setup_lambda_integration(
         self,
@@ -183,6 +181,7 @@ class ApiGatewayIntegrationUtility:
         api_gateway: apigateway.RestApi,
         api_config: ApiGatewayConfigRouteConfig,
         stack_config,
+        api_id: str | None = None,
     ) -> Optional[apigateway.Authorizer]:
         """Get existing authorizer or create new one"""
         # Check if we should reference existing authorizer
@@ -196,7 +195,7 @@ class ApiGatewayIntegrationUtility:
             return None
 
         # Check if authorizer already exists for this API
-        authorizer_id = f"{api_gateway.node.id}-authorizer"
+        authorizer_id = f"{api_id or api_gateway.rest_api_name}-authorizer"
 
         # Get user pool from multiple sources with SSM support
         user_pool_id = None
@@ -240,18 +239,42 @@ class ApiGatewayIntegrationUtility:
                 "or stack_config.cognito_authorizer.user_pool_arn_ssm_path"
             )
 
-        user_pool = cognito.UserPool.from_user_pool_id(
-            self.scope,
-            f"{authorizer_id}-user-pool",
-            user_pool_id,
-        )
-
+        if user_pool_arn:
+            user_pool = cognito.UserPool.from_user_pool_arn(
+                scope=self.scope,
+                id=f"{api_id}-user-pool",
+                user_pool_arn=user_pool_arn,
+            )
+        else:
+            user_pool = cognito.UserPool.from_user_pool_id(
+                scope=self.scope,
+                id=f"{api_id}-user-pool",
+                user_pool_id=user_pool_id,
+            )
         # Create Cognito authorizer
+        # self.authorizer = apigateway.CognitoUserPoolsAuthorizer(
+        #     self.scope,
+        #     authorizer_id,
+        #     cognito_user_pools=[user_pool],
+        #     identity_source="method.request.header.Authorization",
+        # )
+
+        authorizer_name = (
+            stack_config.dictionary.get("api_gateway", {})
+            .get("cognito_authorizer", {})
+            .get("authorizer_name", "CognitoAuthorizer")
+        )
+        identity_source = (
+            stack_config.dictionary.get("api_gateway", {})
+            .get("cognito_authorizer", {})
+            .get("identity_source", "method.request.header.Authorization")
+        )
         self.authorizer = apigateway.CognitoUserPoolsAuthorizer(
             self.scope,
-            authorizer_id,
+            f"{api_id}-authorizer",
             cognito_user_pools=[user_pool],
-            identity_source="method.request.header.Authorization",
+            authorizer_name=authorizer_name,
+            identity_source=identity_source,
         )
 
         return self.authorizer
