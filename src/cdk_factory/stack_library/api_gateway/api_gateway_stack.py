@@ -15,7 +15,9 @@ from aws_cdk import Size
 from aws_cdk import aws_lambda as _lambda
 from constructs import Construct
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
+    EnhancedSsmParameterMixin,
+)
 from aws_lambda_powertools import Logger
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
@@ -269,35 +271,6 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             authorizer = self.integration_utility.get_or_create_authorizer(
                 api_gateway, route_config, self.stack_config, api_id
             )
-            # user_pool_arn = self.api_config.cognito_authorizer.get("user_pool_arn")
-            # if not user_pool_arn:
-            #     ssm_path = self.api_config.cognito_authorizer.get(
-            #         "user_pool_arn_ssm_path"
-            #     )
-            #     if not ssm_path:
-            #         raise ValueError(
-            #             "user_pool_arn or user_pool_arn_ssm_path must be provided"
-            #         )
-            #     user_pool_arn = ssm.StringParameter.from_string_parameter_name(
-            #         self, "UserPoolArn", ssm_path
-            #     ).string_value
-            # authorizer_name = self.api_config.cognito_authorizer.get(
-            #     "authorizer_name", "CognitoAuthorizer"
-            # )
-            # identity_source = self.api_config.cognito_authorizer.get(
-            #     "identity_source", "method.request.header.Authorization"
-            # )
-
-            # user_pool = cognito.UserPool.from_user_pool_arn(
-            #     self, f"{api_id}-userpool", user_pool_arn
-            # )
-            # authorizer = apigateway.CognitoUserPoolsAuthorizer(
-            #     self,
-            #     f"{api_id}-authorizer",
-            #     cognito_user_pools=[user_pool],
-            #     authorizer_name=authorizer_name,
-            #     identity_source=identity_source,
-            # )
 
         for route in routes:
 
@@ -385,14 +358,38 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 origins_list=origins,
             )
 
-        # Export API Gateway configuration to SSM parameters for cross-stack references
-        if self.api_config.export_to_ssm:
-            exported_params = self.integration_utility.export_api_gateway_to_ssm(
-                api_gateway, authorizer, self.stack_config
-            )
-            logger.info(f"Exported API Gateway configuration to SSM: {exported_params}")
+        # Export API Gateway configuration to SSM parameters using enhanced pattern
+        self._export_ssm_parameters(api_gateway, authorizer)
 
         return api_gateway
+
+    def _export_ssm_parameters(self, api_gateway, authorizer=None):
+        """Export API Gateway resources to SSM using enhanced SSM parameter mixin"""
+
+        # Setup enhanced SSM integration
+        self.setup_enhanced_ssm_integration(self, self.api_config)
+
+        # Prepare resource values for export
+        resource_values = {
+            "api_id": api_gateway.rest_api_id,
+            "api_arn": api_gateway.arn_for_execute_api(),
+            "api_url": api_gateway.url,
+            "root_resource_id": api_gateway.rest_api_root_resource_id,
+        }
+
+        # Add authorizer ID if available
+        if authorizer:
+            resource_values["authorizer_id"] = authorizer.authorizer_id
+
+        # Use enhanced SSM parameter export
+        exported_params = self.auto_export_resources(resource_values)
+
+        if exported_params:
+            logger.info(
+                f"Exported {len(exported_params)} API Gateway parameters to SSM"
+            )
+        else:
+            logger.info("No SSM parameters configured for export")
 
     def _create_http_api(self, api_id: str, routes: List[Dict[str, Any]]):
         # HTTP API (v2)

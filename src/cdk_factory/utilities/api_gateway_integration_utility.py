@@ -104,11 +104,15 @@ class ApiGatewayIntegrationUtility:
         if self.api_gateway:
             return self.api_gateway
 
-        api_gateway_id = self._get_existing_api_gateway_id_with_ssm_fallback(api_config, stack_config)
+        api_gateway_id = self._get_existing_api_gateway_id_with_ssm_fallback(
+            api_config, stack_config
+        )
 
         if api_gateway_id:
             # Import existing API Gateway
-            root_resource_id = self._get_root_resource_id_with_ssm_fallback(stack_config)
+            root_resource_id = self._get_root_resource_id_with_ssm_fallback(
+                stack_config
+            )
 
             if root_resource_id:
                 logger.info(
@@ -483,16 +487,32 @@ class ApiGatewayIntegrationUtility:
             # Try to get user_pool_arn directly
             user_pool_arn = cognito_config.get("user_pool_arn")
 
-            # If not found, try SSM parameter lookup
+            # If not found, try SSM parameter lookup using enhanced pattern
             if not user_pool_arn:
-                ssm_path = cognito_config.get("user_pool_arn_ssm_path")
+                # Check for new ssm_imports pattern
+                ssm_imports = cognito_config.get("ssm_imports", {})
+                ssm_path = ssm_imports.get("user_pool_arn")
+                
+                # Fallback to legacy user_pool_arn_ssm_path for backward compatibility
+                if not ssm_path:
+                    ssm_path = cognito_config.get("user_pool_arn_ssm_path")
+                
                 if ssm_path:
                     logger.info(
                         f"Looking up user pool ARN from SSM parameter: {ssm_path}"
                     )
-                    user_pool_arn = ssm.StringParameter.from_string_parameter_name(
-                        self.scope, f"{authorizer_id}-user-pool-arn-param", ssm_path
-                    ).string_value
+                    # Use enhanced SSM parameter import with direct parameter lookup
+                    from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
+                        EnhancedSsmParameterMixin,
+                    )
+
+                    ssm_mixin = EnhancedSsmParameterMixin()
+                    ssm_mixin.scope = self.scope
+
+                    # Import using the enhanced pattern - direct parameter import
+                    user_pool_arn = ssm_mixin._import_enhanced_ssm_parameter(
+                        ssm_path, "user_pool_arn"
+                    )
 
             # Extract user pool ID from ARN if we have it
             if user_pool_arn and not user_pool_id:
@@ -617,23 +637,29 @@ class ApiGatewayIntegrationUtility:
         # Try SSM parameter lookup
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
         ssm_path = api_gateway_config.get("id_ssm_path")
-        
+
         if ssm_path:
             logger.info(f"Looking up API Gateway ID from SSM parameter: {ssm_path}")
             try:
                 api_gateway_id = ssm.StringParameter.from_string_parameter_name(
-                    self.scope, f"api-gateway-id-param-{hash(ssm_path) % 10000}", ssm_path
+                    self.scope,
+                    f"api-gateway-id-param-{hash(ssm_path) % 10000}",
+                    ssm_path,
                 ).string_value
                 logger.info(f"Found API Gateway ID from SSM: {api_gateway_id}")
                 return api_gateway_id
             except Exception as e:
-                logger.warning(f"Failed to retrieve API Gateway ID from SSM path {ssm_path}: {e}")
+                logger.warning(
+                    f"Failed to retrieve API Gateway ID from SSM path {ssm_path}: {e}"
+                )
 
         # Try environment variable fallback
         env_var_name = api_gateway_config.get("id_env_var", "API_GATEWAY_ID")
         env_api_gateway_id = os.getenv(env_var_name)
         if env_api_gateway_id:
-            logger.info(f"Using API Gateway ID from environment variable {env_var_name}: {env_api_gateway_id}")
+            logger.info(
+                f"Using API Gateway ID from environment variable {env_var_name}: {env_api_gateway_id}"
+            )
             return env_api_gateway_id
 
         return None
@@ -669,28 +695,33 @@ class ApiGatewayIntegrationUtility:
             return authorizer_id
 
         # Try SSM parameter lookup
-        authorizer_config = (
-            stack_config.dictionary.get("api_gateway", {})
-            .get("authorizer", {})
+        authorizer_config = stack_config.dictionary.get("api_gateway", {}).get(
+            "authorizer", {}
         )
         ssm_path = authorizer_config.get("id_ssm_path")
-        
+
         if ssm_path:
             logger.info(f"Looking up authorizer ID from SSM parameter: {ssm_path}")
             try:
                 authorizer_id = ssm.StringParameter.from_string_parameter_name(
-                    self.scope, f"authorizer-id-param-{hash(ssm_path) % 10000}", ssm_path
+                    self.scope,
+                    f"authorizer-id-param-{hash(ssm_path) % 10000}",
+                    ssm_path,
                 ).string_value
                 logger.info(f"Found authorizer ID from SSM: {authorizer_id}")
                 return authorizer_id
             except Exception as e:
-                logger.warning(f"Failed to retrieve authorizer ID from SSM path {ssm_path}: {e}")
+                logger.warning(
+                    f"Failed to retrieve authorizer ID from SSM path {ssm_path}: {e}"
+                )
 
         # Try environment variable fallback
         env_var_name = authorizer_config.get("id_env_var", "COGNITO_AUTHORIZER_ID")
         env_authorizer_id = os.getenv(env_var_name)
         if env_authorizer_id:
-            logger.info(f"Using authorizer ID from environment variable {env_var_name}: {env_authorizer_id}")
+            logger.info(
+                f"Using authorizer ID from environment variable {env_var_name}: {env_authorizer_id}"
+            )
             return env_authorizer_id
 
         return None
@@ -723,48 +754,56 @@ class ApiGatewayIntegrationUtility:
         # First try direct config value
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
         root_resource_id = api_gateway_config.get("root_resource_id")
-        
+
         if root_resource_id:
             logger.info(f"Using root resource ID from config: {root_resource_id}")
             return root_resource_id
 
         # Try SSM parameter lookup
         ssm_path = api_gateway_config.get("root_resource_id_ssm_path")
-        
+
         if ssm_path:
             logger.info(f"Looking up root resource ID from SSM parameter: {ssm_path}")
             try:
                 root_resource_id = ssm.StringParameter.from_string_parameter_name(
-                    self.scope, f"root-resource-id-param-{hash(ssm_path) % 10000}", ssm_path
+                    self.scope,
+                    f"root-resource-id-param-{hash(ssm_path) % 10000}",
+                    ssm_path,
                 ).string_value
                 logger.info(f"Found root resource ID from SSM: {root_resource_id}")
                 return root_resource_id
             except Exception as e:
-                logger.warning(f"Failed to retrieve root resource ID from SSM path {ssm_path}: {e}")
+                logger.warning(
+                    f"Failed to retrieve root resource ID from SSM path {ssm_path}: {e}"
+                )
 
         # Try environment variable fallback
-        env_var_name = api_gateway_config.get("root_resource_id_env_var", "API_GATEWAY_ROOT_RESOURCE_ID")
+        env_var_name = api_gateway_config.get(
+            "root_resource_id_env_var", "API_GATEWAY_ROOT_RESOURCE_ID"
+        )
         env_root_resource_id = os.getenv(env_var_name)
         if env_root_resource_id:
-            logger.info(f"Using root resource ID from environment variable {env_var_name}: {env_root_resource_id}")
+            logger.info(
+                f"Using root resource ID from environment variable {env_var_name}: {env_root_resource_id}"
+            )
             return env_root_resource_id
 
         return None
 
     def export_api_gateway_to_ssm(
-        self, 
-        api_gateway: apigateway.RestApi, 
+        self,
+        api_gateway: apigateway.RestApi,
         authorizer: Optional[apigateway.Authorizer] = None,
-        stack_config = None,
-        export_prefix: str = None
+        stack_config=None,
+        export_prefix: str = None,
     ) -> dict:
         """Export API Gateway configuration values to SSM parameters for cross-stack references"""
         if not export_prefix:
             stack_name = stack_config.name if stack_config else "api-gateway"
-            export_prefix = f"/movatra/{stack_name}/api-gateway"
-        
+            export_prefix = f"/my-cool-app/{stack_name}/api-gateway"
+
         exported_params = {}
-        
+
         # Export API Gateway ID
         api_id_param = ssm.StringParameter(
             self.scope,
@@ -775,7 +814,7 @@ class ApiGatewayIntegrationUtility:
         )
         exported_params["api_gateway_id"] = api_id_param.parameter_name
         logger.info(f"Exported API Gateway ID to SSM: {api_id_param.parameter_name}")
-        
+
         # Export API Gateway ARN
         api_arn_param = ssm.StringParameter(
             self.scope,
@@ -786,7 +825,7 @@ class ApiGatewayIntegrationUtility:
         )
         exported_params["api_gateway_arn"] = api_arn_param.parameter_name
         logger.info(f"Exported API Gateway ARN to SSM: {api_arn_param.parameter_name}")
-        
+
         # Export root resource ID
         root_resource_param = ssm.StringParameter(
             self.scope,
@@ -796,8 +835,10 @@ class ApiGatewayIntegrationUtility:
             description=f"API Gateway root resource ID for {export_prefix}",
         )
         exported_params["root_resource_id"] = root_resource_param.parameter_name
-        logger.info(f"Exported root resource ID to SSM: {root_resource_param.parameter_name}")
-        
+        logger.info(
+            f"Exported root resource ID to SSM: {root_resource_param.parameter_name}"
+        )
+
         # Export authorizer ID if provided
         if authorizer:
             authorizer_id_param = ssm.StringParameter(
@@ -808,8 +849,10 @@ class ApiGatewayIntegrationUtility:
                 description=f"API Gateway authorizer ID for {export_prefix}",
             )
             exported_params["authorizer_id"] = authorizer_id_param.parameter_name
-            logger.info(f"Exported authorizer ID to SSM: {authorizer_id_param.parameter_name}")
-        
+            logger.info(
+                f"Exported authorizer ID to SSM: {authorizer_id_param.parameter_name}"
+            )
+
         return exported_params
 
     def _create_method_with_existing_authorizer(
@@ -846,7 +889,9 @@ class ApiGatewayIntegrationUtility:
             resource_id=resource.resource_id,
             rest_api_id=api_gateway.rest_api_id,
             authorization_type="COGNITO_USER_POOLS",
-            authorizer_id=self._get_existing_authorizer_id_with_ssm_fallback(api_config, stack_config),
+            authorizer_id=self._get_existing_authorizer_id_with_ssm_fallback(
+                api_config, stack_config
+            ),
             api_key_required=api_config.api_key_required,
             request_parameters=api_config.request_parameters,
             integration=integration_props,

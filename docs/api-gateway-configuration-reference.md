@@ -28,8 +28,10 @@
 {
   "name": "my-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure/api-gateway/root-resource-id"
+    "ssm_imports": {
+      "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
+      "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id"
+    }
   },
   "lambda_functions": [
     {
@@ -152,8 +154,23 @@ The API Gateway integration follows this configuration hierarchy:
       "allow_headers": ["Content-Type", "Authorization", "X-Api-Key"]
     },
     
+    "ssm": {
+      "enabled": true,
+      "parameter_template": "/my-cool-app/dev/api-gateway/{resource_name}",
+      "auto_export": true,
+      "parameters": {
+        "api_id": "rest-api/id",
+        "api_arn": "rest-api/arn",
+        "api_url": "rest-api/url",
+        "root_resource_id": "rest-api/root-resource-id",
+        "authorizer_id": "authorizer/id"
+      }
+    },
+    
     "cognito_authorizer": {
-      "user_pool_arn": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_ABC123DEF",
+      "ssm_imports": {
+        "user_pool_arn": "/my-cool-app/dev/cognito/user-pool/arn"
+      },
       "authorizer_name": "MyAuthorizer",
       "identity_source": "method.request.header.Authorization"
     }
@@ -161,23 +178,50 @@ The API Gateway integration follows this configuration hierarchy:
 }
 ```
 
-### SSM Configuration Options
+### Enhanced SSM Parameter Configuration
 
+#### SSM Export Configuration (for API Gateway stacks)
 ```json
 {
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
-    "id_env_var": "CUSTOM_API_GATEWAY_ID",
-    
-    "root_resource_id_ssm_path": "/movatra/infrastructure/api-gateway/root-resource-id",
-    "root_resource_id_env_var": "CUSTOM_ROOT_RESOURCE_ID",
-    
+    "ssm": {
+      "enabled": true,
+      "parameter_template": "/my-cool-app/{environment}/api-gateway/{resource_name}",
+      "auto_export": true,
+      "parameters": {
+        "api_id": "rest-api/id",
+        "api_arn": "rest-api/arn",
+        "api_url": "rest-api/url",
+        "root_resource_id": "rest-api/root-resource-id",
+        "authorizer_id": "authorizer/id"
+      }
+    }
+  }
+}
+```
+
+#### SSM Import Configuration (for service stacks)
+```json
+{
+  "api_gateway": {
+    "ssm_imports": {
+      "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
+      "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id",
+      "authorizer_id": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
+    }
+  }
+}
+```
+
+#### Legacy SSM Configuration (backward compatibility)
+```json
+{
+  "api_gateway": {
+    "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure/api-gateway/root-resource-id",
     "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure/api-gateway/authorizer/id",
-      "id_env_var": "CUSTOM_AUTHORIZER_ID"
-    },
-    
-    "export_to_ssm": true
+      "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
+    }
   }
 }
 ```
@@ -190,9 +234,9 @@ The following environment variables are automatically recognized:
 
 | Variable | Purpose | Default SSM Path |
 |----------|---------|------------------|
-| `API_GATEWAY_ID` | API Gateway ID | `/movatra/{stack}/api-gateway/id` |
-| `API_GATEWAY_ROOT_RESOURCE_ID` | Root resource ID | `/movatra/{stack}/api-gateway/root-resource-id` |
-| `COGNITO_AUTHORIZER_ID` | Authorizer ID | `/movatra/{stack}/api-gateway/authorizer/id` |
+| `API_GATEWAY_ID` | API Gateway ID | `/my-cool-app/{stack}/api-gateway/id` |
+| `API_GATEWAY_ROOT_RESOURCE_ID` | Root resource ID | `/my-cool-app/{stack}/api-gateway/root-resource-id` |
+| `COGNITO_AUTHORIZER_ID` | Authorizer ID | `/my-cool-app/{stack}/api-gateway/authorizer/id` |
 | `COGNITO_USER_POOL_ID` | User pool ID | - |
 
 ### Custom Environment Variables
@@ -223,7 +267,9 @@ Configure custom environment variable names:
     "api_gateway_name": "main-api-${ENVIRONMENT}",
     "export_to_ssm": true,
     "cognito_authorizer": {
-      "user_pool_arn_ssm_path": "/movatra/${ENVIRONMENT}/cognito/user-pool-arn"
+      "ssm_imports": {
+        "user_pool_arn": "/my-cool-app/${ENVIRONMENT}/cognito/user-pool/arn"
+      }
     }
   }
 }
@@ -234,10 +280,10 @@ Configure custom environment variable names:
 {
   "name": "user-service-${ENVIRONMENT}",
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure-${ENVIRONMENT}/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure-${ENVIRONMENT}/api-gateway/root-resource-id",
-    "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure-${ENVIRONMENT}/api-gateway/authorizer/id"
+    "ssm_imports": {
+      "api_id": "/my-cool-app/infrastructure-${ENVIRONMENT}/api-gateway/rest-api/id",
+      "root_resource_id": "/my-cool-app/infrastructure-${ENVIRONMENT}/api-gateway/rest-api/root-resource-id",
+      "authorizer_id": "/my-cool-app/infrastructure-${ENVIRONMENT}/api-gateway/authorizer/id"
     }
   }
 }
@@ -252,7 +298,17 @@ Configure custom environment variable names:
   "api_gateway": {
     "api_gateway_name": "microservices-api",
     "description": "Central API Gateway for all microservices",
-    "export_to_ssm": true,
+    "ssm": {
+      "enabled": true,
+      "parameter_template": "/my-cool-app/api-gateway-stack/{resource_name}",
+      "auto_export": true,
+      "parameters": {
+        "api_id": "rest-api/id",
+        "api_arn": "rest-api/arn",
+        "api_url": "rest-api/url",
+        "root_resource_id": "rest-api/root-resource-id"
+      }
+    },
     "endpoint_types": ["REGIONAL"],
     "default_cors_preflight_options": {
       "allow_origins": ["https://app.example.com"],
@@ -267,8 +323,10 @@ Configure custom environment variable names:
 {
   "name": "user-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/api-gateway-stack/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/api-gateway-stack/api-gateway/root-resource-id"
+    "ssm_imports": {
+      "api_id": "/my-cool-app/api-gateway-stack/rest-api/id",
+      "root_resource_id": "/my-cool-app/api-gateway-stack/rest-api/root-resource-id"
+    }
   },
   "lambda_functions": [
     {
@@ -292,8 +350,10 @@ Configure custom environment variable names:
 {
   "name": "order-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/api-gateway-stack/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/api-gateway-stack/api-gateway/root-resource-id"
+    "ssm_imports": {
+      "api_id": "/my-cool-app/api-gateway-stack/rest-api/id",
+      "root_resource_id": "/my-cool-app/api-gateway-stack/rest-api/root-resource-id"
+    }
   },
   "lambda_functions": [
     {
@@ -524,15 +584,19 @@ logging.getLogger('ApiGatewayIntegrationUtility').setLevel(logging.DEBUG)
    // ❌ Will fail if SSM parameter doesn't exist
    {
      "api_gateway": {
-       "id_ssm_path": "/nonexistent/parameter"
+       "ssm_imports": {
+         "api_id": "/nonexistent/parameter"
+       }
      }
    }
    
-   // ✅ Provide fallback
+   // ✅ Use correct SSM parameter paths
    {
      "api_gateway": {
-       "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
-       "id_env_var": "API_GATEWAY_ID"
+       "ssm_imports": {
+         "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
+         "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id"
+       }
      }
    }
    ```

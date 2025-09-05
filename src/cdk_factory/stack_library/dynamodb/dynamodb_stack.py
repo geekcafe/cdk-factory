@@ -103,6 +103,9 @@ class DynamoDBStack(IStack, EnhancedSsmParameterMixin):
         self._configure_gsi()
         # add replicas if configured
         self._configure_replicas()
+        
+        # Export SSM parameters
+        self._export_ssm_parameters()
 
     def _configure_replicas(self) -> None:
         """Configure replicas if specified in the config"""
@@ -140,3 +143,33 @@ class DynamoDBStack(IStack, EnhancedSsmParameterMixin):
                 ),
                 projection_type=dynamodb.ProjectionType.ALL,
             )
+
+    def _export_ssm_parameters(self):
+        """Export DynamoDB resources to SSM using enhanced SSM parameter mixin"""
+        if not self.table:
+            return
+            
+        # Setup enhanced SSM integration
+        self.setup_enhanced_ssm_integration(self, self.db_config)
+        
+        # Prepare resource values for export
+        resource_values = {
+            "table_name": self.table.table_name,
+            "table_arn": self.table.table_arn,
+            "table_stream_arn": self.table.table_stream_arn if hasattr(self.table, 'table_stream_arn') else None,
+        }
+        
+        # Add GSI names if available
+        if hasattr(self, '_gsi_names') and self._gsi_names:
+            resource_values["gsi_names"] = ",".join(self._gsi_names)
+        
+        # Filter out None values
+        resource_values = {k: v for k, v in resource_values.items() if v is not None}
+        
+        # Use enhanced SSM parameter export
+        exported_params = self.auto_export_resources(resource_values)
+        
+        if exported_params:
+            logger.info(f"Exported {len(exported_params)} DynamoDB parameters to SSM")
+        else:
+            logger.info("No SSM parameters configured for export")

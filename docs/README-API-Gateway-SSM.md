@@ -31,10 +31,10 @@ This documentation suite covers the new API Gateway SSM integration features in 
 {
   "name": "user-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure-stack/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure-stack/api-gateway/root-resource-id",
+    "id_ssm_path": "/my-cool-app/infrastructure-stack/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure-stack/api-gateway/root-resource-id",
     "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure-stack/api-gateway/authorizer/id"
+      "id_ssm_path": "/my-cool-app/infrastructure-stack/api-gateway/authorizer/id"
     }
   },
   "lambda_functions": [
@@ -123,13 +123,13 @@ The system uses this priority order for configuration resolution:
 ### Pattern 2: Environment-Based
 ```
 ┌─────────────────────┐
-│   Dev Environment   │ ──► /movatra/dev/api-gateway/*
+│   Dev Environment   │ ──► /my-cool-app/dev/api-gateway/*
 └─────────────────────┘
 ┌─────────────────────┐
-│ Staging Environment │ ──► /movatra/staging/api-gateway/*
+│ Staging Environment │ ──► /my-cool-app/staging/api-gateway/*
 └─────────────────────┘
 ┌─────────────────────┐
-│  Prod Environment   │ ──► /movatra/prod/api-gateway/*
+│  Prod Environment   │ ──► /my-cool-app/prod/api-gateway/*
 └─────────────────────┘
 ```
 
@@ -202,7 +202,7 @@ python -m pytest tests/unit/ -v
         "ssm:GetParameters",
         "ssm:PutParameter"
       ],
-      "Resource": "arn:aws:ssm:*:*:parameter/movatra/*"
+      "Resource": "arn:aws:ssm:*:*:parameter/my-cool-app/*"
     }
   ]
 }

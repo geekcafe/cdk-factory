@@ -27,10 +27,10 @@ This guide helps you migrate existing API Gateway configurations to use the new 
 {
   "name": "user-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure/api-gateway/root-resource-id",
+    "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure/api-gateway/root-resource-id",
     "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure/api-gateway/authorizer/id"
+      "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
     }
   }
 }
@@ -38,9 +38,9 @@ This guide helps you migrate existing API Gateway configurations to use the new 
 
 **Required SSM Parameters:**
 ```bash
-aws ssm put-parameter --name "/movatra/infrastructure/api-gateway/id" --value "abcd1234ef" --type "String"
-aws ssm put-parameter --name "/movatra/infrastructure/api-gateway/root-resource-id" --value "xyz789abc" --type "String"
-aws ssm put-parameter --name "/movatra/infrastructure/api-gateway/authorizer/id" --value "auth123def" --type "String"
+aws ssm put-parameter --name "/my-cool-app/infrastructure/api-gateway/id" --value "abcd1234ef" --type "String"
+aws ssm put-parameter --name "/my-cool-app/infrastructure/api-gateway/root-resource-id" --value "xyz789abc" --type "String"
+aws ssm put-parameter --name "/my-cool-app/infrastructure/api-gateway/authorizer/id" --value "auth123def" --type "String"
 ```
 
 ### Scenario 2: Environment Variables to Configurable Environment Variables
@@ -95,14 +95,14 @@ export API_GATEWAY_ROOT_RESOURCE_ID="xyz789abc"
   "name": "user-service-stack",
   "api_gateway": {
     "id": "abcd1234ef",
-    "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
+    "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id",
     "id_env_var": "API_GATEWAY_ID",
     
-    "root_resource_id_ssm_path": "/movatra/infrastructure/api-gateway/root-resource-id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure/api-gateway/root-resource-id",
     "root_resource_id_env_var": "API_GATEWAY_ROOT_RESOURCE_ID",
     
     "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure/api-gateway/authorizer/id",
+      "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/authorizer/id",
       "id_env_var": "COGNITO_AUTHORIZER_ID"
     }
   }
@@ -134,7 +134,7 @@ env | grep -E "(API_GATEWAY|COGNITO_AUTHORIZER)" | sort
 
 # Check for existing SSM parameters
 echo "Existing SSM Parameters:"
-aws ssm describe-parameters --filters "Key=Name,Values=/movatra" --query 'Parameters[].Name' --output table 2>/dev/null || echo "No SSM parameters found or AWS CLI not configured"
+aws ssm describe-parameters --filters "Key=Name,Values=/my-cool-app" --query 'Parameters[].Name' --output table 2>/dev/null || echo "No SSM parameters found or AWS CLI not configured"
 ```
 
 ### Step 2: Create Infrastructure Stack (Recommended)
@@ -165,10 +165,10 @@ cdk deploy infrastructure-stack
 ```
 
 This will create SSM parameters:
-- `/movatra/infrastructure-stack/api-gateway/id`
-- `/movatra/infrastructure-stack/api-gateway/arn`
-- `/movatra/infrastructure-stack/api-gateway/root-resource-id`
-- `/movatra/infrastructure-stack/api-gateway/authorizer/id`
+- `/my-cool-app/infrastructure-stack/api-gateway/id`
+- `/my-cool-app/infrastructure-stack/api-gateway/arn`
+- `/my-cool-app/infrastructure-stack/api-gateway/root-resource-id`
+- `/my-cool-app/infrastructure-stack/api-gateway/authorizer/id`
 
 ### Step 4: Update Service Stacks
 
@@ -178,10 +178,10 @@ Update your service stacks to reference the infrastructure stack:
 {
   "name": "user-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure-stack/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure-stack/api-gateway/root-resource-id",
+    "id_ssm_path": "/my-cool-app/infrastructure-stack/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure-stack/api-gateway/root-resource-id",
     "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure-stack/api-gateway/authorizer/id"
+      "id_ssm_path": "/my-cool-app/infrastructure-stack/api-gateway/authorizer/id"
     }
   },
   "lambda_functions": [
@@ -279,8 +279,8 @@ Run old and new configurations in parallel.
 {
   "name": "user-service-dev",
   "api_gateway": {
-    "id_ssm_path": "/movatra/dev/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/dev/infrastructure/api-gateway/root-resource-id"
+    "id_ssm_path": "/my-cool-app/dev/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/dev/infrastructure/api-gateway/root-resource-id"
   }
 }
 ```
@@ -291,8 +291,8 @@ Run old and new configurations in parallel.
 {
   "name": "user-service-staging",
   "api_gateway": {
-    "id_ssm_path": "/movatra/staging/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/staging/infrastructure/api-gateway/root-resource-id"
+    "id_ssm_path": "/my-cool-app/staging/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/staging/infrastructure/api-gateway/root-resource-id"
   }
 }
 ```
@@ -303,8 +303,8 @@ Run old and new configurations in parallel.
 {
   "name": "user-service-prod",
   "api_gateway": {
-    "id_ssm_path": "/movatra/prod/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/prod/infrastructure/api-gateway/root-resource-id"
+    "id_ssm_path": "/my-cool-app/prod/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/prod/infrastructure/api-gateway/root-resource-id"
   }
 }
 ```
@@ -317,9 +317,9 @@ If you need to rollback, you can revert to direct configuration:
 
 ```bash
 # Get current SSM values
-API_ID=$(aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/id" --query 'Parameter.Value' --output text)
-ROOT_ID=$(aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/root-resource-id" --query 'Parameter.Value' --output text)
-AUTH_ID=$(aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/authorizer/id" --query 'Parameter.Value' --output text)
+API_ID=$(aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/id" --query 'Parameter.Value' --output text)
+ROOT_ID=$(aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/root-resource-id" --query 'Parameter.Value' --output text)
+AUTH_ID=$(aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/authorizer/id" --query 'Parameter.Value' --output text)
 
 # Update configuration
 cat > rollback-config.json << EOF
@@ -340,9 +340,9 @@ EOF
 
 ```bash
 # Export SSM values as environment variables
-export API_GATEWAY_ID=$(aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/id" --query 'Parameter.Value' --output text)
-export API_GATEWAY_ROOT_RESOURCE_ID=$(aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/root-resource-id" --query 'Parameter.Value' --output text)
-export COGNITO_AUTHORIZER_ID=$(aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/authorizer/id" --query 'Parameter.Value' --output text)
+export API_GATEWAY_ID=$(aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/id" --query 'Parameter.Value' --output text)
+export API_GATEWAY_ROOT_RESOURCE_ID=$(aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/root-resource-id" --query 'Parameter.Value' --output text)
+export COGNITO_AUTHORIZER_ID=$(aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/authorizer/id" --query 'Parameter.Value' --output text)
 
 # Remove SSM configuration from JSON
 ```
@@ -353,16 +353,16 @@ export COGNITO_AUTHORIZER_ID=$(aws ssm get-parameter --name "/movatra/infrastruc
 
 **Error:**
 ```
-Failed to retrieve API Gateway ID from SSM path /movatra/infrastructure/api-gateway/id
+Failed to retrieve API Gateway ID from SSM path /my-cool-app/infrastructure/api-gateway/id
 ```
 
 **Solution:**
 ```bash
 # Check if parameter exists
-aws ssm get-parameter --name "/movatra/infrastructure/api-gateway/id"
+aws ssm get-parameter --name "/my-cool-app/infrastructure/api-gateway/id"
 
 # Create parameter if missing
-aws ssm put-parameter --name "/movatra/infrastructure/api-gateway/id" --value "your-api-gateway-id" --type "String"
+aws ssm put-parameter --name "/my-cool-app/infrastructure/api-gateway/id" --value "your-api-gateway-id" --type "String"
 ```
 
 ### Issue 2: IAM Permissions
@@ -385,7 +385,7 @@ Add SSM permissions to your deployment role:
         "ssm:GetParameters",
         "ssm:PutParameter"
       ],
-      "Resource": "arn:aws:ssm:*:*:parameter/movatra/*"
+      "Resource": "arn:aws:ssm:*:*:parameter/my-cool-app/*"
     }
   ]
 }
@@ -395,13 +395,13 @@ Add SSM permissions to your deployment role:
 
 **Error:**
 ```
-Parameter /movatra/infrastructure/api-gateway/id not found
+Parameter /my-cool-app/infrastructure/api-gateway/id not found
 ```
 
 **Solution:**
 Ensure SSM parameters are created in the correct region:
 ```bash
-aws ssm put-parameter --name "/movatra/infrastructure/api-gateway/id" --value "your-api-id" --type "String" --region us-east-1
+aws ssm put-parameter --name "/my-cool-app/infrastructure/api-gateway/id" --value "your-api-id" --type "String" --region us-east-1
 ```
 
 ### Issue 4: Parameter Store Limits
@@ -451,9 +451,9 @@ echo "=== Post-Migration Validation ==="
 
 # Check SSM parameters exist
 PARAMS=(
-    "/movatra/infrastructure/api-gateway/id"
-    "/movatra/infrastructure/api-gateway/root-resource-id"
-    "/movatra/infrastructure/api-gateway/authorizer/id"
+    "/my-cool-app/infrastructure/api-gateway/id"
+    "/my-cool-app/infrastructure/api-gateway/root-resource-id"
+    "/my-cool-app/infrastructure/api-gateway/authorizer/id"
 )
 
 for param in "${PARAMS[@]}"; do

@@ -22,19 +22,13 @@ logger = Logger(__name__)
 
 @register_stack("cognito_library_module")
 @register_stack("cognito_stack")
-class CognitoStack(IStack, EnhancedSsmParameterMixin):
+class CognitoStack(IStack):
     """
-    A CloudFormation Stack for AWS Cognito User Pool
+    Cognito Stack - Creates a Cognito User Pool with configurable settings.
     """
 
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,  # pylint: disable=w0622
-        **kwargs,
-    ) -> None:
+    def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
-        self.scope = scope
         self.id = id
         self.stack_config: StackConfig | None = None
         self.deployment: DeploymentConfig | None = None
@@ -50,7 +44,31 @@ class CognitoStack(IStack, EnhancedSsmParameterMixin):
         self.stack_config = stack_config
         self.deployment = deployment
         self.cognito_config = CognitoConfig(stack_config.dictionary.get("cognito", {}))
+        
+        # Create user pool with configuration
+        self._create_user_pool_with_config()
 
+    def _setup_custom_attributes(self):
+        attributes = {}
+        if self.cognito_config.custom_attributes:
+            for custom_attribute in self.cognito_config.custom_attributes:
+                if not custom_attribute.get("name"):
+                    raise ValueError("Custom attribute name is required")
+                name = custom_attribute.get("name")
+                if "custom:" in name:
+                    name = name.replace("custom:", "")
+
+                # Use StringAttribute for custom attributes (most common type)
+                # In a more complete implementation, we could support different attribute types
+                # based on a 'type' field in the custom_attribute dict
+                attributes[name] = cognito.StringAttribute(
+                    mutable=custom_attribute.get("mutable", True),
+                    max_len=custom_attribute.get("max_length", None),
+                    min_len=custom_attribute.get("min_length", None),
+                )
+        return attributes
+
+    def _create_user_pool_with_config(self):
         # Build kwargs for all supported Cognito UserPool parameters
         kwargs = {
             "user_pool_name": self.cognito_config.user_pool_name,
@@ -123,7 +141,7 @@ class CognitoStack(IStack, EnhancedSsmParameterMixin):
 
         user_pool = cognito.UserPool(
             self,
-            id=deployment.build_resource_name(
+            id=self.deployment.build_resource_name(
                 self.cognito_config.user_pool_name
                 or self.cognito_config.user_pool_id
                 or "user-pool"
@@ -132,65 +150,26 @@ class CognitoStack(IStack, EnhancedSsmParameterMixin):
         )
         logger.info(f"Created Cognito User Pool: {user_pool.user_pool_id}")
 
-        self._ssm_export(user_pool)
+        self._export_ssm_parameters(user_pool)
 
-    def _setup_custom_attributes(self):
-        attributes = {}
-        if self.cognito_config.custom_attributes:
-            for custom_attribute in self.cognito_config.custom_attributes:
-                if not custom_attribute.get("name"):
-                    raise ValueError("Custom attribute name is required")
-                name = custom_attribute.get("name")
-                if "custom:" in name:
-                    name = name.replace("custom:", "")
-
-                # Use StringAttribute for custom attributes (most common type)
-                # In a more complete implementation, we could support different attribute types
-                # based on a 'type' field in the custom_attribute dict
-                attributes[name] = cognito.StringAttribute(
-                    mutable=custom_attribute.get("mutable", True),
-                    max_len=custom_attribute.get("max_length", None),
-                    min_len=custom_attribute.get("min_length", None),
-                )
-        return attributes
-
-    def _ssm_export(self, user_pool: cognito.UserPool):
-        # save to ssm parameter store
-
-        self._ssm_export_item(
-            id="UserPoolId",
-            value=user_pool.user_pool_id,
-            key="user_pool_id_path",
-            description="User Pool ID for Cognito User Pool",
-        )
-
-        self._ssm_export_item(
-            id="UserPoolName",
-            value=self.cognito_config.user_pool_name,
-            key="user_pool_name_path",
-            description="User Pool Name for Cognito User Pool",
-        )
-
-        self._ssm_export_item(
-            id="UserPoolArn",
-            value=user_pool.user_pool_arn,
-            key="user_pool_arn_path",
-            description="User Pool ARN for Cognito User Pool",
-        )
-
-    def _ssm_export_item(self, id: str, value: str, key: str, description: str):
-
-        parameter_name = self.cognito_config.ssm.get(key, None)
-        if not parameter_name:
-            return
-
-        if not parameter_name.startswith("/"):
-            parameter_name = f"/{parameter_name}"
-
-        ssm.StringParameter(
-            scope=self,
-            id=id,
-            string_value=value,
-            parameter_name=parameter_name,
-            description=description,
-        )
+    def _export_ssm_parameters(self, user_pool: cognito.UserPool):
+        """Export Cognito resources to SSM using enhanced SSM parameter mixin"""
+        
+        # Create enhanced SSM parameter mixin instance
+        ssm_mixin = EnhancedSsmParameterMixin()
+        ssm_mixin.setup_enhanced_ssm_integration(self, self.cognito_config)
+        
+        # Prepare resource values for export
+        resource_values = {
+            "user_pool_id": user_pool.user_pool_id,
+            "user_pool_name": self.cognito_config.user_pool_name,
+            "user_pool_arn": user_pool.user_pool_arn,
+        }
+        
+        # Use enhanced SSM parameter export
+        exported_params = ssm_mixin.auto_export_resources(resource_values)
+        
+        if exported_params:
+            logger.info(f"Exported {len(exported_params)} Cognito parameters to SSM")
+        else:
+            logger.info("No SSM parameters configured for export")

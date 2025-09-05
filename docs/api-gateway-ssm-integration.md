@@ -23,26 +23,51 @@ The CDK Factory now provides centralized API Gateway integration with comprehens
 
 ## Configuration Options
 
-### API Gateway Configuration
+### Enhanced SSM Parameter Configuration
 
+#### SSM Export Configuration (for API Gateway stacks)
 ```json
 {
   "api_gateway": {
-    "id": "direct-api-gateway-id",
-    "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
-    "id_env_var": "API_GATEWAY_ID",
-    
-    "root_resource_id": "direct-root-resource-id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure/api-gateway/root-resource-id",
-    "root_resource_id_env_var": "API_GATEWAY_ROOT_RESOURCE_ID",
-    
+    "api_gateway_name": "main-api",
+    "ssm": {
+      "enabled": true,
+      "parameter_template": "/my-cool-app/{environment}/api-gateway/{resource_name}",
+      "auto_export": true,
+      "parameters": {
+        "api_id": "rest-api/id",
+        "api_arn": "rest-api/arn",
+        "api_url": "rest-api/url",
+        "root_resource_id": "rest-api/root-resource-id",
+        "authorizer_id": "authorizer/id"
+      }
+    }
+  }
+}
+```
+
+#### SSM Import Configuration (for service stacks)
+```json
+{
+  "api_gateway": {
+    "ssm_imports": {
+      "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
+      "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id",
+      "authorizer_id": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
+    }
+  }
+}
+```
+
+#### Legacy Configuration (backward compatibility)
+```json
+{
+  "api_gateway": {
+    "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure/api-gateway/root-resource-id",
     "authorizer": {
-      "id": "direct-authorizer-id",
-      "id_ssm_path": "/movatra/infrastructure/api-gateway/authorizer/id",
-      "id_env_var": "COGNITO_AUTHORIZER_ID"
-    },
-    
-    "export_to_ssm": true
+      "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
+    }
   }
 }
 ```
@@ -74,9 +99,22 @@ Create an infrastructure stack that exports API Gateway configuration:
   "api_gateway": {
     "api_gateway_name": "main-api",
     "description": "Main API Gateway for all services",
-    "export_to_ssm": true,
+    "ssm": {
+      "enabled": true,
+      "parameter_template": "/my-cool-app/infrastructure-stack/{resource_name}",
+      "auto_export": true,
+      "parameters": {
+        "api_id": "rest-api/id",
+        "api_arn": "rest-api/arn",
+        "api_url": "rest-api/url",
+        "root_resource_id": "rest-api/root-resource-id",
+        "authorizer_id": "authorizer/id"
+      }
+    },
     "cognito_authorizer": {
-      "user_pool_arn": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_ABC123DEF",
+      "ssm_imports": {
+        "user_pool_arn": "/my-cool-app/cognito-stack/user-pool/arn"
+      },
       "authorizer_name": "MainAuthorizer"
     }
   }
@@ -84,10 +122,11 @@ Create an infrastructure stack that exports API Gateway configuration:
 ```
 
 This will automatically export the following SSM parameters:
-- `/movatra/infrastructure-stack/api-gateway/id`
-- `/movatra/infrastructure-stack/api-gateway/arn`
-- `/movatra/infrastructure-stack/api-gateway/root-resource-id`
-- `/movatra/infrastructure-stack/api-gateway/authorizer/id`
+- `/my-cool-app/infrastructure-stack/rest-api/id`
+- `/my-cool-app/infrastructure-stack/rest-api/arn`
+- `/my-cool-app/infrastructure-stack/rest-api/url`
+- `/my-cool-app/infrastructure-stack/rest-api/root-resource-id`
+- `/my-cool-app/infrastructure-stack/authorizer/id`
 
 ### Example 2: Lambda Stack (Imports API Gateway)
 
@@ -97,10 +136,10 @@ Create a Lambda stack that imports the API Gateway from the infrastructure stack
 {
   "name": "user-service-stack",
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure-stack/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure-stack/api-gateway/root-resource-id",
-    "authorizer": {
-      "id_ssm_path": "/movatra/infrastructure-stack/api-gateway/authorizer/id"
+    "ssm_imports": {
+      "api_id": "/my-cool-app/infrastructure-stack/rest-api/id",
+      "root_resource_id": "/my-cool-app/infrastructure-stack/rest-api/root-resource-id",
+      "authorizer_id": "/my-cool-app/infrastructure-stack/authorizer/id"
     }
   },
   "lambda_functions": [
@@ -201,12 +240,24 @@ Use custom SSM parameter paths for different environments:
 }
 ```
 
-**After (SSM Configuration):**
+**After (Enhanced SSM Configuration):**
 ```json
 {
   "api_gateway": {
-    "id_ssm_path": "/movatra/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/movatra/infrastructure/api-gateway/root-resource-id"
+    "ssm_imports": {
+      "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
+      "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id"
+    }
+  }
+}
+```
+
+**Legacy SSM Configuration (still supported):**
+```json
+{
+  "api_gateway": {
+    "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id",
+    "root_resource_id_ssm_path": "/my-cool-app/infrastructure/api-gateway/root-resource-id"
   }
 }
 ```
@@ -241,8 +292,8 @@ Use a consistent naming convention for SSM parameters:
 ```
 
 Examples:
-- `/movatra/prod/api-gateway/id`
-- `/movatra/staging/cognito/user-pool-arn`
+- `/my-cool-app/prod/api-gateway/id`
+- `/my-cool-app/staging/cognito/user-pool-arn`
 - `/mycompany/dev/infrastructure/api-gateway/authorizer-id`
 
 ### 2. Environment Separation
@@ -253,12 +304,12 @@ Use different SSM paths for different environments:
 {
   "production": {
     "api_gateway": {
-      "id_ssm_path": "/movatra/prod/api-gateway/id"
+      "id_ssm_path": "/my-cool-app/prod/api-gateway/id"
     }
   },
   "staging": {
     "api_gateway": {
-      "id_ssm_path": "/movatra/staging/api-gateway/id"
+      "id_ssm_path": "/my-cool-app/staging/api-gateway/id"
     }
   }
 }
@@ -272,7 +323,7 @@ Configure multiple fallback options for maximum flexibility:
 {
   "api_gateway": {
     "id": "fallback-direct-id",
-    "id_ssm_path": "/movatra/prod/api-gateway/id",
+    "id_ssm_path": "/my-cool-app/prod/api-gateway/id",
     "id_env_var": "API_GATEWAY_ID"
   }
 }
@@ -292,7 +343,7 @@ Only enable SSM export in infrastructure stacks:
   "service-stacks": {
     "api_gateway": {
       "export_to_ssm": false,
-      "id_ssm_path": "/movatra/infrastructure/api-gateway/id"
+      "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id"
     }
   }
 }
@@ -406,7 +457,7 @@ Ensure your CDK deployment role has the necessary SSM permissions:
         "ssm:PutParameter"
       ],
       "Resource": [
-        "arn:aws:ssm:*:*:parameter/movatra/*",
+        "arn:aws:ssm:*:*:parameter/my-cool-app/*",
         "arn:aws:ssm:*:*:parameter/your-org/*"
       ]
     }

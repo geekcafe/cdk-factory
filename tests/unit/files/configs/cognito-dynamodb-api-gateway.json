@@ -1,0 +1,275 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
+      },
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+        "value": "./commands/cdk_synth.sh",
+        "cdk_parameter_name": "CdkSynthCommandFile"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT_NUMBER",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+        "env_var_name": "DEVOPS_AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{DEVOPS_REGION}}",
+        "env_var_name": "DEVOPS_REGION",
+        "cdk_parameter_name": "AccountRegion"
+      },
+      {
+        "placeholder": "{{SITE_BUCKET_NAME}}",
+        "env_var_name": "SITE_BUCKET_NAME",
+        "cdk_parameter_name": "SiteBucketName"
+      },
+      {
+        "placeholder": "{{HOSTED_ZONE_ID}}",
+        "env_var_name": "HOSTED_ZONE_ID",
+        "cdk_parameter_name": "HostedZoneId"
+      },
+      {
+        "placeholder": "{{HOSTED_ZONE_NAME}}",
+        "env_var_name": "HOSTED_ZONE_NAME",
+        "cdk_parameter_name": "HostedZoneName"
+      },
+      {
+        "placeholder": "{{DNS_ALIAS}}",
+        "env_var_name": "DNS_ALIAS",
+        "cdk_parameter_name": "DnsAlias"
+      },
+      {
+        "placeholder": "{{CODE_REPOSITORY_NAME}}",
+        "env_var_name": "CODE_REPOSITORY_NAME",
+        "cdk_parameter_name": "CodeRepoName"
+      },
+      {
+        "placeholder": "{{CODE_REPOSITORY_ARN}}",
+        "env_var_name": "CODE_REPOSITORY_ARN",
+        "cdk_parameter_name": "CodeRepoArn"
+      },
+      {
+        "placeholder": "{{GIT_BRANCH}}",
+        "env_var_name": "GIT_BRANCH",
+        "cdk_parameter_name": "GitBranch"
+      }
+    ]
+  },
+  "workload": {
+    "name": "my-cool-app",
+    "description": "General info about this app/workload",
+    "devops": {
+      "account": "484433161997",
+      "region": "us-east-1",
+      "code_repository": {
+        "name": "geekcafe/my-cool-app-aws-infrastructure",
+        "type": "connector_arn",
+        "connector_arn": "arn:aws:codeconnections:us-east-1:484433161997:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
+      },
+      "commands": [
+        {
+          "name": "cdk_synth",
+          "commands": [],
+          "file": "./commands/cdk_synth.sh"
+        }
+      ]
+    },
+    "stacks": [
+      {
+        "name": "my-cool-app-dev-site-bucket",
+        "module": "bucket_stack",
+        "enabled": true,
+        "bucket": {
+          "name": "484433161997-my-cool-app-dev-my-cool-app-website",
+          "exists": false
+        }
+      },
+      {
+        "name": "my-cool-app-dev-site-bucket-cdn",
+        "module": "bucket_stack",
+        "enabled": true,
+        "bucket": {
+          "name": "484433161997-my-cool-app-dev-my-cool-app-website-cdn",
+          "exists": false
+        }
+      },
+      {
+        "name": "my-cool-app-dev-cognito",
+        "module": "cognito_stack",
+        "enabled": true,
+        "cognito": {
+          "user_pool_name": "my-cool-app-dev",
+          "exists": false,
+          "ssm": {
+            "enabled": true,
+            "parameter_template": "/my-cool-app/dev/cognito/{resource_name}",
+            "auto_export": true,
+            "parameters": {
+              "user_pool_arn": "user-pool/arn",
+              "user_pool_id": "user-pool/id",
+              "user_pool_name": "user-pool/name",
+              "user_pool_client_id": "user-pool-client/id",
+              "authorizer_id": "authorizer/id"
+            }
+          },
+          "custom_attributes": [
+            {
+              "name": "user_id",
+              "type": "String",
+              "mutable": true
+            },
+            {
+              "name": "tenant_id",
+              "type": "String",
+              "mutable": true
+            },
+            {
+              "name": "roles",
+              "type": "String",
+              "mutable": true
+            }
+          ]
+        }
+      },
+      {
+        "name": "my-cool-app-dev-dynamodb",
+        "module": "dynamodb_stack",
+        "kwargs": {
+          "env": {
+            "region": "us-east-1"
+          }
+        },
+        "dynamodb": {
+          "gsi_count": 20,
+          "name": "my-cool-app-dev",
+          "replica_regions": [
+            "us-east-2"
+          ],
+          "ssm": {
+            "enabled": true,
+            "parameter_template": "/my-cool-app/dev/dynamodb/{resource_name}",
+            "auto_export": true,
+            "parameters": {
+              "table_name": "app-table/name",
+              "table_arn": "app-table/arn",
+              "table_stream_arn": "app-table/stream-arn",
+              "gsi_names": "app-table/gsi-names"
+            }
+          }
+        },
+        "enabled": true
+      },
+      {
+        "name": "my-cool-app-dev-api-gateway",
+        "module": "api_gateway_library_module",
+        "enabled": true,
+        "dependencies_does_not_work_yet": [
+          "my-cool-app-dev-cognito"
+        ],
+        "api_gateway": {
+          "api_gateway_name": "my-cool-app-dev",
+          "description": "API Gateway with Cognito Authorizer and CORS",
+          "ssm": {
+            "enabled": true,
+            "parameter_template": "/my-cool-app/dev/api-gateway/{resource_name}",
+            "auto_export": true,
+            "parameters": {
+              "api_id": "rest-api/id",
+              "api_arn": "rest-api/arn",
+              "api_url": "rest-api/url",
+              "root_resource_id": "rest-api/root-resource-id",
+              "authorizer_id": "authorizer/id"
+            }
+          },
+          "cognito_authorizer": {
+            "ssm_imports": {
+              "user_pool_arn": "/my-cool-app/dev/cognito/user-pool/arn"
+            },
+            "authorizer_name": "my-cool-app-cognito-authorizer"
+          },
+          "hosted_zone": {
+            "record_name": "api.dev.my-cool-app.com",
+            "id": "Z02787413IAOSKE4U9VE8",
+            "name": "dev.my-cool-app.com"
+          },
+          "routes": [
+            {
+              "path": "/app/health",
+              "method": "GET",
+              "src": "./lambdas/api_gateway_health",
+              "handler": "app.lambda_handler",
+              "cors": {
+                "methods": [
+                  "GET"
+                ],
+                "origins": [
+                  "*"
+                ]
+              }
+            },
+            {
+              "path": "/health",
+              "method": "GET",
+              "src": "./lambdas/api_gateway_health",
+              "handler": "app.lambda_handler",
+              "authorization_type": "NONE",
+              "cors": {
+                "methods": [
+                  "GET"
+                ],
+                "origins": [
+                  "*"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "deployments": [
+      {
+        "name": "my-cool-app-dev-infra-pipeline",
+        "environment": "dev",
+        "account": "484433161997",
+        "region": "us-east-1",
+        "mode": "pipeline",
+        "pipeline": {
+          "name": "my-cool-app-dev-infra-pipeline",
+          "branch": "main",
+          "enabled": true,
+          "stages": [
+            {
+              "name": "deploy-primary",
+              "stacks": [
+                "my-cool-app-dev-site-bucket",
+                "my-cool-app-dev-site-bucket-cdn",
+                "my-cool-app-dev-cognito",
+                "my-cool-app-dev-dynamodb"
+              ]
+            },
+            {
+              "name": "deploy-api-gateway",
+              "stacks": [
+                "my-cool-app-dev-api-gateway"
+              ]
+            }
+          ]
+        },
+        "enabled": true
+      }
+    ]
+  }
+}

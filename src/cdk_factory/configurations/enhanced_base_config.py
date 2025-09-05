@@ -82,7 +82,11 @@ class EnhancedBaseConfig(BaseConfig):
         super().__init__(config)
         self.resource_type = resource_type
         self.resource_name = resource_name
+        # Support both "ssm" and "ssm" field names for backward compatibility
         self._ssm_config = config.get("ssm", {})
+
+        if  config.get("enhanced_ssm") is not None:
+            raise ValueError("SSM parameter error: 'enhanced_ssm' is no longer supported, change to 'ssm' field name.")
         
     @property
     def ssm_enabled(self) -> bool:
@@ -107,7 +111,11 @@ class EnhancedBaseConfig(BaseConfig):
     @property
     def ssm_pattern(self) -> str:
         """Get the SSM parameter path pattern"""
-        return self._ssm_config.get("pattern", "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}")
+        # Support both "pattern" and "parameter_template" field names
+        pattern = self._ssm_config.get("parameter_template") or self._ssm_config.get("pattern")
+        if pattern:
+            return pattern
+        return "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}"
     
     @property
     def ssm_auto_export(self) -> bool:
@@ -142,14 +150,31 @@ class EnhancedBaseConfig(BaseConfig):
             "organization": self.ssm_organization,
             "environment": self.ssm_environment,
             "stack_type": self.resource_type or "unknown",
-            "resource_name": self.resource_name or "default",
+            "resource_name": custom_path or attribute,
             "attribute": custom_path or attribute
         }
         
         # Add any additional context variables
         if context:
             format_context.update(context)
-            
+        
+        # Handle template variables in curly braces (e.g., {{ENVIRONMENT}})
+        import re
+        def replace_template_vars(match):
+            var_name = match.group(1)
+            if var_name in format_context:
+                return str(format_context[var_name])
+            # Try environment variables
+            env_value = os.getenv(var_name)
+            if env_value:
+                return env_value
+            # Return original if not found
+            return match.group(0)
+        
+        # Replace {{VAR}} patterns first
+        pattern = re.sub(r'\{\{([^}]+)\}\}', replace_template_vars, pattern)
+        
+        # Then handle {resource_name} patterns
         try:
             return pattern.format(**format_context)
         except KeyError as e:
@@ -185,8 +210,8 @@ class EnhancedBaseConfig(BaseConfig):
             
         definitions = []
         
-        # Start with configured exports
-        configured_exports = self._ssm_config.get("exports", {})
+        # Start with configured exports - support both "exports" and "parameters" field names
+        configured_exports = self._ssm_config.get("exports", self._ssm_config.get("parameters", {}))
         
         # Add auto-discovered exports if enabled
         if self.ssm_auto_export:
@@ -211,7 +236,8 @@ class EnhancedBaseConfig(BaseConfig):
             if path_config == "auto":
                 actual_path = self.get_parameter_path(attr_name, context=context)
             else:
-                actual_path = self.get_parameter_path(attr_name, path_config, context)
+                # Use the path_config as the resource_name part in the template
+                actual_path = self.get_parameter_path(path_config, context=context)
             
             definitions.append(SsmParameterDefinition(
                 attribute=attr_name,
