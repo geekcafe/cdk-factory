@@ -22,7 +22,7 @@ logger = Logger(__name__)
 
 @register_stack("cognito_library_module")
 @register_stack("cognito_stack")
-class CognitoStack(IStack):
+class CognitoStack(IStack, EnhancedSsmParameterMixin):
     """
     Cognito Stack - Creates a Cognito User Pool with configurable settings.
     """
@@ -155,9 +155,15 @@ class CognitoStack(IStack):
     def _export_ssm_parameters(self, user_pool: cognito.UserPool):
         """Export Cognito resources to SSM using enhanced SSM parameter mixin"""
         
-        # Create enhanced SSM parameter mixin instance
-        ssm_mixin = EnhancedSsmParameterMixin()
-        ssm_mixin.setup_enhanced_ssm_integration(self, self.cognito_config)
+        # Setup enhanced SSM integration with proper resource type and name
+        user_pool_name = self.cognito_config.user_pool_name or "user-pool"
+        
+        self.setup_enhanced_ssm_integration(
+            scope=self,
+            config=self.stack_config.dictionary.get("cognito", {}),
+            resource_type="cognito",
+            resource_name=user_pool_name
+        )
         
         # Prepare resource values for export
         resource_values = {
@@ -167,7 +173,7 @@ class CognitoStack(IStack):
         }
         
         # Use enhanced SSM parameter export
-        exported_params = ssm_mixin.auto_export_resources(resource_values)
+        exported_params = self.auto_export_resources(resource_values)
         
         if exported_params:
             logger.info(f"Exported {len(exported_params)} Cognito parameters to SSM")

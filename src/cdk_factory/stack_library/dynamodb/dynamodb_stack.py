@@ -149,8 +149,15 @@ class DynamoDBStack(IStack, EnhancedSsmParameterMixin):
         if not self.table:
             return
             
-        # Setup enhanced SSM integration
-        self.setup_enhanced_ssm_integration(self, self.db_config)
+        # Setup enhanced SSM integration with proper resource type and name
+        table_name = self.db_config.name or "dynamodb-table"
+        
+        self.setup_enhanced_ssm_integration(
+            scope=self,
+            config=self.stack_config.dictionary.get("dynamodb", {}),
+            resource_type="dynamodb",
+            resource_name=table_name
+        )
         
         # Prepare resource values for export
         resource_values = {

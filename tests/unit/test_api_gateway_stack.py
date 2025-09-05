@@ -20,7 +20,7 @@ def test_api_gateway_stack_minimal():
     stack_config = StackConfig(
         {
             "api_gateway": {
-                "api_gateway_name": "TestApi",
+                "name": "TestApi",
                 "description": "Minimal API Gateway",
             }
         },
@@ -50,7 +50,7 @@ def test_api_gateway_stack_full_config():
     stack_config = StackConfig(
         {
             "api_gateway": {
-                "api_gateway_name": "FullApi",
+                "name": "FullApi",
                 "description": "Full config API Gateway",
                 # "deploy": False,
                 "endpoint_types": ["EDGE"],  # Use string to test enum conversion

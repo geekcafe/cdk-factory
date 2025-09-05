@@ -17,7 +17,7 @@ This documentation suite covers the new API Gateway SSM integration features in 
 {
   "name": "infrastructure-stack",
   "api_gateway": {
-    "api_gateway_name": "main-api",
+    "name": "main-api",
     "export_to_ssm": true,
     "cognito_authorizer": {
       "user_pool_arn": "arn:aws:cognito-idp:region:account:userpool/pool-id"

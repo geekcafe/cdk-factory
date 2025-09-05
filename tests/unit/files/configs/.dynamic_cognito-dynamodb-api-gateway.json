@@ -115,15 +115,10 @@
           "exists": false,
           "ssm": {
             "enabled": true,
-            "parameter_template": "/my-cool-app/dev/cognito/{resource_name}",
+            "organization": "my-cool-app",
+            "environment": "dev",
             "auto_export": true,
-            "parameters": {
-              "user_pool_arn": "user-pool/arn",
-              "user_pool_id": "user-pool/id",
-              "user_pool_name": "user-pool/name",
-              "user_pool_client_id": "user-pool-client/id",
-              "authorizer_id": "authorizer/id"
-            }
+            "auto_import": false
           },
           "custom_attributes": [
             {
@@ -160,14 +155,10 @@
           ],
           "ssm": {
             "enabled": true,
-            "parameter_template": "/my-cool-app/dev/dynamodb/{resource_name}",
+            "organization": "my-cool-app",
+            "environment": "dev",
             "auto_export": true,
-            "parameters": {
-              "table_name": "app-table/name",
-              "table_arn": "app-table/arn",
-              "table_stream_arn": "app-table/stream-arn",
-              "gsi_names": "app-table/gsi-names"
-            }
+            "auto_import": false
           }
         },
         "enabled": true
@@ -180,24 +171,19 @@
           "my-cool-app-dev-cognito"
         ],
         "api_gateway": {
-          "api_gateway_name": "my-cool-app-dev",
+          "name": "my-cool-app-dev",
           "description": "API Gateway with Cognito Authorizer and CORS",
           "ssm": {
             "enabled": true,
-            "parameter_template": "/my-cool-app/dev/api-gateway/{resource_name}",
+            "organization": "my-cool-app",
+            "environment": "dev",
             "auto_export": true,
-            "parameters": {
-              "api_id": "rest-api/id",
-              "api_arn": "rest-api/arn",
-              "api_url": "rest-api/url",
-              "root_resource_id": "rest-api/root-resource-id",
-              "authorizer_id": "authorizer/id"
+            "auto_import": true,
+            "imports": {
+              "user_pool_arn": "auto"
             }
           },
           "cognito_authorizer": {
-            "ssm_imports": {
-              "user_pool_arn": "/my-cool-app/dev/cognito/user-pool/arn"
-            },
             "authorizer_name": "my-cool-app-cognito-authorizer"
           },
           "hosted_zone": {

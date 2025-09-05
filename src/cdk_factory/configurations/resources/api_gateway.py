@@ -15,12 +15,18 @@ class ApiGatewayConfig(EnhancedBaseConfig):
     """
 
     def __init__(self, config: dict = None) -> None:
-        super().__init__(config or {}, resource_type="api_gateway", resource_name=config.get("name", "api_gateway") if config else "api_gateway")
+        super().__init__(
+            config or {},
+            resource_type="api_gateway",
+            resource_name=(
+                config.get("name", "api_gateway") if config else "api_gateway"
+            ),
+        )
         self.__config = config or {}
 
     @property
-    def api_gateway_name(self) -> str | None:
-        return self.__config.get("api_gateway_name") or self.__config.get("name")
+    def name(self) -> str | None:
+        return self.__config.get("name") or self.__config.get("name")
 
     @property
     def description(self) -> str | None:
@@ -125,22 +131,22 @@ class ApiGatewayConfig(EnhancedBaseConfig):
     @property
     def ssl_cert_arn(self) -> str | None:
         return self.__config.get("ssl_cert_arn")
-        
+
     @property
     def resources(self) -> list[dict]:
         """List of resource definitions for API Gateway"""
         return self.__config.get("resources", [])
-        
+
     @property
     def api_keys(self) -> list[dict]:
         """List of API key definitions"""
         return self.__config.get("api_keys", [])
-        
+
     @property
     def usage_plans(self) -> list[dict]:
         """List of usage plan definitions"""
         return self.__config.get("usage_plans", [])
-        
+
     @property
     def export_to_ssm(self) -> bool:
         """Whether to export API Gateway configuration to SSM parameters for cross-stack references"""

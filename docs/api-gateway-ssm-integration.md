@@ -29,7 +29,7 @@ The CDK Factory now provides centralized API Gateway integration with comprehens
 ```json
 {
   "api_gateway": {
-    "api_gateway_name": "main-api",
+    "name": "main-api",
     "ssm": {
       "enabled": true,
       "parameter_template": "/my-cool-app/{environment}/api-gateway/{resource_name}",
@@ -97,7 +97,7 @@ Create an infrastructure stack that exports API Gateway configuration:
 {
   "name": "infrastructure-stack",
   "api_gateway": {
-    "api_gateway_name": "main-api",
+    "name": "main-api",
     "description": "Main API Gateway for all services",
     "ssm": {
       "enabled": true,

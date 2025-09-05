@@ -130,7 +130,7 @@ The API Gateway integration follows this configuration hierarchy:
 ```json
 {
   "api_gateway": {
-    "api_gateway_name": "my-api",
+    "name": "my-api",
     "description": "My Service API",
     "deploy": true,
     "export_to_ssm": true,
@@ -264,7 +264,7 @@ Configure custom environment variable names:
 {
   "name": "infrastructure-${ENVIRONMENT}",
   "api_gateway": {
-    "api_gateway_name": "main-api-${ENVIRONMENT}",
+    "name": "main-api-${ENVIRONMENT}",
     "export_to_ssm": true,
     "cognito_authorizer": {
       "ssm_imports": {
@@ -296,7 +296,7 @@ Configure custom environment variable names:
 {
   "name": "api-gateway-stack",
   "api_gateway": {
-    "api_gateway_name": "microservices-api",
+    "name": "microservices-api",
     "description": "Central API Gateway for all microservices",
     "ssm": {
       "enabled": true,

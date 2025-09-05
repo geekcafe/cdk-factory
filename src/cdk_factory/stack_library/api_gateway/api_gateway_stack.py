@@ -51,12 +51,12 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
 
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
-        self.api_config = None
-        self.stack_config = None
-        self.deployment = None
-        self.workload = None
-        self.api_gateway_integrations = []
-        self.integration_utility = None
+        self.api_config: ApiGatewayConfig | None = None
+        self.stack_config: StackConfig | None = None
+        self.deployment: DeploymentConfig | None = None
+        self.workload: WorkloadConfig | None = None
+        self.api_gateway_integrations: list = []
+        self.integration_utility: ApiGatewayIntegrationUtility | None = None
 
     def build(self, stack_config, deployment, workload) -> None:
         self._build(stack_config, deployment, workload)
@@ -74,7 +74,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         self.integration_utility = ApiGatewayIntegrationUtility(self)
 
         api_type = self.api_config.api_type
-        api_name = self.api_config.api_gateway_name or "api-gateway"
+        api_name = self.api_config.name or "api-gateway"
         api_id = deployment.build_resource_name(api_name)
 
         routes = self.api_config.routes or [
@@ -366,8 +366,15 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
     def _export_ssm_parameters(self, api_gateway, authorizer=None):
         """Export API Gateway resources to SSM using enhanced SSM parameter mixin"""
 
-        # Setup enhanced SSM integration
-        self.setup_enhanced_ssm_integration(self, self.api_config)
+        # Setup enhanced SSM integration with proper resource type and name
+        api_name = self.api_config.name or "api-gateway"
+
+        self.setup_enhanced_ssm_integration(
+            scope=self,
+            config=self.stack_config.dictionary.get("api_gateway", {}),
+            resource_type="api_gateway",
+            resource_name=api_name,
+        )
 
         # Prepare resource values for export
         resource_values = {
@@ -397,7 +404,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         api = api_gateway_v2.HttpApi(
             self,
             id=api_id,
-            api_name=self.api_config.api_gateway_name,
+            api_name=self.api_config.name,
             description=self.api_config.description,
         )
         logger.info(f"Created HTTP API Gateway: {api.api_name}")

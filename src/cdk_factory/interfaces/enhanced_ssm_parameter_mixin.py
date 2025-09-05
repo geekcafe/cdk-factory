@@ -4,14 +4,19 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
-from typing import Dict, List, Any, Optional
+"""
+Enhanced SSM Parameter Mixin for CDK Factory
+"""
+
+import os
+from typing import Dict, Any, Optional, List
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 from aws_lambda_powertools import Logger
+from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig, SsmParameterDefinition
+from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
-from ..configurations.enhanced_base_config import EnhancedBaseConfig, SsmParameterDefinition
-
-logger = Logger(__name__)
+logger = Logger(service="EnhancedSsmParameterMixin")
 
 
 class EnhancedSsmParameterMixin:
@@ -25,15 +30,21 @@ class EnhancedSsmParameterMixin:
     - Enhanced error handling and logging
     """
     
-    def setup_enhanced_ssm_integration(self, scope: Construct, config: EnhancedBaseConfig):
+    def setup_enhanced_ssm_integration(self, scope: Construct, config, resource_type: str = None, resource_name: str = None):
         """
         Setup enhanced SSM integration for a resource.
         
         Args:
             scope: The CDK construct scope
-            config: Enhanced configuration object with SSM support
+            config: Configuration object with SSM settings
+            resource_type: Type of resource (e.g., 'api_gateway', 'cognito', 'dynamodb')
+            resource_name: Name of the resource instance
         """
-        self.enhanced_ssm_config = config
+        self.enhanced_ssm_config = EnhancedSsmConfig(
+            config=config if isinstance(config, dict) else config.dictionary,
+            resource_type=resource_type or "unknown",
+            resource_name=resource_name or "default"
+        )
         self.scope = scope
         
     def auto_export_resources(self, resource_values: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, str]:
@@ -47,34 +58,34 @@ class EnhancedSsmParameterMixin:
         Returns:
             Dictionary mapping attribute names to SSM parameter paths
         """
-        if not hasattr(self, 'enhanced_ssm_config') or not self.enhanced_ssm_config.ssm_enabled:
-            logger.info("Enhanced SSM integration not enabled or configured")
+        if not hasattr(self, 'enhanced_ssm_config') or not self.enhanced_ssm_config.enabled:
             return {}
             
         exported_params = {}
-        export_definitions = self.enhanced_ssm_config.get_export_definitions(context)
+        export_definitions = self.enhanced_ssm_config.get_export_definitions()
         
         logger.info(f"Auto-exporting {len(export_definitions)} parameters for {self.enhanced_ssm_config.resource_type}")
         
         for definition in export_definitions:
-            if definition.attribute in resource_values:
-                value = resource_values[definition.attribute]
+            attr = definition.attribute
+            ssm_path = definition.path
+            
+            if attr in resource_values:
+                value = resource_values[attr]
                 if value is not None:
                     try:
                         param = self._create_enhanced_ssm_parameter(
-                            definition.path,
-                            value,
-                            definition.description,
+                            ssm_path, 
+                            value, 
+                            definition.description or f"{attr} for {self.enhanced_ssm_config.resource_name}",
                             definition.parameter_type
                         )
-                        exported_params[definition.attribute] = definition.path
-                        logger.info(f"Exported {definition.attribute} -> {definition.path}")
+                        exported_params[attr] = ssm_path
+                        logger.info(f"Exported {attr} -> {ssm_path}")
                     except Exception as e:
-                        logger.error(f"Failed to export {definition.attribute} to {definition.path}: {e}")
-                else:
-                    logger.warning(f"Skipping export of {definition.attribute} - value is None")
+                        logger.error(f"Failed to export {attr} to {ssm_path}: {e}")
             else:
-                logger.warning(f"Attribute {definition.attribute} not found in resource values")
+                logger.warning(f"Attribute {attr} not found in resource values")
                 
         return exported_params
     
@@ -88,12 +99,12 @@ class EnhancedSsmParameterMixin:
         Returns:
             Dictionary of imported resource values
         """
-        if not hasattr(self, 'enhanced_ssm_config') or not self.enhanced_ssm_config.ssm_enabled:
+        if not hasattr(self, 'enhanced_ssm_config') or not self.enhanced_ssm_config.enabled:
             logger.info("Enhanced SSM integration not enabled or configured")
             return {}
             
         imported_values = {}
-        import_definitions = self.enhanced_ssm_config.get_import_definitions(context)
+        import_definitions = self.enhanced_ssm_config.get_import_definitions()
         
         logger.info(f"Auto-importing {len(import_definitions)} parameters for {self.enhanced_ssm_config.resource_type}")
         

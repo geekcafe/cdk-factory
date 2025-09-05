@@ -145,7 +145,7 @@ Create a dedicated infrastructure stack that exports API Gateway configuration:
 {
   "name": "infrastructure-stack",
   "api_gateway": {
-    "api_gateway_name": "main-api",
+    "name": "main-api",
     "description": "Main API Gateway for all services",
     "export_to_ssm": true,
     "deploy_options": {

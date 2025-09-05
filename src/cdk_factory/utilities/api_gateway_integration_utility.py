@@ -182,7 +182,7 @@ class ApiGatewayIntegrationUtility:
         import json
 
         # Get the API name from the config
-        api_name = api_config.api_gateway_name or "api-gateway"
+        api_name = api_config.name or "api-gateway"
 
         # Create log group for API Gateway access logs
         log_group = logs.LogGroup(
@@ -307,9 +307,7 @@ class ApiGatewayIntegrationUtility:
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
 
         # API name
-        api_name = api_gateway_config.get(
-            "api_gateway_name", f"{stack_config.name}-api"
-        )
+        api_name = api_gateway_config.get("name", f"{stack_config.name}-api")
 
         # Deployment options
         deploy_options = api_gateway_config.get("deploy_options", {})
@@ -489,30 +487,49 @@ class ApiGatewayIntegrationUtility:
 
             # If not found, try SSM parameter lookup using enhanced pattern
             if not user_pool_arn:
-                # Check for new ssm_imports pattern
-                ssm_imports = cognito_config.get("ssm_imports", {})
+                # Check for new ssm_imports pattern in API Gateway configuration
+                api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+                ssm_config = api_gateway_config.get("ssm", {})
+                ssm_imports = ssm_config.get("imports", {})
                 ssm_path = ssm_imports.get("user_pool_arn")
-                
+
                 # Fallback to legacy user_pool_arn_ssm_path for backward compatibility
                 if not ssm_path:
                     ssm_path = cognito_config.get("user_pool_arn_ssm_path")
-                
+
                 if ssm_path:
-                    logger.info(
-                        f"Looking up user pool ARN from SSM parameter: {ssm_path}"
-                    )
-                    # Use enhanced SSM parameter import with direct parameter lookup
+                    # Use enhanced SSM parameter import with auto-discovery support
                     from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
                         EnhancedSsmParameterMixin,
                     )
 
                     ssm_mixin = EnhancedSsmParameterMixin()
-                    ssm_mixin.scope = self.scope
 
-                    # Import using the enhanced pattern - direct parameter import
-                    user_pool_arn = ssm_mixin._import_enhanced_ssm_parameter(
-                        ssm_path, "user_pool_arn"
+                    # Setup enhanced SSM integration for auto-import
+                    # Use the actual cognito user pool name from the configuration
+                    cognito_user_pool_name = cognito_config.get(
+                        "user_pool_name", "my-cool-app-dev"
                     )
+                    ssm_mixin.setup_enhanced_ssm_integration(
+                        scope=self.scope,
+                        config=stack_config.dictionary.get("api_gateway", {}),
+                        resource_type="cognito",
+                        resource_name=cognito_user_pool_name,
+                    )
+
+                    # If ssm_path is "auto", use auto-import mechanism
+                    if ssm_path == "auto":
+                        logger.info("Using auto-import for user pool ARN")
+                        imported_values = ssm_mixin.auto_import_resources()
+                        user_pool_arn = imported_values.get("user_pool_arn")
+                    else:
+                        # Use direct parameter import for specific SSM path
+                        logger.info(
+                            f"Looking up user pool ARN from SSM parameter: {ssm_path}"
+                        )
+                        user_pool_arn = ssm_mixin._import_enhanced_ssm_parameter(
+                            ssm_path, "user_pool_arn"
+                        )
 
             # Extract user pool ID from ARN if we have it
             if user_pool_arn and not user_pool_id:

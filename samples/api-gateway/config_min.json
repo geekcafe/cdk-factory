@@ -73,7 +73,7 @@
         "module": "api_gateway_library_module",
         "enabled": true,
         "api_gateway": {
-          "api_gateway_name": "SampleApiGateway",
+          "name": "SampleApiGateway",
           "description": "API Gateway with Cognito Authorizer and CORS",
           "cognito_authorizer": {
             "user_pool_arn": "{{DEPLOYED_USER_POOL_ARN}}",
