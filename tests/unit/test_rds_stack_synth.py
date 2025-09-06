@@ -22,7 +22,7 @@ from utils.synth_test_utils import (
 
 
 # Create a testable subclass of RdsStack
-class TestableRdsStack(RdsStack):
+class MockableRdsStack(RdsStack):
     """A testable version of RdsStack that overrides problematic methods"""
 
     @property
@@ -184,7 +184,7 @@ def test_rds_stack_synth(dummy_workload):
     )
 
     # Create and build the stack
-    stack = TestableRdsStack(app, "TestRdsStack")
+    stack = MockableRdsStack(app, "TestRdsStack")
 
     # Set the VPC ID on the workload
     dummy_workload.vpc_id = "vpc-12345"
@@ -274,7 +274,7 @@ def test_rds_stack_full_config(dummy_workload):
     )
 
     # Create and build the stack
-    stack = TestableRdsStack(app, "TestRdsFullStack")
+    stack = MockableRdsStack(app, "TestRdsFullStack")
 
     # Set the VPC ID on the workload
     dummy_workload.vpc_id = "vpc-12345"

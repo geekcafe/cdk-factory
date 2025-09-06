@@ -385,30 +385,36 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             logger.info("No API Gateway integrations found, skipping deployment finalization")
             return
 
-        # Group integrations by API Gateway
+        # Group integrations by API Gateway using object identity instead of CDK token
         api_gateways = {}
+        api_counter = 0
+        
         for integration in self.api_gateway_integrations:
             api_gateway = integration.get('api_gateway')
             if api_gateway:
-                api_id = api_gateway.rest_api_id
-                if api_id not in api_gateways:
-                    api_gateways[api_id] = {
+                # Use object identity as key instead of CDK token
+                api_key = id(api_gateway)
+                if api_key not in api_gateways:
+                    api_counter += 1
+                    api_gateways[api_key] = {
                         'api_gateway': api_gateway,
-                        'integrations': []
+                        'integrations': [],
+                        'counter': api_counter
                     }
-                api_gateways[api_id]['integrations'].append(integration)
+                api_gateways[api_key]['integrations'].append(integration)
 
         # Create new deployments for each API Gateway
-        for api_id, api_info in api_gateways.items():
+        for api_key, api_info in api_gateways.items():
             api_gateway = api_info['api_gateway']
             integration_count = len(api_info['integrations'])
+            counter = api_info['counter']
             
-            logger.info(f"Creating new deployment for API Gateway {api_id} with {integration_count} integrations")
+            logger.info(f"Creating new deployment for API Gateway {counter} with {integration_count} integrations")
             
-            # Create a new deployment
+            # Create a new deployment using counter for construct ID
             deployment = apigateway.Deployment(
                 self,
-                f"{api_id}-deployment-final",
+                f"api-gateway-{counter}-deployment-final",
                 api=api_gateway,
                 description=f"Deployment with all {integration_count} routes included"
             )
@@ -417,13 +423,13 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             stage_name = "prod"  # Default stage name
             stage = apigateway.Stage(
                 self,
-                f"{api_id}-stage-final",
+                f"api-gateway-{counter}-stage-final",
                 deployment=deployment,
                 stage_name=stage_name,
                 description=f"Production stage with all routes deployed"
             )
             
-            logger.info(f"Created stage '{stage_name}' for API Gateway {api_id}")
+            logger.info(f"Created stage '{stage_name}' for API Gateway {counter}")
 
     def _export_ssm_parameters(self, api_gateway, authorizer=None):
         """Export API Gateway resources to SSM using enhanced SSM parameter mixin"""

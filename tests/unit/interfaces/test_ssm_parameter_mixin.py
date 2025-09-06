@@ -13,8 +13,8 @@ from cdk_factory.interfaces.ssm_parameter_mixin import SsmParameterMixin
 from cdk_factory.configurations.deployment import DeploymentConfig
 
 
-class TestConfig:
-    """Test configuration class that mimics BaseConfig behavior"""
+class MockConfig:
+    """Mock configuration class that mimics BaseConfig behavior"""
 
     def __init__(self, config_dict):
         self._config = config_dict
@@ -137,7 +137,7 @@ class TestSsmParameterMixin(unittest.TestCase):
             "arn": "arn:aws:test:region:account:resource/res-123",
         }
 
-        config = TestConfig(
+        config = MockConfig(
             {
                 "ssm_exports": {
                     "id_path": "/test/resource/id",
@@ -183,7 +183,7 @@ class TestSsmParameterMixin(unittest.TestCase):
             "arn": "arn:aws:test:region:account:resource/res-123",
         }
 
-        config = TestConfig(
+        config = MockConfig(
             {
                 "ssm_prefix_template": "/{environment}/{workload_name}/{resource_type}/{attribute}",
                 "ssm_exports": {
@@ -237,7 +237,7 @@ class TestSsmParameterMixin(unittest.TestCase):
             "arn": "arn:aws:test:region:account:resource/res-123",
         }
 
-        config = TestConfig(
+        config = MockConfig(
             {
                 "ssm_prefix_template": "/{environment}/{resource_type}/{attribute}",
                 "ssm_exports": {
@@ -283,7 +283,7 @@ class TestSsmParameterMixin(unittest.TestCase):
 
         resource_values = {"id": "res-123", "name": "test-resource"}
 
-        config = TestConfig(
+        config = MockConfig(
             {
                 "ssm_parameters": {
                     "id_path": "/legacy/resource/id",
@@ -325,7 +325,7 @@ class TestSsmParameterMixin(unittest.TestCase):
 
         resource_values = {"id": "sg-123", "vpc_id": "vpc-456"}
 
-        config = TestConfig(
+        config = MockConfig(
             {
                 "ssm_prefix_template": "/{environment}/{resource_type}/{resource_name}/{attribute}",
                 "ssm_exports": {"id_path": "id", "vpc_id_path": "vpc-id"},

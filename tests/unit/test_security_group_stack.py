@@ -21,7 +21,7 @@ from aws_cdk import Environment
 
 
 # Create a testable subclass of SecurityGroupStack
-class TestableSecurityGroupStack(SecurityGroupStack):
+class MockableSecurityGroupStack(SecurityGroupStack):
     """A testable version of SecurityGroupStack that overrides problematic methods"""
 
     def __init__(self, scope, id):
@@ -131,7 +131,7 @@ def test_security_group_stack_synth(dummy_workload):
     )
 
     # Create and build the stack using our testable subclass
-    stack = TestableSecurityGroupStack(app, "TestSecurityGroupStack")
+    stack = MockableSecurityGroupStack(app, "TestSecurityGroupStack")
 
     # Set the VPC ID on the workload
     dummy_workload.vpc_id = "vpc-12345"
@@ -228,7 +228,7 @@ def test_security_group_with_peer_rules(dummy_workload):
     )
 
     # Create and build the stack using our testable subclass
-    stack = TestableSecurityGroupStack(app, "TestSecurityGroupWithPeers")
+    stack = MockableSecurityGroupStack(app, "TestSecurityGroupWithPeers")
 
     # Set the VPC ID on the workload
     dummy_workload.vpc_id = "vpc-12345"
