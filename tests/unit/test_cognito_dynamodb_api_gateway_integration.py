@@ -156,9 +156,9 @@ def lambda_handler(event, context):
 
         # Expected SSM parameter paths from new enhanced pattern
         expected_cognito_params = {
-            "/my-cool-app/dev/cognito/user-pool/user_pool_arn": "user_pool_arn",
-            "/my-cool-app/dev/cognito/user-pool/user_pool_id": "user_pool_id",
-            "/my-cool-app/dev/cognito/user-pool/user_pool_name": "user_pool_name",
+            "/my-cool-app/dev/cognito/user-pool/user-pool-arn": "user-pool-arn",
+            "/my-cool-app/dev/cognito/user-pool/user-pool-id": "user-pool-id",
+            "/my-cool-app/dev/cognito/user-pool/user-pool-name": "user-pool-name",
         }
 
         # Check that SSM parameters are created with correct paths
@@ -209,16 +209,16 @@ def lambda_handler(event, context):
 
         # Expected SSM parameter paths from new enhanced pattern
         expected_dynamodb_params = {
-            "/my-cool-app/dev/dynamodb/app-table/table_name": "table_name",
-            "/my-cool-app/dev/dynamodb/app-table/table_arn": "table_arn",
-            "/my-cool-app/dev/dynamodb/app-table/table_stream_arn": "table_stream_arn",
+            "/my-cool-app/dev/dynamodb/app-table/table-name": "table-name",
+            "/my-cool-app/dev/dynamodb/app-table/table-arn": "table-arn",
+            "/my-cool-app/dev/dynamodb/app-table/table-stream-arn": "table-stream-arn",
         }
 
         # Check that the main SSM parameters are created with correct paths
         main_params = [
-            "/my-cool-app/dev/dynamodb/app-table/table_name",
-            "/my-cool-app/dev/dynamodb/app-table/table_arn",
-            "/my-cool-app/dev/dynamodb/app-table/table_stream_arn",
+            "/my-cool-app/dev/dynamodb/app-table/table-name",
+            "/my-cool-app/dev/dynamodb/app-table/table-arn",
+            "/my-cool-app/dev/dynamodb/app-table/table-stream-arn",
         ]
 
         for param_path in main_params:
@@ -274,20 +274,20 @@ def lambda_handler(event, context):
 
         # Expected SSM parameter paths from new enhanced pattern
         expected_api_gateway_params = {
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_id": "api_id",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_arn": "api_arn",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_url": "api_url",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/root_resource_id": "root_resource_id",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/authorizer_id": "authorizer_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api-id": "api-id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api-arn": "api-arn",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api-url": "api-url",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/root-resource-id": "root-resource-id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/authorizer-id": "authorizer-id",
         }
 
         # Check that the main SSM parameters are created with correct paths
         main_params = [
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_id",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_arn",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_url",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/root_resource_id",
-            "/my-cool-app/dev/api-gateway/my-cool-app-dev/authorizer_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api-id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api-arn",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api-url",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/root-resource-id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/authorizer-id",
         ]
 
         for param_path in main_params:
@@ -340,7 +340,7 @@ def lambda_handler(event, context):
         cognito_template = Template.from_stack(cognito_stack)
 
         # Verify that Cognito exports the user pool ARN parameter using new enhanced pattern
-        cognito_user_pool_arn_path = "/my-cool-app/dev/cognito/user-pool/user_pool_arn"
+        cognito_user_pool_arn_path = "/my-cool-app/dev/cognito/user-pool/user-pool-arn"
 
         # Check that Cognito stack exports the SSM parameter that API Gateway imports
         cognito_template.has_resource_properties(

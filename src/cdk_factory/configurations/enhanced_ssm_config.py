@@ -70,6 +70,16 @@ class EnhancedSsmConfig:
     def auto_import(self) -> bool:
         return self.config.get("auto_import", True)
 
+    @property
+    def ssm_exports(self) -> List[Dict[str, Any]]:
+        """Get explicit SSM exports configuration"""
+        return self.config.get("exports", [])
+
+    @property
+    def ssm_imports(self) -> List[Dict[str, Any]]:
+        """Get explicit SSM imports configuration"""
+        return self.config.get("imports", [])
+
     def get_parameter_path(
         self, attribute: str, custom_path: Optional[str] = None
     ) -> str:
@@ -77,13 +87,16 @@ class EnhancedSsmConfig:
         if custom_path and custom_path.startswith("/"):
             return custom_path
 
+        # Convert underscore attribute names to hyphen format for consistent SSM paths
+        formatted_attribute = attribute.replace("_", "-")
+
         # Use enhanced pattern
         return self.pattern.format(
             organization=self.organization,
             environment=self.environment,
             stack_type=self.resource_type,
             resource_name=self.resource_name,
-            attribute=attribute,
+            attribute=formatted_attribute,
         )
 
     def get_export_definitions(self) -> List[SsmParameterDefinition]:
@@ -111,28 +124,95 @@ class EnhancedSsmConfig:
 
         return definitions
 
-    def get_import_definitions(self) -> List[SsmParameterDefinition]:
-        """Get list of parameters to import"""
-        imports = self.config.get("imports", {})
+    def get_import_definitions(self, context: Dict[str, Any] = None) -> List[SsmParameterDefinition]:
+        """Get SSM parameter definitions for imports"""
         definitions = []
-
-        # Add auto-discovered imports
+        
+        # Process explicit imports (can be dict format like {"user_pool_arn": "auto"} or list format)
+        if self.ssm_imports:
+            if isinstance(self.ssm_imports, dict):
+                # Handle dict format: {"attribute": "auto" or path}
+                for attribute, import_value in self.ssm_imports.items():
+                    if import_value == "auto":
+                        # Use auto-discovery with source mapping
+                        imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
+                        import_info = imports_config.get(attribute, {})
+                        source_resource_type = import_info.get("source_resource_type")
+                        
+                        if source_resource_type:
+                            # Use default resource name for the source type
+                            default_names = {
+                                "vpc": "main-vpc",
+                                "cognito": "user-pool", 
+                                "security_group": "main-sg",
+                                "dynamodb": "main-table"
+                            }
+                            source_resource_name = default_names.get(source_resource_type, f"main-{source_resource_type}")
+                            path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
+                        else:
+                            # Fallback to current resource path
+                            path = self.get_parameter_path(attribute)
+                    else:
+                        # Use explicit path
+                        path = import_value
+                    
+                    definitions.append(
+                        SsmParameterDefinition(
+                            attribute=attribute,
+                            path=path,
+                            parameter_type="String",
+                            description=f"Imported {attribute}"
+                        )
+                    )
+            elif isinstance(self.ssm_imports, list):
+                # Handle list format: [{"attribute": "...", "path": "..."}]
+                for import_config in self.ssm_imports:
+                    definitions.append(
+                        SsmParameterDefinition(
+                            attribute=import_config["attribute"],
+                            path=import_config["path"],
+                            parameter_type=import_config.get("type", "String"),
+                            description=import_config.get("description", f"Imported {import_config['attribute']}")
+                        )
+                    )
+        
+        # Process auto-discovered imports
         if self.auto_import:
-            auto_imports = self._get_auto_imports()
-            for attr in auto_imports:
-                if attr not in imports:
-                    imports[attr] = "auto"
-
-        # Convert to parameter definitions
-        for attr, path_config in imports.items():
-            custom_path = None if path_config == "auto" else path_config
-            definitions.append(
-                SsmParameterDefinition(
-                    attribute=attr,
-                    path=self.get_parameter_path(attr, custom_path),
-                    auto_import=True,
+            imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
+            for attribute, import_info in imports_config.items():
+                # Skip if already processed in explicit imports
+                if self.ssm_imports and isinstance(self.ssm_imports, dict) and attribute in self.ssm_imports:
+                    continue
+                    
+                source_resource_type = import_info.get("source_resource_type")
+                source_resource_name = import_info.get("source_resource_name")
+                
+                if source_resource_type:
+                    # Generate path using source resource type and name
+                    if source_resource_name:
+                        path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
+                    else:
+                        # Use a default/generic resource name pattern for the source type
+                        default_names = {
+                            "vpc": "main-vpc",
+                            "cognito": "user-pool", 
+                            "security_group": "main-sg",
+                            "dynamodb": "main-table"
+                        }
+                        source_resource_name = default_names.get(source_resource_type, f"main-{source_resource_type}")
+                        path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
+                else:
+                    # Fallback to current behavior if no source specified
+                    path = self.get_parameter_path(attribute)
+                
+                definitions.append(
+                    SsmParameterDefinition(
+                        attribute=attribute,
+                        path=path,
+                        parameter_type="String",
+                        description=f"Auto-imported {attribute} from {source_resource_type or 'unknown'}"
+                    )
                 )
-            )
 
         return definitions
 
@@ -142,7 +222,17 @@ class EnhancedSsmConfig:
 
     def _get_auto_imports(self) -> List[str]:
         """Get auto-discovered imports based on resource type"""
-        return RESOURCE_AUTO_IMPORTS.get(self.resource_type, [])
+        imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
+        return list(imports_config.keys())
+
+    def _get_parameter_path_for_source(self, attribute: str, source_resource_type: str, source_resource_name: str) -> str:
+        """Generate SSM parameter path using source resource type and name instead of current resource"""
+        # Convert underscores to hyphens for consistent path formatting
+        formatted_attribute = attribute.replace("_", "-")
+        formatted_resource_name = source_resource_name.replace("_", "-")
+        formatted_resource_type = source_resource_type.replace("_", "-")
+        
+        return f"/{self.organization}/{self.environment}/{formatted_resource_type}/{formatted_resource_name}/{formatted_attribute}"
 
 
 # Resource type definitions for auto-discovery
@@ -181,12 +271,36 @@ RESOURCE_AUTO_EXPORTS = {
     "dynamodb": ["table_name", "table_arn", "table_stream_arn"],
 }
 
+# Enhanced import structure that maps attributes to their source resource types
 RESOURCE_AUTO_IMPORTS = {
-    "security_group": ["vpc_id"],
-    "rds": ["vpc_id", "security_group_ids", "subnet_group_name"],
-    "lambda": ["vpc_id", "security_group_ids", "subnet_ids"],
-    "api_gateway": ["user_pool_arn"],
-    "api-gateway": ["user_pool_arn"],
-    "ecs": ["vpc_id", "security_group_ids", "subnet_ids"],
-    "alb": ["vpc_id", "security_group_ids", "subnet_ids"],
+    "security_group": {
+        "vpc_id": {"source_resource_type": "vpc"}
+    },
+    "rds": {
+        "vpc_id": {"source_resource_type": "vpc"},
+        "security_group_ids": {"source_resource_type": "security_group"},
+        "subnet_group_name": {"source_resource_type": "vpc"}
+    },
+    "lambda": {
+        "vpc_id": {"source_resource_type": "vpc"},
+        "security_group_ids": {"source_resource_type": "security_group"},
+        "subnet_ids": {"source_resource_type": "vpc"},
+        "user_pool_arn": {"source_resource_type": "cognito"}
+    },
+    "api_gateway": {
+        "user_pool_arn": {"source_resource_type": "cognito"}
+    },
+    "api-gateway": {
+        "user_pool_arn": {"source_resource_type": "cognito"}
+    },
+    "ecs": {
+        "vpc_id": {"source_resource_type": "vpc"},
+        "security_group_ids": {"source_resource_type": "security_group"},
+        "subnet_ids": {"source_resource_type": "vpc"}
+    },
+    "alb": {
+        "vpc_id": {"source_resource_type": "vpc"},
+        "security_group_ids": {"source_resource_type": "security_group"},
+        "subnet_ids": {"source_resource_type": "vpc"}
+    },
 }

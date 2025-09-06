@@ -61,7 +61,7 @@ def test_api_gateway_stack_full_config():
                 "retain_deployments": True,
                 "min_compression_size": 512,
                 "cognito_authorizer": {
-                    "user_pool_arn_ssm_path": "/dev/cdk-factory/cognito/user-pool-arn",
+                    "user_pool_arn": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_TestPool123",
                     "authorizer_name": "CognitoAuthorizer",
                     "identity_source": "method.request.header.Authorization",
                 },

@@ -5,55 +5,9 @@ MIT License. See Project Root for the license information.
 """
 
 from typing import Dict, Any, Optional, List
-import os
-from dataclasses import dataclass
-from enum import Enum
 
 from .base_config import BaseConfig
-
-
-class SsmMode(Enum):
-    AUTO = "auto"
-    MANUAL = "manual" 
-    DISABLED = "disabled"
-
-
-@dataclass
-class SsmParameterDefinition:
-    """Defines an SSM parameter with its metadata"""
-    attribute: str
-    path: Optional[str] = None
-    description: Optional[str] = None
-    parameter_type: str = "String"  # String, StringList, SecureString
-    auto_export: bool = True
-    auto_import: bool = True
-
-
-# Resource type definitions for auto-discovery
-RESOURCE_AUTO_EXPORTS = {
-    "vpc": ["vpc_id", "vpc_cidr", "public_subnet_ids", "private_subnet_ids", "isolated_subnet_ids"],
-    "security_group": ["security_group_id"],
-    "rds": ["db_instance_id", "db_endpoint", "db_port", "db_secret_arn"],
-    "api_gateway": ["api_gateway_id", "api_gateway_arn", "root_resource_id", "authorizer_id"],
-    "cognito": ["user_pool_id", "user_pool_arn", "user_pool_client_id"],
-    "lambda": ["function_name", "function_arn"],
-    "s3": ["bucket_name", "bucket_arn"],
-    "dynamodb": ["table_name", "table_arn"],
-    "ecr": ["repository_name", "repository_arn", "repository_uri"],
-    "load_balancer": ["load_balancer_arn", "load_balancer_dns_name", "target_group_arn"],
-    "auto_scaling": ["auto_scaling_group_name", "auto_scaling_group_arn"]
-}
-
-RESOURCE_AUTO_IMPORTS = {
-    "security_group": ["vpc_id"],
-    "rds": ["vpc_id", "security_group_ids", "subnet_group_name"],
-    "lambda": ["vpc_id", "security_group_ids", "subnet_ids"],
-    "api_gateway": ["cognito_user_pool_id", "cognito_user_pool_arn"],
-    "ecs": ["vpc_id", "security_group_ids", "subnet_ids"],
-    "alb": ["vpc_id", "security_group_ids", "subnet_ids"],
-    "load_balancer": ["vpc_id", "security_group_ids", "subnet_ids"],
-    "auto_scaling": ["vpc_id", "security_group_ids", "subnet_ids", "load_balancer_target_group_arn"]
-}
+from .enhanced_ssm_config import EnhancedSsmConfig, SsmParameterDefinition
 
 
 class EnhancedBaseConfig(BaseConfig):
@@ -82,50 +36,49 @@ class EnhancedBaseConfig(BaseConfig):
         super().__init__(config)
         self.resource_type = resource_type
         self.resource_name = resource_name
-        # Support both "ssm" and "ssm" field names for backward compatibility
-        self._ssm_config = config.get("ssm", {})
+        
+        # Initialize enhanced SSM config if SSM is configured
+        if config.get("ssm"):
+            self._enhanced_ssm = EnhancedSsmConfig(
+                config=config,
+                resource_type=resource_type or "unknown",
+                resource_name=resource_name or "default"
+            )
+        else:
+            self._enhanced_ssm = None
 
-        if  config.get("enhanced_ssm") is not None:
+        if config.get("enhanced_ssm") is not None:
             raise ValueError("SSM parameter error: 'enhanced_ssm' is no longer supported, change to 'ssm' field name.")
         
     @property
     def ssm_enabled(self) -> bool:
         """Check if SSM parameter integration is enabled"""
-        return self._ssm_config.get("enabled", True)
+        return self._enhanced_ssm.enabled if self._enhanced_ssm else False
     
     @property
     def ssm_organization(self) -> str:
         """Get the organization name for SSM parameter paths"""
-        return self._ssm_config.get("organization", "cdk-factory")
+        return self._enhanced_ssm.organization if self._enhanced_ssm else "cdk-factory"
     
     @property
     def ssm_environment(self) -> str:
         """Get the environment name for SSM parameter paths"""
-        env = self._ssm_config.get("environment", "${ENVIRONMENT}")
-        # Replace environment variables
-        if env.startswith("${") and env.endswith("}"):
-            env_var = env[2:-1]
-            return os.getenv(env_var, "dev")
-        return env
+        return self._enhanced_ssm.environment if self._enhanced_ssm else "dev"
     
     @property
     def ssm_pattern(self) -> str:
         """Get the SSM parameter path pattern"""
-        # Support both "pattern" and "parameter_template" field names
-        pattern = self._ssm_config.get("parameter_template") or self._ssm_config.get("pattern")
-        if pattern:
-            return pattern
-        return "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}"
+        return self._enhanced_ssm.pattern if self._enhanced_ssm else "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}"
     
     @property
     def ssm_auto_export(self) -> bool:
         """Check if auto-export is enabled"""
-        return self._ssm_config.get("auto_export", True)
+        return self._enhanced_ssm.auto_export if self._enhanced_ssm else True
     
     @property
     def ssm_auto_import(self) -> bool:
         """Check if auto-import is enabled"""
-        return self._ssm_config.get("auto_import", True)
+        return self._enhanced_ssm.auto_import if self._enhanced_ssm else True
     
     def get_parameter_path(self, attribute: str, custom_path: Optional[str] = None, context: Dict[str, Any] = None) -> str:
         """
@@ -139,61 +92,13 @@ class EnhancedBaseConfig(BaseConfig):
         Returns:
             The formatted SSM parameter path
         """
+        if self._enhanced_ssm:
+            return self._enhanced_ssm.get_parameter_path(attribute, custom_path)
+        
+        # Fallback to simple path generation
         if custom_path and custom_path.startswith("/"):
             return custom_path
-            
-        # Use the enhanced pattern
-        pattern = self.ssm_pattern
-        
-        # Build context for template formatting
-        format_context = {
-            "organization": self.ssm_organization,
-            "environment": self.ssm_environment,
-            "stack_type": self.resource_type or "unknown",
-            "resource_name": custom_path or attribute,
-            "attribute": custom_path or attribute
-        }
-        
-        # Add any additional context variables
-        if context:
-            format_context.update(context)
-        
-        # Handle template variables in curly braces (e.g., {{ENVIRONMENT}})
-        import re
-        def replace_template_vars(match):
-            var_name = match.group(1)
-            if var_name in format_context:
-                return str(format_context[var_name])
-            # Try environment variables
-            env_value = os.getenv(var_name)
-            if env_value:
-                return env_value
-            # Return original if not found
-            return match.group(0)
-        
-        # Replace {{VAR}} patterns first
-        pattern = re.sub(r'\{\{([^}]+)\}\}', replace_template_vars, pattern)
-        
-        # Then handle {resource_name} patterns
-        try:
-            return pattern.format(**format_context)
-        except KeyError as e:
-            # If a required variable is missing, log a warning and return a fallback path
-            import logging
-            logging.warning(f"Missing template variable {e} for SSM path pattern: {pattern}")
-            return f"/{self.ssm_organization}/{self.ssm_environment}/{attribute}"
-    
-    def get_auto_export_attributes(self) -> List[str]:
-        """Get list of attributes that should be auto-exported for this resource type"""
-        if not self.resource_type:
-            return []
-        return RESOURCE_AUTO_EXPORTS.get(self.resource_type, [])
-    
-    def get_auto_import_attributes(self) -> List[str]:
-        """Get list of attributes that should be auto-imported for this resource type"""
-        if not self.resource_type:
-            return []
-        return RESOURCE_AUTO_IMPORTS.get(self.resource_type, [])
+        return f"/{self.ssm_organization}/{self.ssm_environment}/{attribute}"
     
     def get_export_definitions(self, context: Dict[str, Any] = None) -> List[SsmParameterDefinition]:
         """
@@ -205,48 +110,9 @@ class EnhancedBaseConfig(BaseConfig):
         Returns:
             List of SSM parameter definitions for export
         """
-        if not self.ssm_enabled:
-            return []
-            
-        definitions = []
-        
-        # Start with configured exports - support both "exports" and "parameters" field names
-        configured_exports = self._ssm_config.get("exports", self._ssm_config.get("parameters", {}))
-        
-        # Add auto-discovered exports if enabled
-        if self.ssm_auto_export:
-            auto_exports = self.get_auto_export_attributes()
-            for attr in auto_exports:
-                attr_key = f"{attr}_path"
-                if attr_key not in configured_exports:
-                    configured_exports[attr_key] = "auto"
-        
-        # Also check legacy ssm_exports from base config
-        legacy_exports = self.ssm_exports
-        for key, path in legacy_exports.items():
-            if key not in configured_exports:
-                configured_exports[key] = path
-        
-        # Convert to parameter definitions
-        for attr_key, path_config in configured_exports.items():
-            # Extract attribute name (remove _path suffix if present)
-            attr_name = attr_key[:-5] if attr_key.endswith("_path") else attr_key
-            
-            # Determine the actual path
-            if path_config == "auto":
-                actual_path = self.get_parameter_path(attr_name, context=context)
-            else:
-                # Use the path_config as the resource_name part in the template
-                actual_path = self.get_parameter_path(path_config, context=context)
-            
-            definitions.append(SsmParameterDefinition(
-                attribute=attr_name,
-                path=actual_path,
-                description=f"Auto-exported {attr_name} for {self.resource_name or self.resource_type}",
-                auto_export=True
-            ))
-            
-        return definitions
+        if self._enhanced_ssm:
+            return self._enhanced_ssm.get_export_definitions()
+        return []
     
     def get_import_definitions(self, context: Dict[str, Any] = None) -> List[SsmParameterDefinition]:
         """
@@ -258,47 +124,9 @@ class EnhancedBaseConfig(BaseConfig):
         Returns:
             List of SSM parameter definitions for import
         """
-        if not self.ssm_enabled:
-            return []
-            
-        definitions = []
-        
-        # Start with configured imports
-        configured_imports = self._ssm_config.get("imports", {})
-        
-        # Add auto-discovered imports if enabled
-        if self.ssm_auto_import:
-            auto_imports = self.get_auto_import_attributes()
-            for attr in auto_imports:
-                attr_key = f"{attr}_path"
-                if attr_key not in configured_imports:
-                    configured_imports[attr_key] = "auto"
-        
-        # Also check legacy ssm_imports from base config
-        legacy_imports = self.ssm_imports
-        for key, path in legacy_imports.items():
-            if key not in configured_imports:
-                configured_imports[key] = path
-        
-        # Convert to parameter definitions
-        for attr_key, path_config in configured_imports.items():
-            # Extract attribute name (remove _path suffix if present)
-            attr_name = attr_key[:-5] if attr_key.endswith("_path") else attr_key
-            
-            # Determine the actual path
-            if path_config == "auto":
-                actual_path = self.get_parameter_path(attr_name, context=context)
-            else:
-                actual_path = self.get_parameter_path(attr_name, path_config, context)
-            
-            definitions.append(SsmParameterDefinition(
-                attribute=attr_name,
-                path=actual_path,
-                description=f"Auto-imported {attr_name} for {self.resource_name or self.resource_type}",
-                auto_import=True
-            ))
-            
-        return definitions
+        if self._enhanced_ssm:
+            return self._enhanced_ssm.get_import_definitions()
+        return []
     
     # Override parent methods to use enhanced functionality
     def get_export_path(self, key: str, resource_type: str = None, resource_name: str = None, context: Dict[str, Any] = None) -> Optional[str]:
@@ -306,7 +134,7 @@ class EnhancedBaseConfig(BaseConfig):
         Get an SSM parameter path for exporting a specific attribute with enhanced auto-discovery.
         """
         # First check if we have enhanced SSM config
-        if self.ssm_enabled:
+        if self._enhanced_ssm:
             export_defs = self.get_export_definitions(context)
             for definition in export_defs:
                 if definition.attribute == key:
@@ -320,7 +148,7 @@ class EnhancedBaseConfig(BaseConfig):
         Get an SSM parameter path for importing a specific attribute with enhanced auto-discovery.
         """
         # First check if we have enhanced SSM config
-        if self.ssm_enabled:
+        if self._enhanced_ssm:
             import_defs = self.get_import_definitions(context)
             for definition in import_defs:
                 if definition.attribute == key:
