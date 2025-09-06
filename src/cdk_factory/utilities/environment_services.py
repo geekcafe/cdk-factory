@@ -15,6 +15,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
 from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
 )
+from cdk_factory.interfaces.live_ssm_resolver import LiveSsmResolver
 from aws_lambda_powertools import Logger
 
 logger = Logger(__name__)
@@ -128,7 +129,7 @@ class EnvironmentVariables:
     @staticmethod
     def get_integration_tests_setting() -> bool:
         """
-        deteremine if integration tests are run from an environment var
+        determine if integration tests are run from an environment var
         """
         value = str(os.getenv("RUN_INTEGRATION_TESTS", "False")).lower() == "true"
         env = EnvironmentVariables.get_environment_setting()
@@ -156,7 +157,7 @@ class EnvironmentVariables:
 
 class EnvironmentServices:
     """
-    This class is a collection of services that are used in the appliction
+    This class is a collection of services that are used in the application
     """
 
     @staticmethod
@@ -167,7 +168,7 @@ class EnvironmentServices:
         lambda_config: LambdaFunctionConfig,
         scope: Construct,
     ) -> dict | None:
-        """Loads environment varaibles"""
+        """Loads environment variables"""
         if not environment:
             environment = {}
         # more verbose
@@ -188,14 +189,61 @@ class EnvironmentServices:
             "name", "workload"
         )
         environment["LOG_LEVEL"] = lambda_config.log_level
-        environment["DELPOYMENT_DATE"] = f"{datetime.now(UTC)}-UTC"
+        environment["DEPLOYMENT_DATE"] = f"{datetime.now(UTC)}-UTC"
 
         if lambda_config.environment_variables is None:
             return environment
+        
+        # Initialize live SSM resolver if configuration supports it
+        live_resolver = None
+        if hasattr(lambda_config, 'ssm') and lambda_config.ssm:
+            try:
+                # Convert lambda config to dict format for LiveSsmResolver
+                ssm_config = lambda_config.ssm if isinstance(lambda_config.ssm, dict) else lambda_config.ssm.__dict__
+                live_resolver = LiveSsmResolver({"ssm": ssm_config})
+                if live_resolver.enabled:
+                    logger.info("Live SSM resolution enabled for Lambda environment variables")
+            except Exception as e:
+                logger.warning(f"Failed to initialize live SSM resolver: {e}")
+        
         # load the other environment vars
         for item in lambda_config.environment_variables:
             name = item["name"]
             value = item.get("value")
+            if not value:
+                if "ssm_parameter" in item:
+                    ssm_parameter_path = item["ssm_parameter"]
+                    
+                    # Get CDK token value first
+                    cdk_token_value = ssm.StringParameter.value_for_string_parameter(
+                        scope=scope,
+                        parameter_name=ssm_parameter_path,
+                    )
+                    
+                    # Try live resolution if available and appropriate
+                    if live_resolver and live_resolver.should_use_live_resolution(cdk_token_value):
+                        live_value = live_resolver.resolve_parameter(
+                            ssm_parameter_path, 
+                            fallback_value=None
+                        )
+                        if live_value:
+                            logger.info(f"Live resolved environment variable {name} from {ssm_parameter_path}")
+                            value = live_value
+                        else:
+                            logger.warning(f"Live resolution failed for {name}, using CDK token")
+                            value = cdk_token_value
+                    else:
+                        value = cdk_token_value
+                        
+                elif "fallback_value" in item:
+                    value = item["fallback_value"]
+                    
+                if not value:
+                    logger.warning(
+                        f"Environment variable {name} is not set. A future version will throw an error."
+                    )
+                    continue
+            # set the value
             environment[name] = value
 
         return environment

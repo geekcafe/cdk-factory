@@ -15,6 +15,7 @@ from constructs import Construct
 from aws_lambda_powertools import Logger
 from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig, SsmParameterDefinition
 from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
+from cdk_factory.interfaces.live_ssm_resolver import LiveSsmResolver
 
 logger = Logger(service="EnhancedSsmParameterMixin")
 
@@ -40,12 +41,18 @@ class EnhancedSsmParameterMixin:
             resource_type: Type of resource (e.g., 'api_gateway', 'cognito', 'dynamodb')
             resource_name: Name of the resource instance
         """
+        config_dict = config if isinstance(config, dict) else config.dictionary
         self.enhanced_ssm_config = EnhancedSsmConfig(
-            config=config if isinstance(config, dict) else config.dictionary,
+            config=config_dict,
             resource_type=resource_type or "unknown",
             resource_name=resource_name or "default"
         )
         self.scope = scope
+        
+        # Initialize live SSM resolver if configured
+        self.live_resolver = LiveSsmResolver(config_dict)
+        if self.live_resolver.enabled:
+            logger.info(f"Live SSM resolution enabled for {resource_type}/{resource_name}")
         
     def auto_export_resources(self, resource_values: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, str]:
         """
@@ -160,7 +167,7 @@ class EnhancedSsmParameterMixin:
     
     def _import_enhanced_ssm_parameter(self, path: str, attribute: str) -> Optional[str]:
         """
-        Import an SSM parameter value with enhanced error handling.
+        Import an SSM parameter value with enhanced error handling and live resolution fallback.
         
         Args:
             path: SSM parameter path
@@ -178,8 +185,28 @@ class EnhancedSsmParameterMixin:
                 construct_id,
                 path
             )
-            return param.string_value
+            cdk_token_value = param.string_value
+            
+            # Check if we should use live resolution for this token
+            if hasattr(self, 'live_resolver') and self.live_resolver.should_use_live_resolution(cdk_token_value):
+                live_value = self.live_resolver.resolve_parameter(path, fallback_value=None)
+                if live_value:
+                    logger.info(f"Live resolved {attribute} from {path}: {live_value[:20]}...")
+                    return live_value
+                else:
+                    logger.warning(f"Live resolution failed for {attribute} at {path}, using CDK token")
+            
+            return cdk_token_value
+            
         except Exception as e:
+            # Try live resolution as fallback if CDK parameter import fails
+            if hasattr(self, 'live_resolver') and self.live_resolver.enabled:
+                logger.info(f"CDK parameter import failed for {path}, attempting live resolution")
+                live_value = self.live_resolver.resolve_parameter(path, fallback_value=None)
+                if live_value:
+                    logger.info(f"Live resolved {attribute} from {path} after CDK failure")
+                    return live_value
+            
             logger.debug(f"Failed to import SSM parameter {path} for {attribute}: {e}")
             return None
     
