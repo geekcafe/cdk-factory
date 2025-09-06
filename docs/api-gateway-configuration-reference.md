@@ -22,15 +22,56 @@
 }
 ```
 
-### Using Existing API Gateway
+### Using Existing API Gateway with Auto Import
 
 ```json
 {
   "name": "my-service-stack",
   "api_gateway": {
-    "ssm_imports": {
-      "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
-      "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id"
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "dev",
+      "auto_import": true
+    },
+    "authorizer": {
+      "type": "COGNITO_USER_POOLS"
+    }
+  },
+  "lambda_functions": [
+    {
+      "name": "get-users",
+      "src": "src/handlers/users",
+      "handler": "get_users.handler",
+      "api": {
+        "method": "GET",
+        "route": "/users",
+        "authorization_type": "COGNITO"
+      }
+    }
+  ]
+}
+```
+
+### Using Existing API Gateway with Explicit Imports
+
+```json
+{
+  "name": "my-service-stack",
+  "api_gateway": {
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "dev",
+      "auto_import": false,
+      "imports": {
+        "api_id": "rest-api/id",
+        "root_resource_id": "rest-api/root-resource-id",
+        "authorizer_id": "authorizer/id"
+      }
+    },
+    "authorizer": {
+      "type": "COGNITO_USER_POOLS"
     }
   },
   "lambda_functions": [
@@ -54,8 +95,7 @@ The API Gateway integration follows this configuration hierarchy:
 
 1. **Lambda Function Level** - Individual function API settings
 2. **Stack Level** - Shared API Gateway configuration
-3. **Environment Variables** - Runtime configuration
-4. **SSM Parameters** - Cross-stack references
+3. **SSM Parameters** - Cross-stack references
 
 ## Lambda Function API Configuration
 
@@ -200,60 +240,39 @@ The API Gateway integration follows this configuration hierarchy:
 }
 ```
 
-#### SSM Import Configuration (for service stacks)
+#### SSM Auto Import Configuration (for service stacks)
 ```json
 {
   "api_gateway": {
-    "ssm_imports": {
-      "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
-      "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id",
-      "authorizer_id": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "infrastructure",
+      "auto_import": true
     }
   }
 }
 ```
 
-#### Legacy SSM Configuration (backward compatibility)
+#### SSM Explicit Import Configuration (for service stacks)
 ```json
 {
   "api_gateway": {
-    "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/id",
-    "root_resource_id_ssm_path": "/my-cool-app/infrastructure/api-gateway/root-resource-id",
-    "authorizer": {
-      "id_ssm_path": "/my-cool-app/infrastructure/api-gateway/authorizer/id"
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "infrastructure",
+      "auto_import": false,
+      "imports": {
+        "api_id": "rest-api/id",
+        "root_resource_id": "rest-api/root-resource-id",
+        "authorizer_id": "authorizer/id"
+      }
     }
   }
 }
 ```
 
-## Environment Variables
-
-### Default Environment Variables
-
-The following environment variables are automatically recognized:
-
-| Variable | Purpose | Default SSM Path |
-|----------|---------|------------------|
-| `API_GATEWAY_ID` | API Gateway ID | `/my-cool-app/{stack}/api-gateway/id` |
-| `API_GATEWAY_ROOT_RESOURCE_ID` | Root resource ID | `/my-cool-app/{stack}/api-gateway/root-resource-id` |
-| `COGNITO_AUTHORIZER_ID` | Authorizer ID | `/my-cool-app/{stack}/api-gateway/authorizer/id` |
-| `COGNITO_USER_POOL_ID` | User pool ID | - |
-
-### Custom Environment Variables
-
-Configure custom environment variable names:
-
-```json
-{
-  "api_gateway": {
-    "id_env_var": "MY_API_GATEWAY_ID",
-    "root_resource_id_env_var": "MY_ROOT_RESOURCE_ID",
-    "authorizer": {
-      "id_env_var": "MY_AUTHORIZER_ID"
-    }
-  }
-}
-```
 
 ## Advanced Configuration Patterns
 
@@ -280,10 +299,11 @@ Configure custom environment variable names:
 {
   "name": "user-service-${ENVIRONMENT}",
   "api_gateway": {
-    "ssm_imports": {
-      "api_id": "/my-cool-app/infrastructure-${ENVIRONMENT}/api-gateway/rest-api/id",
-      "root_resource_id": "/my-cool-app/infrastructure-${ENVIRONMENT}/api-gateway/rest-api/root-resource-id",
-      "authorizer_id": "/my-cool-app/infrastructure-${ENVIRONMENT}/api-gateway/authorizer/id"
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "infrastructure-${ENVIRONMENT}",
+      "auto_import": true
     }
   }
 }
@@ -323,9 +343,11 @@ Configure custom environment variable names:
 {
   "name": "user-service-stack",
   "api_gateway": {
-    "ssm_imports": {
-      "api_id": "/my-cool-app/api-gateway-stack/rest-api/id",
-      "root_resource_id": "/my-cool-app/api-gateway-stack/rest-api/root-resource-id"
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "api-gateway-stack",
+      "auto_import": true
     }
   },
   "lambda_functions": [
@@ -350,9 +372,11 @@ Configure custom environment variable names:
 {
   "name": "order-service-stack",
   "api_gateway": {
-    "ssm_imports": {
-      "api_id": "/my-cool-app/api-gateway-stack/rest-api/id",
-      "root_resource_id": "/my-cool-app/api-gateway-stack/rest-api/root-resource-id"
+    "ssm": {
+      "enabled": true,
+      "organization": "my-cool-app",
+      "environment": "api-gateway-stack",
+      "auto_import": true
     }
   },
   "lambda_functions": [
@@ -584,18 +608,23 @@ logging.getLogger('ApiGatewayIntegrationUtility').setLevel(logging.DEBUG)
    // ❌ Will fail if SSM parameter doesn't exist
    {
      "api_gateway": {
-       "ssm_imports": {
-         "api_id": "/nonexistent/parameter"
+       "ssm": {
+         "enabled": true,
+         "organization": "nonexistent",
+         "environment": "invalid",
+         "auto_import": true
        }
      }
    }
    
-   // ✅ Use correct SSM parameter paths
+   // ✅ Use correct organization and environment
    {
      "api_gateway": {
-       "ssm_imports": {
-         "api_id": "/my-cool-app/infrastructure/api-gateway/rest-api/id",
-         "root_resource_id": "/my-cool-app/infrastructure/api-gateway/rest-api/root-resource-id"
+       "ssm": {
+         "enabled": true,
+         "organization": "my-cool-app",
+         "environment": "infrastructure",
+         "auto_import": true
        }
      }
    }

@@ -15,7 +15,7 @@ class LoadBalancerConfig(EnhancedBaseConfig):
     """
 
     def __init__(self, config: dict, deployment) -> None:
-        super().__init__(config or {}, resource_type="load_balancer", resource_name=config.get("name", "load_balancer") if config else "load_balancer")
+        super().__init__(config or {}, resource_type="load-balancer", resource_name=config.get("name", "load-balancer") if config else "load-balancer")
         self.__config = config or {}
         self.__deployment = deployment
 

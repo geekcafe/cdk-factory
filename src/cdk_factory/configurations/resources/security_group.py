@@ -15,7 +15,7 @@ class SecurityGroupConfig(EnhancedBaseConfig):
     """
 
     def __init__(self, config: dict, deployment) -> None:
-        super().__init__(config or {}, resource_type="security_group", resource_name=config.get("name", "security_group") if config else "security_group")
+        super().__init__(config or {}, resource_type="security-group", resource_name=config.get("name", "security-group") if config else "security-group")
         self.__config = config or {}
         self.__deployment = deployment
 

@@ -274,20 +274,20 @@ def lambda_handler(event, context):
 
         # Expected SSM parameter paths from new enhanced pattern
         expected_api_gateway_params = {
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/api_id": "api_id",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/api_arn": "api_arn",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/api_url": "api_url",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/root_resource_id": "root_resource_id",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/authorizer_id": "authorizer_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_id": "api_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_arn": "api_arn",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_url": "api_url",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/root_resource_id": "root_resource_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/authorizer_id": "authorizer_id",
         }
 
         # Check that the main SSM parameters are created with correct paths
         main_params = [
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/api_id",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/api_arn",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/api_url",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/root_resource_id",
-            "/my-cool-app/dev/api_gateway/my-cool-app-dev/authorizer_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_arn",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/api_url",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/root_resource_id",
+            "/my-cool-app/dev/api-gateway/my-cool-app-dev/authorizer_id",
         ]
 
         for param_path in main_params:

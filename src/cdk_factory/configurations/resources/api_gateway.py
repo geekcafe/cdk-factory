@@ -17,9 +17,9 @@ class ApiGatewayConfig(EnhancedBaseConfig):
     def __init__(self, config: dict = None) -> None:
         super().__init__(
             config or {},
-            resource_type="api_gateway",
+            resource_type="api-gateway",
             resource_name=(
-                config.get("name", "api_gateway") if config else "api_gateway"
+                config.get("name", "api-gateway") if config else "api-gateway"
             ),
         )
         self.__config = config or {}

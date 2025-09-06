@@ -372,7 +372,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         self.setup_enhanced_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("api_gateway", {}),
-            resource_type="api_gateway",
+            resource_type="api-gateway",
             resource_name=api_name,
         )
 

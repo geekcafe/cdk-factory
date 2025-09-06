@@ -163,6 +163,13 @@ RESOURCE_AUTO_EXPORTS = {
         "root_resource_id",
         "authorizer_id",
     ],
+    "api-gateway": [
+        "api_id",
+        "api_arn",
+        "api_url",
+        "root_resource_id",
+        "authorizer_id",
+    ],
     "cognito": [
         "user_pool_id",
         "user_pool_arn",
@@ -179,6 +186,7 @@ RESOURCE_AUTO_IMPORTS = {
     "rds": ["vpc_id", "security_group_ids", "subnet_group_name"],
     "lambda": ["vpc_id", "security_group_ids", "subnet_ids"],
     "api_gateway": ["user_pool_arn"],
+    "api-gateway": ["user_pool_arn"],
     "ecs": ["vpc_id", "security_group_ids", "subnet_ids"],
     "alb": ["vpc_id", "security_group_ids", "subnet_ids"],
 }

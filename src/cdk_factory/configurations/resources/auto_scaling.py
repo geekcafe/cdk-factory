@@ -15,7 +15,7 @@ class AutoScalingConfig(EnhancedBaseConfig):
     """
 
     def __init__(self, config: dict, deployment) -> None:
-        super().__init__(config or {}, resource_type="auto_scaling", resource_name=config.get("name", "auto_scaling") if config else "auto_scaling")
+        super().__init__(config or {}, resource_type="auto-scaling", resource_name=config.get("name", "auto-scaling") if config else "auto-scaling")
         self.__config = config or {}
         self.__deployment = deployment
 
