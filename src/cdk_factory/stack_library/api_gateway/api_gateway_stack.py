@@ -344,6 +344,16 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                     resource.add_method(
                         route["method"].upper(), integration, **method_options
                     )
+                    
+                    # Store integration info for deployment finalization
+                    integration_info = {
+                        "api_gateway": api_gateway,
+                        "function_name": f"{api_id}-lambda-{suffix}",
+                        "route_path": route_path,
+                        "method": route["method"].upper()
+                    }
+                    self.api_gateway_integrations.append(integration_info)
+                    
                 except Exception as e:
                     print(str(e))
             # Add CORS mock OPTIONS method if requested or default
@@ -358,10 +368,62 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 origins_list=origins,
             )
 
+        # Finalize API Gateway deployments after all routes are added
+        self.__finalize_api_gateway_deployments()
+
         # Export API Gateway configuration to SSM parameters using enhanced pattern
         self._export_ssm_parameters(api_gateway, authorizer)
 
         return api_gateway
+
+    def __finalize_api_gateway_deployments(self):
+        """
+        Create new deployments for API Gateways after all routes have been added.
+        This ensures that all routes are included in the deployed stage.
+        """
+        if not hasattr(self, 'api_gateway_integrations') or not self.api_gateway_integrations:
+            logger.info("No API Gateway integrations found, skipping deployment finalization")
+            return
+
+        # Group integrations by API Gateway
+        api_gateways = {}
+        for integration in self.api_gateway_integrations:
+            api_gateway = integration.get('api_gateway')
+            if api_gateway:
+                api_id = api_gateway.rest_api_id
+                if api_id not in api_gateways:
+                    api_gateways[api_id] = {
+                        'api_gateway': api_gateway,
+                        'integrations': []
+                    }
+                api_gateways[api_id]['integrations'].append(integration)
+
+        # Create new deployments for each API Gateway
+        for api_id, api_info in api_gateways.items():
+            api_gateway = api_info['api_gateway']
+            integration_count = len(api_info['integrations'])
+            
+            logger.info(f"Creating new deployment for API Gateway {api_id} with {integration_count} integrations")
+            
+            # Create a new deployment
+            deployment = apigateway.Deployment(
+                self,
+                f"{api_id}-deployment-final",
+                api=api_gateway,
+                description=f"Deployment with all {integration_count} routes included"
+            )
+            
+            # Update or create the stage with the new deployment
+            stage_name = "prod"  # Default stage name
+            stage = apigateway.Stage(
+                self,
+                f"{api_id}-stage-final",
+                deployment=deployment,
+                stage_name=stage_name,
+                description=f"Production stage with all routes deployed"
+            )
+            
+            logger.info(f"Created stage '{stage_name}' for API Gateway {api_id}")
 
     def _export_ssm_parameters(self, api_gateway, authorizer=None):
         """Export API Gateway resources to SSM using enhanced SSM parameter mixin"""
