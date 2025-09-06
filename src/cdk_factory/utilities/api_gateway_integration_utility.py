@@ -706,7 +706,53 @@ class ApiGatewayIntegrationUtility:
         if authorizer_id:
             return authorizer_id
 
-        # Try SSM parameter lookup
+        # Try enhanced SSM parameter lookup with auto-discovery
+        api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+        ssm_config = api_gateway_config.get("ssm", {})
+        
+        if ssm_config.get("enabled", False):
+            try:
+                from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
+                    EnhancedSsmParameterMixin,
+                )
+
+                ssm_mixin = EnhancedSsmParameterMixin()
+
+                # Setup enhanced SSM integration for auto-import
+                # Use "user-pool" as resource identifier for SSM paths to match cognito exports
+                ssm_mixin.setup_enhanced_ssm_integration(
+                    scope=self.scope,
+                    config=api_gateway_config,
+                    resource_type="api-gateway",
+                    resource_name="main-api",  # Use consistent resource name
+                )
+
+                # Check if authorizer_id is configured for import
+                imports_config = ssm_config.get("imports", {})
+                if "authorizer_id" in imports_config:
+                    import_value = imports_config["authorizer_id"]
+                    
+                    if import_value == "auto":
+                        logger.info("Using auto-import for authorizer ID")
+                        imported_values = ssm_mixin.auto_import_resources()
+                        authorizer_id = imported_values.get("authorizer_id")
+                        if authorizer_id:
+                            logger.info(f"Found authorizer ID via auto-import: {authorizer_id}")
+                            return authorizer_id
+                    else:
+                        # Use direct parameter import for specific SSM path
+                        logger.info(f"Looking up authorizer ID from SSM parameter: {import_value}")
+                        authorizer_id = ssm_mixin._import_enhanced_ssm_parameter(
+                            import_value, "authorizer_id"
+                        )
+                        if authorizer_id:
+                            logger.info(f"Found authorizer ID from SSM: {authorizer_id}")
+                            return authorizer_id
+
+            except Exception as e:
+                logger.warning(f"Failed to retrieve authorizer ID via enhanced SSM: {e}")
+
+        # Fallback to traditional SSM parameter lookup
         authorizer_config = stack_config.dictionary.get("api_gateway", {}).get(
             "authorizer", {}
         )

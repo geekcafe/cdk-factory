@@ -265,6 +265,7 @@ RESOURCE_AUTO_EXPORTS = {
         "user_pool_arn",
         "user_pool_name",
         "user_pool_client_id",
+        "authorizer_id",
     ],
     "lambda": ["function_name", "function_arn"],
     "s3": ["bucket_name", "bucket_arn"],
@@ -288,10 +289,12 @@ RESOURCE_AUTO_IMPORTS = {
         "user_pool_arn": {"source_resource_type": "cognito"}
     },
     "api_gateway": {
-        "user_pool_arn": {"source_resource_type": "cognito"}
+        "user_pool_arn": {"source_resource_type": "cognito"},
+        "authorizer_id": {"source_resource_type": "cognito"}
     },
     "api-gateway": {
-        "user_pool_arn": {"source_resource_type": "cognito"}
+        "user_pool_arn": {"source_resource_type": "cognito"},
+        "authorizer_id": {"source_resource_type": "cognito"}
     },
     "ecs": {
         "vpc_id": {"source_resource_type": "vpc"},
