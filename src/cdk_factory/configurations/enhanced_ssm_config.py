@@ -145,7 +145,9 @@ class EnhancedSsmConfig:
                                 "vpc": "main-vpc",
                                 "cognito": "user-pool", 
                                 "security_group": "main-sg",
-                                "dynamodb": "main-table"
+                                "dynamodb": "main-table",
+                                "api_gateway": "cdk-factory-api-gw",
+                                "api-gateway": "cdk-factory-api-gw"
                             }
                             source_resource_name = default_names.get(source_resource_type, f"main-{source_resource_type}")
                             path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
@@ -197,7 +199,9 @@ class EnhancedSsmConfig:
                             "vpc": "main-vpc",
                             "cognito": "user-pool", 
                             "security_group": "main-sg",
-                            "dynamodb": "main-table"
+                            "dynamodb": "main-table",
+                            "api_gateway": "cdk-factory-api-gw",
+                            "api-gateway": "cdk-factory-api-gw"
                         }
                         source_resource_name = default_names.get(source_resource_type, f"main-{source_resource_type}")
                         path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)

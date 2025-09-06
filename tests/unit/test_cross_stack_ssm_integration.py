@@ -151,10 +151,11 @@ class TestCrossStackSsmIntegration(unittest.TestCase):
             resource_name="user-pool"
         )
         
+        # Use consistent resource name for cross-stack compatibility
         api_gateway_ssm = EnhancedSsmConfig(
             config=base_config,
             resource_type="api-gateway",
-            resource_name="main-api"
+            resource_name="cdk-factory-api-gw"
         )
         
         lambda_ssm = EnhancedSsmConfig(

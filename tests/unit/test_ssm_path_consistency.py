@@ -187,7 +187,7 @@ class TestSsmPathConsistency(unittest.TestCase):
         # Create configs for different resource types
         configs = [
             ("cognito", "user-pool"),
-            ("api-gateway", "main-api"), 
+            ("api-gateway", "cdk-factory-api-gw"), 
             ("dynamodb", "app-table"),
             ("lambda", "processor-function")
         ]

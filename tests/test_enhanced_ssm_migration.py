@@ -234,11 +234,11 @@ def test_custom_patterns():
         }
     }
     
-    enhanced_config = EnhancedBaseConfig(config, resource_type="api_gateway", resource_name="main-api")
+    enhanced_config = EnhancedBaseConfig(config, resource_type="api_gateway", resource_name="cdk-factory-api-gw")
     
     # Test custom pattern
     api_id_path = enhanced_config.get_parameter_path("api_gateway_id")
-    expected_path = "/acme-corp/prod/main-api-api_gateway_id"
+    expected_path = "/acme-corp/prod/cdk-factory-api-gw-api_gateway_id"
     assert api_id_path == expected_path, f"Expected {expected_path}, got {api_id_path}"
     
     print("  ✓ Custom pattern tests passed")

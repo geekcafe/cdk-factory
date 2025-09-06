@@ -719,12 +719,12 @@ class ApiGatewayIntegrationUtility:
                 ssm_mixin = EnhancedSsmParameterMixin()
 
                 # Setup enhanced SSM integration for auto-import
-                # Use "user-pool" as resource identifier for SSM paths to match cognito exports
+                # Use consistent resource name for cross-stack compatibility
                 ssm_mixin.setup_enhanced_ssm_integration(
                     scope=self.scope,
                     config=api_gateway_config,
                     resource_type="api-gateway",
-                    resource_name="main-api",  # Use consistent resource name
+                    resource_name="cdk-factory-api-gw",  # Use descriptive name for cross-stack sharing
                 )
 
                 # Check if authorizer_id is configured for import

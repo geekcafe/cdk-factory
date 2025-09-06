@@ -129,10 +129,11 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
         # Test using direct SSM config creation instead of mock stack
         from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig
         
+        # Use consistent resource name for cross-stack compatibility
         api_gateway_ssm = EnhancedSsmConfig(
             config=api_gateway_config,
             resource_type="api-gateway",
-            resource_name="main-api"
+            resource_name="cdk-factory-api-gw"
         )
         
         # Get import definitions
@@ -211,10 +212,11 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
             resource_name="user-pool"
         )
         
+        # Use consistent resource name for cross-stack compatibility
         api_gateway_ssm = EnhancedSsmConfig(
             config={"api_gateway": {"ssm": api_gateway_config}},
             resource_type="api-gateway",
-            resource_name="test-api"
+            resource_name="cdk-factory-api-gw"
         )
 
         # Get definitions
