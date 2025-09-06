@@ -491,11 +491,9 @@ class ApiGatewayIntegrationUtility:
                 api_gateway_config = stack_config.dictionary.get("api_gateway", {})
                 ssm_config = api_gateway_config.get("ssm", {})
                 ssm_imports = ssm_config.get("imports", {})
-                ssm_path = ssm_imports.get("user_pool_arn")
-
-                # Fallback to legacy user_pool_arn_ssm_path for backward compatibility
-                if not ssm_path:
-                    ssm_path = cognito_config.get("user_pool_arn_ssm_path")
+                ssm_path = ssm_imports.get("user_pool_arn") or cognito_config.get(
+                    "user-pool-arn"
+                )
 
                 if ssm_path:
                     # Use enhanced SSM parameter import with auto-discovery support
