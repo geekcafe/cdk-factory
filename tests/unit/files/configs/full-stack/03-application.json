@@ -1,0 +1,352 @@
+{
+    "cdk": {
+      "parameters": [
+        {
+          "placeholder": "{{ENVIRONMENT}}",
+          "env_var_name": "ENVIRONMENT",
+          "cdk_parameter_name": "Environment"
+        },
+        {
+          "placeholder": "{{WORKLOAD_NAME}}",
+          "env_var_name": "CDK_WORKLOAD_NAME",
+          "cdk_parameter_name": "WorkloadName"
+        },
+        {
+          "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+          "value": "./commands/cdk_synth.sh",
+          "cdk_parameter_name": "CdkSynthCommandFile"
+        },
+        {
+          "placeholder": "{{AWS_ACCOUNT}}",
+          "env_var_name": "AWS_ACCOUNT_NUMBER",
+          "cdk_parameter_name": "AccountNumber"
+        },
+        {
+          "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+          "env_var_name": "DEVOPS_AWS_ACCOUNT",
+          "cdk_parameter_name": "AccountNumber"
+        },
+        {
+          "placeholder": "{{DEVOPS_REGION}}",
+          "env_var_name": "DEVOPS_REGION",
+          "cdk_parameter_name": "AccountRegion"
+        },
+        {
+          "placeholder": "{{CODE_REPOSITORY_NAME}}",
+          "env_var_name": "CODE_REPOSITORY_NAME",
+          "cdk_parameter_name": "CodeRepoName"
+        },
+        {
+          "placeholder": "{{CODE_REPOSITORY_ARN}}",
+          "env_var_name": "CODE_REPOSITORY_ARN",
+          "cdk_parameter_name": "CodeRepoArn"
+        },
+        {
+          "placeholder": "{{GIT_BRANCH}}",
+          "env_var_name": "GIT_BRANCH",
+          "cdk_parameter_name": "GitBranch"
+        },
+        {
+          "placeholder": "{{VPC_ID}}",
+          "env_var_name": "VPC_ID",
+          "cdk_parameter_name": "VpcId",
+          "required": false
+        },
+        {
+          "placeholder": "{{ALB_SECURITY_GROUP_ID}}",
+          "env_var_name": "ALB_SECURITY_GROUP_ID",
+          "cdk_parameter_name": "AlbSecurityGroupId",
+          "required": false
+        },
+        {
+          "placeholder": "{{HOSTED_ZONE_ID}}",
+          "env_var_name": "HOSTED_ZONE_ID",
+          "cdk_parameter_name": "HostedZoneId",
+          "required": false
+        },
+        {
+          "placeholder": "{{HOSTED_ZONE_NAME}}",
+          "env_var_name": "HOSTED_ZONE_NAME",
+          "cdk_parameter_name": "HostedZoneName",
+          "required": false
+        },
+        {
+          "placeholder": "{{DNS_ALIAS}}",
+          "env_var_name": "DNS_ALIAS",
+          "cdk_parameter_name": "DnsAlias",
+          "required": false
+        },
+        {
+          "placeholder": "{{DNS_ALIAS2}}",
+          "env_var_name": "DNS_ALIAS2",
+          "cdk_parameter_name": "DnsAlias2",
+          "required": false
+        },
+        {
+          "placeholder": "{{AMI_ID}}",
+          "env_var_name": "AMI_ID",
+          "cdk_parameter_name": "AmiId",
+          "required": false
+        },
+        {
+          "placeholder": "{{WEB_TIER_SECURITY_GROUP_ID}}",
+          "env_var_name": "WEB_TIER_SECURITY_GROUP_ID",
+          "cdk_parameter_name": "WebTierSecurityGroupId",
+          "required": false
+        },
+        {
+          "placeholder": "{{WEB_TIER_SUBNET_GROUP_NAME}}",
+          "env_var_name": "WEB_TIER_SUBNET_GROUP_NAME",
+          "cdk_parameter_name": "WebTierSubnetGroupName",
+          "required": false
+        }
+      ]
+    },
+    "workload": {
+      "name": "abc-workload",
+      "description": "AWS Infrastructure for abc-workload",
+      "devops": {
+        "account": "123456789012",
+        "region": "us-east-1",
+        "code_repository": {
+          "name": "geekcafe/abc-workload-iac",
+          "type": "connector_arn",
+          "connector_arn": "arn:aws:codeconnections:us-east-1:123456789012:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
+        },
+        "commands": [
+          {
+            "name": "cdk_synth",
+            "commands": [],
+            "file": "./commands/cdk_synth.sh"
+          }
+        ]
+      },
+      "ssm_prefix_template": "/abc-workload/dev/{resource_type}/{attribute}",
+      "vpc_id": "vpc-0652f30e1494a58a4",
+      "stacks": [
+        {
+          "name": "abc-workload-dev-alb",
+          "module": "load_balancer_library_module",
+          "enabled": true,
+          "load_balancer": {
+            "name": "abc-workload-dev-alb",
+            "type": "APPLICATION",
+            "internet_facing": true,
+            "security_groups": [
+              "sg-066f7df0221d0bf82"
+            ],
+            "ip_whitelist": {
+              "enabled": true,
+              "allowed_cidrs": [
+                "136.47.252.238/32"
+              ],
+              "block_action": "fixed_response",
+              "block_response": {
+                "status_code": 403,
+                "content_type": "text/html",
+                "message_body": "<html><body><h1>Access Denied</h1><p>Your IP address is not authorized to access this resource. If you feel this isn't correct, please contact customer support</p></body></html>"
+              }
+            },
+            "target_groups": [
+              {
+                "name": "abc-workload-dev-tg",
+                "port": 80,
+                "protocol": "HTTP",
+                "target_type": "INSTANCE",
+                "health_check": {
+                  "path": "/"
+                }
+              }
+            ],
+            "listeners": [
+              {
+                "name": "http",
+                "port": 80,
+                "protocol": "HTTP",
+                "default_target_group": "abc-workload-dev-tg"
+              },
+              {
+                "name": "https",
+                "port": 443,
+                "protocol": "HTTPS",
+                "default_target_group": "abc-workload-dev-tg"
+              }
+            ],
+            "ssl_policy": "RECOMMENDED_TLS",
+            "hosted_zone": {
+              "id": "Z06066271RH5KWY5H47OD",
+              "name": "dev.geekcafe.com",
+              "record_names": [
+                "tt.dev.geekcafe.com",
+                "www.tt.dev.geekcafe.com"
+              ]
+            },
+            "ssm_exports": {
+              "alb_arn": "dev/abc-workload/alb/arn",
+              "alb_dns_name": "dev/abc-workload/alb/dns-name",
+              "alb_zone_id": "dev/abc-workload/alb/zone-id",
+              "target_group_trav-talks-dev-tg_arn": "dev/abc-workload/tg/arn"
+            }
+          }
+        },
+        {
+          "name": "abc-workload-dev-asg",
+          "module": "auto_scaling_library_module",
+          "enabled": true,
+          "auto_scaling": {
+            "name": "abc-workload-dev-asg",
+            "vpc_id": "vpc-0652f30e1494a58a4",
+            "instance_type": "t3.medium",
+            "min_capacity": 2,
+            "max_capacity": 6,
+            "desired_capacity": 2,
+            "subnet_group_name": "abc-workload-dev-web-tier",
+            "security_group_ids": [
+              "sg-0c9b4ff0d777e8fbb"
+            ],
+            "health_check_type": "ELB",
+            "health_check_grace_period": 300,
+            "cooldown": 300,
+            "termination_policies": [
+              "OLDEST_INSTANCE",
+              "DEFAULT"
+            ],
+            "managed_policies": [
+              "AmazonSSMManagedInstanceCore",
+              "CloudWatchAgentServerPolicy",
+              "AmazonEC2ContainerRegistryReadOnly"
+            ],
+            "ami_type": "amazon-linux-2023",
+            "detailed_monitoring": true,
+            "block_devices": [
+              {
+                "device_name": "/dev/xvda",
+                "volume_size": 30,
+                "volume_type": "GP3",
+                "delete_on_termination": true,
+                "encrypted": true
+              }
+            ],
+            "container_config_TMP": {
+              "ecr": {
+                "account_id": "{{ECR_ACCOUNT_ID}}",
+                "region": "{{AWS_REGION}}",
+                "repo": "sample-app",
+                "tag": "latest"
+              },
+              "database_TMP": {
+                "secret_arn": "{{DB_SECRET_ARN}}"
+              },
+              "port": 8080
+            },
+            "user_data_commands": [
+              "yum update -y",
+              "yum install -y amazon-cloudwatch-agent",
+              "systemctl enable amazon-cloudwatch-agent",
+              "systemctl start amazon-cloudwatch-agent",
+              "#!/bin/bash",
+              "# Log startup\necho 'Starting application setup' > /var/log/user-data.log",
+              "# Update system packages\nyum update -y",
+              "# Install Apache web server\nyum install -y httpd",
+              "# Create health check endpoint\ncat > /var/www/html/health <<EOF\n<!DOCTYPE html>\n<html>\n<head>\n  <title>Health Check</title>\n</head>\n<body>\n  <h1>OK</h1>\n</body>\n</html>\nEOF",
+              "# Create index page\ncat > /var/www/html/index.html <<EOF\n<!DOCTYPE html>\n<html>\n<head>\n  <title>abc-workload - dev</title>\n</head>\n<body>\n  <h1>Welcome to abc-workload - dev</h1>\n  <p>Server is up and running!</p>\n</body>\n</html>\nEOF",
+              "# Set proper permissions\nchown -R apache:apache /var/www/html",
+              "# Start and enable Apache service\nsystemctl start httpd\nsystemctl enable httpd",
+              "# Log completion\necho 'Web server setup complete' >> /var/log/user-data.log"
+            ],
+            "scaling_policies": [
+              {
+                "name": "cpu-scale-out",
+                "type": "target_tracking",
+                "metric_name": "CPUUtilization",
+                "statistic": "Average",
+                "period": 60,
+                "steps": [
+                  {
+                    "lower": 0,
+                    "upper": 30,
+                    "change": -1
+                  },
+                  {
+                    "lower": 70,
+                    "change": 1
+                  }
+                ]
+              },
+              {
+                "name": "request-count-scale",
+                "type": "step",
+                "metric_name": "RequestCount",
+                "statistic": "Sum",
+                "period": 60,
+                "steps": [
+                  {
+                    "lower": 0,
+                    "upper": 1000,
+                    "change": 0
+                  },
+                  {
+                    "lower": 1000,
+                    "upper": 5000,
+                    "change": 1
+                  },
+                  {
+                    "lower": 5000,
+                    "change": 2
+                  }
+                ]
+              }
+            ],
+            "update_policy": {
+              "min_instances_in_service": 1,
+              "max_batch_size": 1,
+              "pause_time": 300
+            },
+            "tags": {
+              "Environment": "dev",
+              "Application": "abc-workload",
+              "ManagedBy": "CDK-Factory"
+            },
+            "ssm_exports": {
+              "asg_name": "/dev/abc-workload/auto-scaling/name",
+              "asg_arn": "/dev/abc-workload/auto-scaling/arn"
+            },
+            "ssm_imports": {
+              "target_group_trav-talks_dev_tg_arn": "dev/abc-workload/tg/arn"
+            }
+          }
+        }
+      ],
+      "deployments": [
+        {
+          "name": "abc-workload-dev-app-pipeline",
+          "environment": "dev",
+          "account": "123456789012",
+          "region": "us-east-1",
+          "mode": "pipeline",
+          "pipeline": {
+            "name": "abc-workload-dev-app-pipeline",
+            "branch": "main",
+            "enabled": true,
+            "stages": [
+              {
+                "name": "Deploy-Load-Balancer",
+                "enabled": true,
+                "stacks": [
+                  "abc-workload-dev-alb"
+                ]
+              },
+              {
+                "name": "Deploy-Auto-Scaling-Group",
+                "enabled": true,
+                "stacks": [
+                  "abc-workload-dev-asg"
+                ]
+              }
+            ]
+          },
+          "enabled": true
+        }
+      ]
+    }
+  }

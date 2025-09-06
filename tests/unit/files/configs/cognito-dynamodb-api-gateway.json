@@ -72,12 +72,12 @@
     "name": "my-cool-app",
     "description": "General info about this app/workload",
     "devops": {
-      "account": "484433161997",
+      "account": "123456789012",
       "region": "us-east-1",
       "code_repository": {
         "name": "geekcafe/my-cool-app-aws-infrastructure",
         "type": "connector_arn",
-        "connector_arn": "arn:aws:codeconnections:us-east-1:484433161997:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
+        "connector_arn": "arn:aws:codeconnections:us-east-1:123456789012:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
       },
       "commands": [
         {
@@ -93,7 +93,7 @@
         "module": "bucket_stack",
         "enabled": true,
         "bucket": {
-          "name": "484433161997-my-cool-app-dev-my-cool-app-website",
+          "name": "123456789012-my-cool-app-dev-my-cool-app-website",
           "exists": false
         }
       },
@@ -102,7 +102,7 @@
         "module": "bucket_stack",
         "enabled": true,
         "bucket": {
-          "name": "484433161997-my-cool-app-dev-my-cool-app-website-cdn",
+          "name": "123456789012-my-cool-app-dev-my-cool-app-website-cdn",
           "exists": false
         }
       },
@@ -229,7 +229,7 @@
       {
         "name": "my-cool-app-dev-infra-pipeline",
         "environment": "dev",
-        "account": "484433161997",
+        "account": "123456789012",
         "region": "us-east-1",
         "mode": "pipeline",
         "pipeline": {

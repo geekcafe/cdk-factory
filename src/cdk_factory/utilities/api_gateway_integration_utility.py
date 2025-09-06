@@ -506,15 +506,12 @@ class ApiGatewayIntegrationUtility:
                     ssm_mixin = EnhancedSsmParameterMixin()
 
                     # Setup enhanced SSM integration for auto-import
-                    # Use the actual cognito user pool name from the configuration
-                    cognito_user_pool_name = cognito_config.get(
-                        "user_pool_name", "my-cool-app-dev"
-                    )
+                    # Use "user-pool" as resource identifier for SSM paths to match cognito exports
                     ssm_mixin.setup_enhanced_ssm_integration(
                         scope=self.scope,
                         config=stack_config.dictionary.get("api_gateway", {}),
                         resource_type="cognito",
-                        resource_name=cognito_user_pool_name,
+                        resource_name="user-pool",
                     )
 
                     # If ssm_path is "auto", use auto-import mechanism

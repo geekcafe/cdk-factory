@@ -68,8 +68,8 @@ def lambda_handler(event, context):
         # Set required environment variables for the config
         os.environ["ENVIRONMENT"] = "dev"
         os.environ["CDK_WORKLOAD_NAME"] = "my-cool-app"
-        os.environ["AWS_ACCOUNT_NUMBER"] = "484433161997"
-        os.environ["DEVOPS_AWS_ACCOUNT"] = "484433161997"
+        os.environ["AWS_ACCOUNT_NUMBER"] = "123456789012"
+        os.environ["DEVOPS_AWS_ACCOUNT"] = "123456789012"
         os.environ["DEVOPS_REGION"] = "us-east-1"
         os.environ["SITE_BUCKET_NAME"] = "test-bucket"
         os.environ["HOSTED_ZONE_ID"] = "Z02787413IAOSKE4U9VE8"
@@ -77,7 +77,7 @@ def lambda_handler(event, context):
         os.environ["DNS_ALIAS"] = "api.dev.my-cool-app.com"
         os.environ["CODE_REPOSITORY_NAME"] = "geekcafe/my-cool-app-aws-infrastructure"
         os.environ["CODE_REPOSITORY_ARN"] = (
-            "arn:aws:codeconnections:us-east-1:484433161997:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
+            "arn:aws:codeconnections:us-east-1:123456789012:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
         )
         os.environ["GIT_BRANCH"] = "main"
 
@@ -247,10 +247,12 @@ def lambda_handler(event, context):
         def find_api_gateway_stack(node):
             """Recursively search for api gateway stack"""
             # Check if this is a CDK Stack and contains api-gateway in the name
-            if (hasattr(node, "__class__") and 
-                "Stack" in node.__class__.__name__ and 
-                hasattr(node, "node") and 
-                "api-gateway" in node.node.id):
+            if (
+                hasattr(node, "__class__")
+                and "Stack" in node.__class__.__name__
+                and hasattr(node, "node")
+                and "api-gateway" in node.node.id
+            ):
                 return node
             if hasattr(node, "node") and hasattr(node.node, "children"):
                 for child in node.node.children:
@@ -314,10 +316,12 @@ def lambda_handler(event, context):
         def find_cognito_stack(node):
             """Recursively search for cognito stack"""
             # Check if this is a CDK Stack and contains cognito in the name
-            if (hasattr(node, "__class__") and 
-                "Stack" in node.__class__.__name__ and 
-                hasattr(node, "node") and 
-                "cognito" in node.node.id):
+            if (
+                hasattr(node, "__class__")
+                and "Stack" in node.__class__.__name__
+                and hasattr(node, "node")
+                and "cognito" in node.node.id
+            ):
                 return node
             if hasattr(node, "node") and hasattr(node.node, "children"):
                 for child in node.node.children:
@@ -336,7 +340,9 @@ def lambda_handler(event, context):
         cognito_template = Template.from_stack(cognito_stack)
 
         # Verify that Cognito exports the user pool ARN parameter using new enhanced pattern
-        cognito_user_pool_arn_path = "/my-cool-app/dev/cognito/my-cool-app-dev/user_pool_arn"
+        cognito_user_pool_arn_path = (
+            "/my-cool-app/dev/cognito/my-cool-app-dev/user_pool_arn"
+        )
 
         # Check that Cognito stack exports the SSM parameter that API Gateway imports
         cognito_template.has_resource_properties(

@@ -1,0 +1,153 @@
+{
+    "cdk": {
+      "parameters": [
+        {
+          "placeholder": "{{ENVIRONMENT}}",
+          "env_var_name": "ENVIRONMENT",
+          "cdk_parameter_name": "Environment"
+        },
+        {
+          "placeholder": "{{WORKLOAD_NAME}}",
+          "env_var_name": "CDK_WORKLOAD_NAME",
+          "cdk_parameter_name": "WorkloadName"
+        },
+        {
+          "placeholder": "{{CDK_SYNTH_COMMAND_FILE}}",
+          "value": "./commands/cdk_synth.sh",
+          "cdk_parameter_name": "CdkSynthCommandFile"
+        },
+        {
+          "placeholder": "{{AWS_ACCOUNT}}",
+          "env_var_name": "AWS_ACCOUNT_NUMBER",
+          "cdk_parameter_name": "AccountNumber"
+        },
+        {
+          "placeholder": "{{DEVOPS_AWS_ACCOUNT}}",
+          "env_var_name": "DEVOPS_AWS_ACCOUNT",
+          "cdk_parameter_name": "AccountNumber"
+        },
+        {
+          "placeholder": "{{DEVOPS_REGION}}",
+          "env_var_name": "DEVOPS_REGION",
+          "cdk_parameter_name": "AccountRegion"
+        },
+        {
+          "placeholder": "{{CODE_REPOSITORY_NAME}}",
+          "env_var_name": "CODE_REPOSITORY_NAME",
+          "cdk_parameter_name": "CodeRepoName"
+        },
+        {
+          "placeholder": "{{CODE_REPOSITORY_ARN}}",
+          "env_var_name": "CODE_REPOSITORY_ARN",
+          "cdk_parameter_name": "CodeRepoArn"
+        },
+        {
+          "placeholder": "{{GIT_BRANCH}}",
+          "env_var_name": "GIT_BRANCH",
+          "cdk_parameter_name": "GitBranch"
+        },
+        {
+          "placeholder": "{{VPC_ID}}",
+          "env_var_name": "VPC_ID",
+          "cdk_parameter_name": "VpcId",
+          "required": false
+        },
+        {
+          "placeholder": "{{ALB_SECURITY_GROUP_ID}}",
+          "env_var_name": "ALB_SECURITY_GROUP_ID",
+          "cdk_parameter_name": "AlbSecurityGroupId",
+          "required": false
+        },
+        {
+          "placeholder": "{{HOSTED_ZONE_ID}}",
+          "env_var_name": "HOSTED_ZONE_ID",
+          "cdk_parameter_name": "HostedZoneId",
+          "required": false
+        },
+        {
+          "placeholder": "{{HOSTED_ZONE_NAME}}",
+          "env_var_name": "HOSTED_ZONE_NAME",
+          "cdk_parameter_name": "HostedZoneName",
+          "required": false
+        },
+        {
+          "placeholder": "{{DNS_ALIAS}}",
+          "env_var_name": "DNS_ALIAS",
+          "cdk_parameter_name": "DnsAlias",
+          "required": false
+        },
+        {
+          "placeholder": "{{DNS_ALIAS2}}",
+          "env_var_name": "DNS_ALIAS2",
+          "cdk_parameter_name": "DnsAlias2",
+          "required": false
+        }
+      ]
+    },
+    "workload": {
+      "name": "abc-workload",
+      "description": "AWS Infrastructure for abc-workload",
+      "devops": {
+        "account": "123456789012",
+        "region": "us-east-1",
+        "code_repository": {
+          "name": "geekcafe/abc-workload-iac",
+          "type": "connector_arn",
+          "connector_arn": "arn:aws:codeconnections:us-east-1:123456789012:connection/a90857d9-89b8-4823-ad6f-69a335c20414"
+        },
+        "commands": [
+          {
+            "name": "cdk_synth",
+            "commands": [],
+            "file": "./commands/cdk_synth.sh"
+          }
+        ]
+      },
+      "ssm_prefix_template": "/abc-workload/dev/{resource_type}/{attribute}",
+      "vpc_id": "vpc-0652f30e1494a58a4",
+      "stacks": [
+        {
+          "name": "abc-workload-dev-full-stack-sg",
+          "module": "security_group_full_stack_library_module",
+          "enabled": true,
+          "security_group": {
+            "name": "abc-workload-dev-full-stack-sg",
+            "description": "Security groups for abc-workload dev full stack",
+            "tags": {
+              "Application": "abc-workload",
+              "Environment": "dev"
+            },
+            "ssm_imports": {
+              "vpc_id": "dev/abc-workload/vpc/id"
+            },
+            "ssm_exports": {
+              "security_group_id": "dev/abc-workload/sg/<type>/id"
+            }
+          }
+        }
+      ],
+      "deployments": [
+        {
+          "name": "abc-workload-dev-sg-pipeline",
+          "environment": "dev",
+          "account": "123456789012",
+          "region": "us-east-1",
+          "mode": "pipeline",
+          "pipeline": {
+            "name": "abc-workload-dev-sg-pipeline",
+            "branch": "main",
+            "enabled": true,
+            "stages": [
+              {
+                "name": "Deploy-Security-Groups",
+                "stacks": [
+                  "abc-workload-dev-full-stack-sg"
+                ]
+              }
+            ]
+          },
+          "enabled": true
+        }
+      ]
+    }
+  }

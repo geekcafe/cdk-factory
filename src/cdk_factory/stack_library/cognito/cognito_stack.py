@@ -156,13 +156,13 @@ class CognitoStack(IStack, EnhancedSsmParameterMixin):
         """Export Cognito resources to SSM using enhanced SSM parameter mixin"""
         
         # Setup enhanced SSM integration with proper resource type and name
-        user_pool_name = self.cognito_config.user_pool_name or "user-pool"
+        # Use "user-pool" as resource identifier for SSM paths, not the full pool name
         
         self.setup_enhanced_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("cognito", {}),
             resource_type="cognito",
-            resource_name=user_pool_name
+            resource_name="user-pool"
         )
         
         # Prepare resource values for export
