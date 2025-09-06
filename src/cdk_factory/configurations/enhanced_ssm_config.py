@@ -145,7 +145,7 @@ class EnhancedSsmConfig:
                                 "vpc": "main-vpc",
                                 "cognito": "user-pool", 
                                 "security_group": "main-sg",
-                                "dynamodb": "main-table",
+                                "dynamodb": "cdk-factory-table",
                                 "api_gateway": "cdk-factory-api-gw",
                                 "api-gateway": "cdk-factory-api-gw"
                             }
@@ -199,7 +199,7 @@ class EnhancedSsmConfig:
                             "vpc": "main-vpc",
                             "cognito": "user-pool", 
                             "security_group": "main-sg",
-                            "dynamodb": "main-table",
+                            "dynamodb": "cdk-factory-table",
                             "api_gateway": "cdk-factory-api-gw",
                             "api-gateway": "cdk-factory-api-gw"
                         }
@@ -290,7 +290,8 @@ RESOURCE_AUTO_IMPORTS = {
         "vpc_id": {"source_resource_type": "vpc"},
         "security_group_ids": {"source_resource_type": "security_group"},
         "subnet_ids": {"source_resource_type": "vpc"},
-        "user_pool_arn": {"source_resource_type": "cognito"}
+        "user_pool_arn": {"source_resource_type": "cognito"},
+        "table_name": {"source_resource_type": "dynamodb"}
     },
     "api_gateway": {
         "user_pool_arn": {"source_resource_type": "cognito"},

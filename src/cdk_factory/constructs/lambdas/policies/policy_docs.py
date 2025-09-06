@@ -4,7 +4,8 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+import os
 
 import cdk_nag
 from aws_cdk import aws_iam as iam
@@ -14,6 +15,91 @@ from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
 from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
 )
+
+
+class ResourceResolver:
+    """Flexible resource resolver that can load from environment variables or enhanced SSM parameters"""
+
+    def __init__(
+        self,
+        scope: Construct,
+        deployment: Deployment,
+        lambda_config: LambdaFunctionConfig,
+    ):
+        self.scope = scope
+        self.deployment = deployment
+        self.lambda_config = lambda_config
+        self._ssm_mixin = None
+
+    def _get_ssm_mixin(self):
+        """Get or create enhanced SSM parameter mixin"""
+        if self._ssm_mixin is None:
+            try:
+                from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
+                    EnhancedSsmParameterMixin,
+                )
+
+                self._ssm_mixin = EnhancedSsmParameterMixin()
+
+                # Setup enhanced SSM integration if lambda config has SSM settings
+                lambda_dict = getattr(self.lambda_config, "dictionary", {})
+                ssm_config = lambda_dict.get("ssm", {})
+
+                if ssm_config.get("enabled", False):
+                    self._ssm_mixin.setup_enhanced_ssm_integration(
+                        scope=self.scope,
+                        config=lambda_dict,
+                        resource_type="lambda",
+                        resource_name=self.lambda_config.name,
+                    )
+            except ImportError:
+                # Enhanced SSM not available, will fall back to environment variables
+                pass
+        return self._ssm_mixin
+
+    def get_table_name(self, table_identifier: str = "APP_TABLE_NAME") -> Optional[str]:
+        """
+        Get DynamoDB table name from multiple sources with fallback priority:
+        1. Enhanced SSM parameter (if configured)
+        2. Environment variable
+        3. None (will raise error in calling method)
+        """
+        table_name = None
+
+        # Try enhanced SSM parameter lookup first
+        ssm_mixin = self._get_ssm_mixin()
+        if ssm_mixin:
+            try:
+                # Try to auto-import table name from DynamoDB stack
+                imported_values = ssm_mixin.auto_import_resources()
+                table_name = imported_values.get("table_name")
+
+                if table_name:
+                    return table_name
+
+            except Exception:
+                # SSM lookup failed, continue to environment variable fallback
+                pass
+
+        # Fallback to environment variable
+        table_name = os.getenv(table_identifier)
+
+        return table_name
+
+    def get_aws_region(self) -> str:
+        """Get AWS region from deployment config or environment"""
+        region = self.deployment.region
+        if region:
+            return region
+        return os.getenv("AWS_REGION", "*")
+
+    def get_aws_account(self) -> str:
+        """Get AWS account from deployment config or environment"""
+        account = self.deployment.account
+        if account:
+            return account
+        # not sure if the * is a good idea here or not
+        return os.getenv("AWS_ACCOUNT", "*")
 
 
 class PolicyDocuments:
@@ -30,6 +116,7 @@ class PolicyDocuments:
         self.role: iam.Role = role
         self.lambda_config: LambdaFunctionConfig = lambda_config
         self.deployment: Deployment = deployment
+        self._resource_resolver = None
 
     def default_lambda_policy_doc(self) -> iam.Policy:
         """Creates the default policy document"""
@@ -101,7 +188,7 @@ class PolicyDocuments:
                         f"Permission set for {permission} not found when attempting "
                         "to generate permissions."
                     )
-                statment = iam.PolicyStatement(
+                statement = iam.PolicyStatement(
                     sid=permission_details.get("sid"),
                     actions=permission_details["actions"],
                     resources=permission_details["resources"],
@@ -109,7 +196,7 @@ class PolicyDocuments:
                     effect=iam.Effect.ALLOW,
                 )
 
-                statements.append(statment)
+                statements.append(statement)
                 if permission_details.get("nag"):
                     nag_exclusions.append(permission_details.get("nag"))
 
@@ -142,10 +229,20 @@ class PolicyDocuments:
 
         return None
 
+    def _get_resource_resolver(self):
+        """Get or create a resource resolver for flexible resource lookup"""
+        if self._resource_resolver is None:
+            self._resource_resolver = ResourceResolver(
+                scope=self.scope,
+                deployment=self.deployment,
+                lambda_config=self.lambda_config,
+            )
+        return self._resource_resolver
+
     def get_permission_details(self, permission: str | dict) -> dict:
         """Returns the details of a specific permission"""
 
-        # TODO: this all needs refactoring for flexibity
+        # TODO: this all needs refactoring for flexibility
 
         permissions_map = {
             "dynamodb_read": self._get_dynamodb_read_permissions(),
@@ -214,22 +311,26 @@ class PolicyDocuments:
         return permission_details or {}
 
     def _get_dynamodb_write_permissions(self) -> dict:
-        """Get DynamoDB write permissions with proper resource validation."""
-        import os
-        
-        table_name = os.getenv('APP_TABLE_NAME')
-        aws_region = os.getenv('AWS_REGION', '*')
-        aws_account = os.getenv('AWS_ACCOUNT', '*')
-        
+        """Get DynamoDB write permissions with flexible resource resolution."""
+        resolver = self._get_resource_resolver()
+
+        table_name = resolver.get_table_name()
+        aws_region = resolver.get_aws_region()
+        aws_account = resolver.get_aws_account()
+
         if not table_name:
             raise ValueError(
-                "DynamoDB table name not found. Please ensure 'APP_TABLE_NAME' environment variable is set. "
+                "DynamoDB table name not found. Please ensure either:\n"
+                "1. 'APP_TABLE_NAME' environment variable is set, OR\n"
+                "2. Enhanced SSM parameters are configured with DynamoDB table name auto-import\n"
                 "This is required for 'dynamodb_write' permission to generate proper PolicyStatement resources."
             )
-        
+
         table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
-        index_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
-        
+        index_arn = (
+            f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
+        )
+
         return {
             "name": "DynamoDB",
             "description": "DynamoDB Write",
@@ -254,22 +355,26 @@ class PolicyDocuments:
         }
 
     def _get_dynamodb_delete_permissions(self) -> dict:
-        """Get DynamoDB delete permissions with proper resource validation."""
-        import os
-        
-        table_name = os.getenv('APP_TABLE_NAME')
-        aws_region = os.getenv('AWS_REGION', '*')
-        aws_account = os.getenv('AWS_ACCOUNT', '*')
-        
+        """Get DynamoDB delete permissions with flexible resource resolution."""
+        resolver = self._get_resource_resolver()
+
+        table_name = resolver.get_table_name()
+        aws_region = resolver.get_aws_region()
+        aws_account = resolver.get_aws_account()
+
         if not table_name:
             raise ValueError(
-                "DynamoDB table name not found. Please ensure 'APP_TABLE_NAME' environment variable is set. "
+                "DynamoDB table name not found. Please ensure either:\n"
+                "1. 'APP_TABLE_NAME' environment variable is set, OR\n"
+                "2. Enhanced SSM parameters are configured with DynamoDB table name auto-import\n"
                 "This is required for 'dynamodb_delete' permission to generate proper PolicyStatement resources."
             )
-        
+
         table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
-        index_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
-        
+        index_arn = (
+            f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
+        )
+
         return {
             "name": "DynamoDB",
             "description": "DynamoDB Delete",
@@ -289,30 +394,37 @@ class PolicyDocuments:
         }
 
     def _get_dynamodb_read_permissions(self) -> dict:
-        """Get DynamoDB read permissions with proper resource validation."""
-        import os
-        
-        # Try to get table name from environment variables
-        table_name = os.getenv('APP_TABLE_NAME')
-        aws_region = os.getenv('AWS_REGION', '*')
-        aws_account = os.getenv('AWS_ACCOUNT', '*')
-        
+        """Get DynamoDB read permissions with flexible resource resolution."""
+        resolver = self._get_resource_resolver()
+
+        table_name = resolver.get_table_name()
+        aws_region = resolver.get_aws_region()
+        aws_account = resolver.get_aws_account()
+
         if not table_name:
-            # Provide helpful error message
             raise ValueError(
-                "DynamoDB table name not found. Please ensure 'APP_TABLE_NAME' environment variable is set. "
+                "DynamoDB table name not found. Please ensure either:\n"
+                "1. 'APP_TABLE_NAME' environment variable is set, OR\n"
+                "2. Enhanced SSM parameters are configured with DynamoDB table name auto-import\n"
                 "This is required for 'dynamodb_read' permission to generate proper PolicyStatement resources."
             )
-        
+
         # Construct proper resource ARNs
         table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
-        index_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
-        
+        index_arn = (
+            f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
+        )
+
         return {
             "name": "DynamoDB",
             "description": "DynamoDB Read",
             "sid": "DynamoDbReadAccess",
-            "actions": ["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:Query", "dynamodb:BatchGetItem"],
+            "actions": [
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:Query",
+                "dynamodb:BatchGetItem",
+            ],
             "resources": [table_arn, index_arn],
             "nag": {
                 "id": "AwsSolutions-IAM5",

@@ -162,14 +162,14 @@ class DeploymentConfig:
         return str(value).lower() == "true" or value is True
 
     @property
-    def account(self):
+    def account(self) -> str | None:
         """
         Returns the deployment account number
         """
-        return self.__deployment["account"]
+        return self.__deployment.get("account")
 
     @property
-    def region(self):
+    def region(self) -> str | None:
         """
         Returns the deployment region name
         """
