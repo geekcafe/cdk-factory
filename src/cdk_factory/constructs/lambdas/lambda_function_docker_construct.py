@@ -85,7 +85,7 @@ class LambdaDockerConstruct(Construct):
         function_id = deployment.build_resource_name(
             lambda_config.name, resource_type=ResourceTypes.LAMBDA_FUNCTION
         )
-        environment = EnvironmentServices.load_environment_variables(
+        environment_vars = EnvironmentServices.load_environment_variables(
             environment=environment,
             deployment=deployment,
             lambda_config=lambda_config,
@@ -143,7 +143,7 @@ class LambdaDockerConstruct(Construct):
             tracing=lambda_config.tracing,
             description=lambda_config.description,
             # environment_encryption=config.kms_key,
-            environment=environment,
+            environment=environment_vars,
             function_name=function_name,
             insights_version=lambda_config.insights_version,
             role=role.without_policy_updates(),

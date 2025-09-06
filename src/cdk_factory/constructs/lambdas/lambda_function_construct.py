@@ -58,7 +58,7 @@ class LambdaConstruct(Construct):
         layers = self.__check_layers(
             unique_id=id, layers=layers, lambda_config=lambda_config
         )
-        environment = EnvironmentServices.load_environment_variables(
+        environment_vars = EnvironmentServices.load_environment_variables(
             environment=environment,
             deployment=self.deployment,
             lambda_config=lambda_config,
@@ -73,7 +73,7 @@ class LambdaConstruct(Construct):
             scope=self.scope,
             id=id,
             lambda_config=lambda_config,
-            environment=environment,
+            environment=environment_vars,
             layers=layers,
             role=role,
         )
