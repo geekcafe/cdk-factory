@@ -83,7 +83,9 @@ class ApiGatewayIntegrationUtility:
                     authorization_type=auth_type,
                 )
             except Exception as e:
-                print(str(e))
+                error_msg = f"Failed to create method {api_config.method.upper()} on {api_config.routes}: {str(e)}"
+                print(error_msg)
+                raise Exception(error_msg) from e
         # Return integration info for potential cross-stack references
         return {
             "api_gateway": api_gateway,
@@ -260,8 +262,8 @@ class ApiGatewayIntegrationUtility:
         kwargs = {
             "rest_api_name": api_name,
             "description": api_config.description,
-            "deploy": api_config.deploy,
-            "deploy_options": stage_options,
+            "deploy": False,  # Always create without initial deployment to prevent stage conflicts
+            # Note: deploy_options removed when deploy=False to avoid CDK error
             "endpoint_types": endpoint_types,
             "api_key_source_type": api_config.api_key_source_type,
             "binary_media_types": api_config.binary_media_types,
