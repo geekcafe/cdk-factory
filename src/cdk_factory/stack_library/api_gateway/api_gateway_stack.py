@@ -357,7 +357,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             api_route_config = ApiGatewayConfigRouteConfig(
                 {
                     "method": route["method"],
-                    "routes": route_path,
+                    "route": route_path,
                     "authorization_type": (
                         authorization_type if authorization_type else "NONE"
                     ),
