@@ -325,7 +325,7 @@ class LambdaStack(IStack):
         logger.info(f"Created API Gateway integration for {function_config.name}")
 
     def __finalize_api_gateway_deployments(self):
-        """Create new deployments for API Gateways after all integrations are added"""
+        """Create deployments and stages for API Gateways after all integrations are added"""
         if not self.api_gateway_integrations:
             return
         
@@ -338,9 +338,17 @@ class LambdaStack(IStack):
             if api_gateway:
                 api_gateways[api_gateway].append(integration)
         
-        # Create new deployment for each API Gateway
+        # Create deployment and stage for each API Gateway
         for api_gateway, integrations in api_gateways.items():
             deployment_id = f"{api_gateway.rest_api_name}-deployment-with-lambdas"
+            
+            # Get the stage name from configuration
+            stage_name = self._get_api_gateway_stage_name()
+            if integrations:
+                # Try to get stage name from first integration's config
+                first_integration = integrations[0]
+                if "stage_name" in first_integration:
+                    stage_name = first_integration["stage_name"]
             
             # Create a new deployment that includes all the Lambda integrations
             from aws_cdk import aws_apigateway as apigateway
@@ -351,17 +359,28 @@ class LambdaStack(IStack):
                 description=f"Deployment with {len(integrations)} Lambda integrations"
             )
             
-            # Don't create a new stage - the API Gateway stack should handle stage creation
-            # Just log the deployment creation for Lambda integrations
-            stage_name = "prod"  # Default stage name
-            if integrations:
-                # Try to get stage name from first integration's config
-                first_integration = integrations[0]
-                if "stage_name" in first_integration:
-                    stage_name = first_integration["stage_name"]
+            # Create or update the stage with this deployment
+            # This ensures Lambda routes are deployed to the correct stage
+            stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage-lambdas"
+            stage = apigateway.Stage(
+                self,
+                stage_id,
+                deployment=deployment,
+                stage_name=stage_name,
+                description=f"Stage {stage_name} with {len(integrations)} Lambda integrations"
+            )
             
-            logger.info(f"Created new deployment for existing API Gateway: {api_gateway.rest_api_name}")
-            logger.info(f"Lambda integrations will be available at: https://{api_gateway.rest_api_id}.execute-api.{self.deployment.region}.amazonaws.com/{stage_name}")
+            # Store stage reference on API Gateway for cross-stack coordination
+            api_gateway._deployment_stage = stage
+            
+            logger.info(f"Created deployment and stage '{stage_name}' for API Gateway: {api_gateway.rest_api_name}")
+            logger.info(f"Lambda integrations deployed to: https://{api_gateway.rest_api_id}.execute-api.{self.deployment.region}.amazonaws.com/{stage_name}")
+
+    def _get_api_gateway_stage_name(self) -> str:
+        """Get the API Gateway stage name from configuration"""
+        # Check if there's an API Gateway configuration in the stack config
+        api_gateway_config = self.stack_config.dictionary.get("api_gateway", {})
+        return api_gateway_config.get("stage_name", "prod")
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig

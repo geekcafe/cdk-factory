@@ -151,3 +151,8 @@ class ApiGatewayConfig(EnhancedBaseConfig):
     def export_to_ssm(self) -> bool:
         """Whether to export API Gateway configuration to SSM parameters for cross-stack references"""
         return self.__config.get("export_to_ssm", False)
+
+    @property
+    def stage_name(self) -> str:
+        """API Gateway deployment stage name (default: 'prod')"""
+        return self.__config.get("stage_name", "prod")

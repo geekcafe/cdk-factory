@@ -17,6 +17,8 @@ from constructs import Construct
 from cdk_factory.configurations.resources.apigateway_route_config import (
     ApiGatewayConfigRouteConfig,
 )
+from cdk_factory.configurations.resources.api_gateway import ApiGatewayConfig
+from cdk_factory.configurations.stack import StackConfig
 
 logger = Logger(service="ApiGatewayIntegrationUtility")
 
@@ -167,7 +169,7 @@ class ApiGatewayIntegrationUtility:
         return self.api_gateway
 
     def create_api_gateway_with_config(
-        self, api_id: str, api_config, stack_config
+        self, api_id: str, api_config: ApiGatewayConfig, stack_config: StackConfig
     ) -> apigateway.RestApi:
         """Create API Gateway using the full configuration from api_gateway_stack pattern"""
         return self._create_rest_api_with_full_config_from_api_config(
@@ -175,7 +177,7 @@ class ApiGatewayIntegrationUtility:
         )
 
     def _create_rest_api_with_full_config_from_api_config(
-        self, api_id: str, api_config, stack_config
+        self, api_id: str, api_config: ApiGatewayConfig, stack_config: StackConfig
     ) -> apigateway.RestApi:
         """Create REST API using ApiGatewayConfig object (from api_gateway_stack)"""
         from aws_cdk import aws_logs as logs
@@ -230,7 +232,7 @@ class ApiGatewayIntegrationUtility:
         stage_options = apigateway.StageOptions(
             access_log_destination=apigateway.LogGroupLogDestination(log_group),
             access_log_format=access_log_format,
-            stage_name=api_config.deploy_options.get("stage_name", "prod"),
+            stage_name=api_config.stage_name,
             logging_level=apigateway.MethodLoggingLevel.ERROR,
             data_trace_enabled=api_config.deploy_options.get(
                 "data_trace_enabled", False
@@ -313,7 +315,7 @@ class ApiGatewayIntegrationUtility:
 
         # Deployment options
         deploy_options = api_gateway_config.get("deploy_options", {})
-        stage_name = deploy_options.get("stage_name", "prod")
+        stage_name = api_gateway_config.get("stage_name", "prod")
 
         # Create log group for API Gateway access logs
         log_group = logs.LogGroup(

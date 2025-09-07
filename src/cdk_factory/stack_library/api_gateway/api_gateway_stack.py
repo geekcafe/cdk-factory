@@ -503,7 +503,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             )
             
             # Update or create the stage with the new deployment using proper stage options
-            stage_name = "prod"  # Default stage name
+            stage_name = self.api_config.stage_name  # Use configurable stage name
             stage_options = self._deploy_options()
             
             stage = apigateway.Stage(
