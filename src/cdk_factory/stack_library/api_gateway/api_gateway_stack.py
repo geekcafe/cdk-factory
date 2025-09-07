@@ -504,6 +504,14 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             
             # Update or create the stage with the new deployment using proper stage options
             stage_name = self.api_config.stage_name  # Use configurable stage name
+            if stage_name is None:
+                raise ValueError("Stage name is required in API Gateway config")
+            if stage_name.lower() == "auto":
+                try:
+                    stage_name = self.stack_config.name
+                except Exception as e:
+                    raise ValueError("Stage name is required in API Gateway config") from e
+            
             stage_options = self._deploy_options()
             
             stage = apigateway.Stage(
