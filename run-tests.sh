@@ -22,7 +22,7 @@ echo "=================================="
 if [ -d ".unittest" ]; then
     echo "🧹 Deleting old virtual environment"
     # delete old virtual environment
-    # rm -rf .unittest
+    rm -rf .unittest
 fi
 
 echo "🧹 Creating new virtual environment"
