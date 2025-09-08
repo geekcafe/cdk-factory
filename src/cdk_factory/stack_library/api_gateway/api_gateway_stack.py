@@ -344,8 +344,8 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         # Setup Lambda integration
         self._setup_lambda_integration(api_gateway, api_id, route, lambda_fn, authorizer, suffix)
         
-        # Setup CORS
-        self._setup_route_cors(resource, route_path, route)
+        # Setup CORS using centralized utility
+        self.integration_utility.setup_route_cors(resource, route_path, route)
 
     def _setup_lambda_integration(self, api_gateway, api_id, route, lambda_fn, authorizer, suffix):
         """Setup Lambda integration for a route"""
@@ -432,18 +432,6 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             print(error_msg)
             raise Exception(error_msg) from e
 
-    def _setup_route_cors(self, resource, route_path, route):
-        """Setup CORS for a route"""
-        cors_cfg = route.get("cors")
-        methods = cors_cfg.get("methods") if cors_cfg else None
-        origins = cors_cfg.get("origins") if cors_cfg else None
-        ApiGatewayUtilities.bind_mock_for_cors(
-            resource,
-            route_path,
-            http_method_list=methods,
-            origins_list=origins,
-        )
-
     def _store_deployment_stage_reference(self, api_gateway, stage):
         """Store stage reference for later use"""
         if stage:
@@ -466,75 +454,32 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             logger.info("No API Gateway integrations found, skipping deployment finalization")
             return None
 
-        # Group integrations by API Gateway using object identity instead of CDK token
-        api_gateways = {}
-        api_counter = 0
-        
-        for integration in self.api_gateway_integrations:
-            api_gateway = integration.get('api_gateway')
-            if api_gateway:
-                # Use object identity as key instead of CDK token
-                api_key = id(api_gateway)
-                if api_key not in api_gateways:
-                    api_counter += 1
-                    api_gateways[api_key] = {
-                        'api_gateway': api_gateway,
-                        'integrations': [],
-                        'counter': api_counter
-                    }
-                api_gateways[api_key]['integrations'].append(integration)
+        # Use consolidated utility to group integrations
+        from cdk_factory.utilities.api_gateway_integration_utility import ApiGatewayIntegrationUtility
+        utility = ApiGatewayIntegrationUtility(self)
+        api_gateways = utility.group_integrations_by_api_gateway(self.api_gateway_integrations)
 
         created_stage = None
         
-        # Create new deployments for each API Gateway
+        # Create deployments and stages using consolidated utility
         for api_key, api_info in api_gateways.items():
             api_gateway = api_info['api_gateway']
-            integration_count = len(api_info['integrations'])
+            integrations = api_info['integrations']
             counter = api_info['counter']
             
-            logger.info(f"Creating new deployment for API Gateway {counter} with {integration_count} integrations")
-            
-            # Create a new deployment using counter for construct ID
-            deployment = apigateway.Deployment(
-                self,
-                f"api-gateway-{counter}-deployment-final",
-                api=api_gateway,
-                description=f"Deployment with all {integration_count} routes included"
-            )
-            
-            # Update or create the stage with the new deployment using proper stage options
-            stage_name = self.api_config.stage_name  # Use configurable stage name
-            if stage_name is None:
-                raise ValueError("Stage name is required in API Gateway config")
-            if stage_name.lower() == "auto":
-                try:
-                    stage_name = self.stack_config.name
-                except Exception as e:
-                    raise ValueError("Stage name is required in API Gateway config") from e
-            
-            stage_options = self._deploy_options()
-            
-            stage = apigateway.Stage(
-                self,
-                f"api-gateway-{counter}-stage-final",
-                deployment=deployment,
-                stage_name=stage_name,
-                description=f"Production stage with all routes deployed",
-                access_log_destination=stage_options.access_log_destination,
-                access_log_format=stage_options.access_log_format,
-                logging_level=stage_options.logging_level,
-                data_trace_enabled=stage_options.data_trace_enabled,
-                metrics_enabled=stage_options.metrics_enabled,
-                tracing_enabled=stage_options.tracing_enabled,
-                throttling_rate_limit=stage_options.throttling_rate_limit,
-                throttling_burst_limit=stage_options.throttling_burst_limit
+            # Use consolidated deployment and stage creation
+            stage = utility.finalize_api_gateway_deployment(
+                api_gateway=api_gateway,
+                integrations=integrations,
+                stack_config=self.stack_config,
+                api_config=self.api_config,
+                construct_scope=self,
+                counter=counter
             )
             
             # Store the first created stage to return
             if created_stage is None:
                 created_stage = stage
-            
-            logger.info(f"Created stage '{stage_name}' for API Gateway {counter}")
         
         return created_stage
 

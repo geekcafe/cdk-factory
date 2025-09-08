@@ -13,7 +13,7 @@ class PolicyStatements:
     """Reusable Policy Statements"""
 
     @staticmethod
-    def log_group_policy_statment() -> iam.PolicyStatement:
+    def log_group_policy_statement() -> iam.PolicyStatement:
         # Custom Policy for the Lambda Role
         statement = iam.PolicyStatement(
             actions=[
@@ -27,7 +27,7 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def lambda_insights_policy_statment() -> iam.PolicyStatement:
+    def lambda_insights_policy_statement() -> iam.PolicyStatement:
         statement = iam.PolicyStatement(
             actions=["cloudwatch:PutMetricData"],
             resources=["*"],
@@ -36,7 +36,7 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def bucket_read_policy_statment(bucket_name: str) -> iam.PolicyStatement:
+    def bucket_read_policy_statement(bucket_name: str) -> iam.PolicyStatement:
         statement = iam.PolicyStatement(
             actions=[
                 "s3:GetObject",
@@ -53,8 +53,8 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def bucket_read_write_policy_statment(bucket_name: str) -> iam.PolicyStatement:
-        statement = PolicyStatements.bucket_read_policy_statment(
+    def bucket_read_write_policy_statement(bucket_name: str) -> iam.PolicyStatement:
+        statement = PolicyStatements.bucket_read_policy_statement(
             bucket_name=bucket_name
         )
 
@@ -68,7 +68,7 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def dynamodb_read_policy_statment(
+    def dynamodb_read_policy_statement(
         table_name: str, indexes: List[str] | None = None
     ) -> iam.PolicyStatement:
         # add the table resource
@@ -93,12 +93,12 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def dynamodb_read_write_policy_statment(
+    def dynamodb_read_write_policy_statement(
         table_name: str, indexes: List[str] | None = None
     ) -> iam.PolicyStatement:
         # add the table resource
 
-        statement = PolicyStatements.dynamodb_read_policy_statment(
+        statement = PolicyStatements.dynamodb_read_policy_statement(
             table_name=table_name, indexes=indexes
         )
 
@@ -108,7 +108,7 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def cognito_user_pool_policy_statment(
+    def cognito_user_pool_policy_statement(
         cognito_user_pool_arn: str,
     ) -> iam.PolicyStatement:
         # add the table resource
@@ -123,7 +123,7 @@ class PolicyStatements:
         return statement
 
     @staticmethod
-    def cognito_user_pool_admin_policy_statment(
+    def cognito_user_pool_admin_policy_statement(
         cognito_user_pool_arn: str,
     ) -> iam.PolicyStatement:
         # add the table resource

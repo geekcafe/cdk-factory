@@ -8,10 +8,18 @@ MIT License. See Project Root for the license information.
 import os
 from typing import Optional
 import aws_cdk as cdk
+import json
+import time
+from datetime import datetime, UTC
+from typing import List, Dict, Any, Optional
 from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ssm as ssm
+from aws_cdk import aws_logs as logs
+from aws_cdk import aws_iam as iam
+from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
+from aws_cdk import RemovalPolicy
 from aws_lambda_powertools import Logger
 from constructs import Construct
 from cdk_factory.configurations.resources.apigateway_route_config import (
@@ -30,9 +38,10 @@ class ApiGatewayIntegrationUtility:
         self.scope = scope
         self.region = scope.region
         self.account = scope.account
-
-        self.authorizer = None
         self.api_gateway = None
+        self.authorizer = None
+        self._log_group = None
+        self._log_role = None
 
     def setup_lambda_integration(
         self,
@@ -917,6 +926,18 @@ class ApiGatewayIntegrationUtility:
 
         return exported_params
 
+    def setup_route_cors(self, resource: apigateway.Resource, route_path: str, route: dict):
+        """Setup CORS for a route - centralized method for both API Gateway and Lambda stacks"""
+        cors_cfg = route.get("cors")
+        methods = cors_cfg.get("methods") if cors_cfg else None
+        origins = cors_cfg.get("origins") if cors_cfg else None
+        ApiGatewayUtilities.bind_mock_for_cors(
+            resource,
+            route_path,
+            http_method_list=methods,
+            origins_list=origins,
+        )
+
     def _create_method_with_existing_authorizer(
         self,
         api_gateway: apigateway.RestApi,
@@ -970,3 +991,202 @@ class ApiGatewayIntegrationUtility:
         )
 
         return method
+
+    def finalize_api_gateway_deployment(
+        self,
+        api_gateway: apigateway.RestApi,
+        integrations: List[Dict[str, Any]],
+        stack_config: StackConfig,
+        api_config: Optional[ApiGatewayConfig] = None,
+        construct_scope: Optional[Construct] = None,
+        counter: int = 1
+    ) -> apigateway.Stage:
+        """
+        Create deployment and stage for API Gateway with all integrations.
+        Consolidates logic from both API Gateway and Lambda stacks.
+        """
+        scope = construct_scope or self.scope
+        
+        # Determine stage name with fallback logic
+        stage_name = self._get_stage_name(stack_config, api_config)
+        
+        # Check if using existing stage
+        use_existing = self._should_use_existing_stage(stack_config)
+        
+        logger.info(f"Creating deployment for API Gateway with {len(integrations)} integrations")
+        
+        # Create deployment
+        deployment_id = f"api-gateway-{counter}-deployment-final"
+        if len(integrations) == 1 and integrations[0].get("function_name"):
+            # Lambda stack deployment
+            deployment_id = "api-gateway-deployment"
+        
+        deployment = apigateway.Deployment(
+            scope,
+            deployment_id,
+            api=api_gateway,
+            description=f"Deployment with all {len(integrations)} routes included",
+            stage_name=stage_name if use_existing else None,
+        )
+        # Add timestamp to deployment logical ID to prevent conflicts and force new deployment
+        deployment.add_to_logical_id(datetime.now(UTC).isoformat())
+        
+        # Create stage if not using existing
+        stage = None
+        if not use_existing:
+            stage_options = self._create_stage_options(api_config) if api_config else None
+            stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage"
+            if len(integrations) == 1 and integrations[0].get("function_name"):
+                # Lambda stack stage
+                stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage-lambdas"
+            
+            stage_kwargs = {
+                "deployment": deployment,
+                "stage_name": stage_name,
+                "description": f"Stage {stage_name} with {len(integrations)} integrations"
+            }
+            
+            # Add stage options if available
+            if stage_options:
+                stage_kwargs.update({
+                    "access_log_destination": stage_options.access_log_destination,
+                    "access_log_format": stage_options.access_log_format,
+                    "logging_level": stage_options.logging_level,
+                    "data_trace_enabled": stage_options.data_trace_enabled,
+                    "metrics_enabled": stage_options.metrics_enabled,
+                    "tracing_enabled": stage_options.tracing_enabled,
+                    "throttling_rate_limit": stage_options.throttling_rate_limit,
+                    "throttling_burst_limit": stage_options.throttling_burst_limit
+                })
+            
+            stage = apigateway.Stage(scope, stage_id, **stage_kwargs)
+        
+        logger.info(f"Created deployment and stage '{stage_name}' for API Gateway: {api_gateway.rest_api_name}")
+        logger.info(f"Routes available at: https://{api_gateway.rest_api_id}.execute-api.{scope.region}.amazonaws.com/{stage_name}")
+        
+        return stage
+    
+    def _get_stage_name(self, stack_config: StackConfig, api_config: Optional[ApiGatewayConfig] = None) -> str:
+        """Get stage name with fallback logic from both stacks"""
+        # Try Lambda stack config format first
+        api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+        stage_name = api_gateway_config.get("stage", {}).get("name")
+        
+        if stage_name:
+            return stage_name
+        
+        # Try API Gateway stack config format
+        if api_config and hasattr(api_config, 'stage_name') and api_config.stage_name:
+            stage_name = api_config.stage_name
+        else:
+            # Fallback to legacy format
+            stage_name = api_gateway_config.get("stage_name", "prod")
+        
+        # Handle special cases
+        if stage_name is None:
+            raise ValueError("Stage name is required in API Gateway config")
+        
+        if stage_name.lower() == "auto":
+            try:
+                stage_name = stack_config.name
+            except Exception as e:
+                raise ValueError("Stage name is required in API Gateway config") from e
+        
+        return stage_name
+    
+    def _should_use_existing_stage(self, stack_config: StackConfig) -> bool:
+        """Check if should use existing stage"""
+        api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+        use_existing = api_gateway_config.get("stage", {}).get("use_existing", False)
+        return str(use_existing).lower() == "true"
+    
+    def _create_stage_options(self, api_config: ApiGatewayConfig) -> apigateway.StageOptions:
+        """Create stage options with full configuration"""
+        log_group = self._setup_log_group()
+        access_log_format = self._get_log_format()
+        
+        deploy_options = api_config.deploy_options or {}
+        
+        return apigateway.StageOptions(
+            access_log_destination=apigateway.LogGroupLogDestination(log_group),
+            access_log_format=access_log_format,
+            logging_level=apigateway.MethodLoggingLevel.ERROR,
+            data_trace_enabled=deploy_options.get("data_trace_enabled", False),
+            metrics_enabled=deploy_options.get("metrics_enabled", False),
+            tracing_enabled=deploy_options.get("tracing_enabled", True),
+            throttling_rate_limit=deploy_options.get("throttling_rate_limit", 1000),
+            throttling_burst_limit=deploy_options.get("throttling_burst_limit", 2000)
+        )
+    
+    def _setup_log_group(self) -> logs.LogGroup:
+        """Setup CloudWatch log group for API Gateway"""
+        if self._log_group:
+            return self._log_group
+        
+        self._log_group = logs.LogGroup(
+            self.scope,
+            "ApiGatewayLogGroup",
+            removal_policy=RemovalPolicy.DESTROY,
+            retention=logs.RetentionDays.ONE_MONTH,
+        )
+        
+        self._log_group.grant_write(iam.ServicePrincipal("apigateway.amazonaws.com"))
+        log_role = self._setup_log_role()
+        self._log_group.grant_write(log_role)
+        
+        return self._log_group
+    
+    def _setup_log_role(self) -> iam.Role:
+        """Setup IAM role for API Gateway logging"""
+        if self._log_role:
+            return self._log_role
+        
+        self._log_role = iam.Role(
+            self.scope,
+            "ApiGatewayLogRole",
+            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+                )
+            ],
+        )
+        
+        return self._log_role
+    
+    def _get_log_format(self) -> apigateway.AccessLogFormat:
+        """Get access log format for API Gateway"""
+        return apigateway.AccessLogFormat.custom(
+            json.dumps({
+                "requestId": "$context.requestId",
+                "extendedRequestId": "$context.extendedRequestId",
+                "method": "$context.httpMethod",
+                "route": "$context.resourcePath",
+                "status": "$context.status",
+                "requestBody": "$input.body",
+                "responseBody": "$context.responseLength",
+                "headers": "$context.requestHeaders",
+                "requestContext": "$context.requestContext",
+            })
+        )
+    
+    def group_integrations_by_api_gateway(self, integrations: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+        """Group integrations by API Gateway using object identity"""
+        api_gateways = {}
+        api_counter = 0
+        
+        for integration in integrations:
+            api_gateway = integration.get('api_gateway')
+            if api_gateway:
+                # Use object identity as key instead of CDK token
+                api_key = id(api_gateway)
+                if api_key not in api_gateways:
+                    api_counter += 1
+                    api_gateways[api_key] = {
+                        'api_gateway': api_gateway,
+                        'integrations': [],
+                        'counter': api_counter
+                    }
+                api_gateways[api_key]['integrations'].append(integration)
+        
+        return api_gateways
