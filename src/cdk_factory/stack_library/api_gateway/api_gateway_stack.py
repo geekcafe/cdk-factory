@@ -353,7 +353,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         """Setup Lambda integration for a route"""
         route_path = route["path"]
         # Secure by default: require Cognito authorization unless explicitly set to NONE
-        authorization_type = route.get("authorization_type", "COGNITO_USER_POOLS")
+        authorization_type = route.get("authorization_type", "COGNITO")
         
         # If explicitly set to NONE, skip authorization
         if authorization_type == "NONE":
@@ -392,7 +392,8 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
     ):
         """Setup fallback Lambda integration for routes without src"""
         route_path = route["path"]
-        authorization_type = route.get("authorization_type")
+        # Secure by default: require Cognito authorization unless explicitly set to NONE
+        authorization_type = route.get("authorization_type", "COGNITO")
 
         resource = (
             api_gateway.root.resource_for_path(route_path)
@@ -404,11 +405,14 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         method_options = {}
 
         # Handle authorization type
-        if authorizer and authorization_type and authorization_type.upper() != "NONE":
+        if authorization_type.upper() == "NONE":
+            method_options["authorization_type"] = apigateway.AuthorizationType.NONE
+        elif authorizer:
             method_options["authorization_type"] = apigateway.AuthorizationType.COGNITO
             method_options["authorizer"] = authorizer
         else:
-            method_options["authorization_type"] = apigateway.AuthorizationType.NONE
+            # Default to COGNITO but no authorizer available
+            method_options["authorization_type"] = apigateway.AuthorizationType.COGNITO
 
         # Add the method with proper options
         try:

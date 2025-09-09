@@ -35,7 +35,7 @@
       "auto_import": true
     },
     "authorizer": {
-      "type": "COGNITO_USER_POOLS"
+      "type": "COGNITO"
     }
   },
   "lambda_functions": [
@@ -71,7 +71,7 @@
       }
     },
     "authorizer": {
-      "type": "COGNITO_USER_POOLS"
+      "type": "COGNITO"
     }
   },
   "lambda_functions": [
@@ -123,34 +123,36 @@ The API Gateway integration follows this configuration hierarchy:
 |----------|------|---------|-------------|
 | `method` | string | `"GET"` | HTTP method (GET, POST, PUT, DELETE, etc.) |
 | `route` | string | Required | API Gateway route path (e.g., "/users/{id}") |
-| `authorization_type` | string | `"NONE"` | Authorization type (NONE, COGNITO, AWS_IAM) |
+| `authorization_type` | string | `"COGNITO"` | Authorization type (NONE, COGNITO, AWS_IAM) |
 | `api_key_required` | boolean | `false` | Whether API key is required |
 | `cors` | object | - | CORS configuration |
 | `request_parameters` | object | `{}` | Request parameter validation |
 
 ### Authorization Types
 
-#### No Authorization
+#### No Authorization (Public Access)
 ```json
 {
   "api": {
     "method": "GET",
-    "route": "/public/health",
+    "route": "/health",
     "authorization_type": "NONE"
   }
 }
 ```
 
-#### Cognito User Pool Authorization
+#### Cognito User Pool Authorization (Default - Secure)
 ```json
 {
   "api": {
-    "method": "GET",
-    "route": "/users/profile",
+    "method": "POST",
+    "route": "/users",
     "authorization_type": "COGNITO"
   }
 }
 ```
+
+**Note:** Routes default to `COGNITO` authorization for security. To create public endpoints, explicitly set `authorization_type: "NONE"`.
 
 #### AWS IAM Authorization
 ```json

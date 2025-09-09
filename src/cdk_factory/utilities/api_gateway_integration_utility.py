@@ -979,7 +979,7 @@ class ApiGatewayIntegrationUtility:
             http_method=http_method,
             resource_id=resource.resource_id,
             rest_api_id=api_gateway.rest_api_id,
-            authorization_type="COGNITO_USER_POOLS",
+            authorization_type="COGNITO",
             authorizer_id=self._get_existing_authorizer_id_with_ssm_fallback(
                 api_config, stack_config
             ),

@@ -98,7 +98,7 @@ class EnvironmentVariables:
         """
         gets the cognito user pool from an environment var
         """
-        value = os.getenv("COGNITO_USER_POOLS")
+        value = os.getenv("COGNITO")
         return value
 
     @staticmethod

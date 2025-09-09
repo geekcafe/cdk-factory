@@ -29,7 +29,7 @@ The Lambda Stack (`lambda_stack.py`) provides comprehensive AWS Lambda function 
     "existing_api_arn": "{{API_GATEWAY_ARN}}",
     "authorizer": {
       "id": "{{COGNITO_AUTHORIZER_ID}}",
-      "type": "COGNITO_USER_POOLS"
+      "type": "COGNITO"
     }
   },
   "resources": [
@@ -55,7 +55,7 @@ The Lambda Stack (`lambda_stack.py`) provides comprehensive AWS Lambda function 
   "api": {
     "routes": "/api/my-endpoint",
     "method": "POST",
-    "skip_authorizer": false,
+    "authorization_type": "COGNITO",
     "api_key_required": false,
     "request_parameters": {
       "method.request.header.Authorization": true
@@ -103,7 +103,7 @@ When an `api` configuration is present in a Lambda function, the stack automatic
 |----------|------|-------------|---------|
 | `routes` | string | API Gateway resource path (e.g., `/users/{id}`) | Required |
 | `method` | string | HTTP method (GET, POST, PUT, DELETE, etc.) | Required |
-| `skip_authorizer` | boolean | Skip Cognito authorizer setup | `false` |
+| `authorization_type` | string | Authorization type: `"COGNITO"` (secure) or `"NONE"` (public) | `"COGNITO"` |
 | `api_key_required` | boolean | Require API key for access | `false` |
 | `request_parameters` | object | Request parameter validation rules | `{}` |
 | `api_gateway_id` | string | Reference existing API Gateway by ID | `null` |
@@ -122,7 +122,7 @@ Configure existing API Gateway at the stack level:
     "root_resource_id": "abc123def456root",
     "authorizer": {
       "id": "auth789xyz",
-      "type": "COGNITO_USER_POOLS"
+      "type": "COGNITO"
     }
   }
 }
@@ -146,7 +146,7 @@ Configure existing infrastructure per Lambda function:
     "method": "POST",
     "api_gateway_id": "abc123def456",
     "authorizer_id": "auth789xyz",
-    "skip_authorizer": false
+    "authorization_type": "COGNITO"
   }
 }
 ```
@@ -405,7 +405,7 @@ The stack performs validation on:
     "route": "/secure/data",
     "method": "GET",
     "authorizer_id": "auth123xyz789",
-    "skip_authorizer": false
+    "authorization_type": "COGNITO"
   }
 }
 ```

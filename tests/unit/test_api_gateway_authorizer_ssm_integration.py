@@ -92,7 +92,7 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
         route_config = ApiGatewayConfigRouteConfig({
             "path": "/test",
             "method": "GET",
-            "authorization_type": "COGNITO_USER_POOLS"
+            "authorization_type": "COGNITO"
         })
 
         # Test the current authorizer ID retrieval method
@@ -267,7 +267,7 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
         route_config = ApiGatewayConfigRouteConfig({
             "path": "/test",
             "method": "GET",
-            "authorization_type": "COGNITO_USER_POOLS"
+            "authorization_type": "COGNITO"
         })
 
         # Test the enhanced authorizer ID retrieval method

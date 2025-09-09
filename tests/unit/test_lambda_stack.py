@@ -294,7 +294,7 @@ class TestLambdaStackReal:
                     "api": {
                         "route": "/secure/endpoint",
                         "method": "GET",
-                        "authorization_type": "COGNITO_USER_POOLS",  # Enable authorizer
+                        "authorization_type": "COGNITO",  # Enable authorizer
                         "api_key_required": False,
                         "request_parameters": {},
                         "gateway_id": None,
@@ -393,7 +393,7 @@ class TestLambdaStackReal:
                     "api": {
                         "route": "/existing/auth/endpoint",
                         "method": "POST",
-                        "authorization_type": "COGNITO_USER_POOLS",
+                        "authorization_type": "COGNITO",
                         "api_key_required": False,
                         "request_parameters": {},
                         "api_gateway_id": None,
@@ -439,7 +439,7 @@ class TestLambdaStackReal:
             "AWS::ApiGateway::Method",
             {
                 "HttpMethod": "POST",
-                "AuthorizationType": "COGNITO_USER_POOLS",
+                "AuthorizationType": "COGNITO",
                 "AuthorizerId": "abc123def456",  # Should reference existing authorizer
             },
         )
@@ -503,7 +503,7 @@ class TestLambdaStackReal:
             "api": {
                 "route": "/api/endpoint",
                 "method": "POST",
-                "authorization_type": "COGNITO_USER_POOLS",
+                "authorization_type": "COGNITO",
                 "api_key_required": False,
                 "request_parameters": {},
                 "api_gateway_id": None,
@@ -517,7 +517,7 @@ class TestLambdaStackReal:
         assert lambda_config.handler == "app.lambda_handler"
         assert lambda_config.api.routes == "/api/endpoint"
         assert lambda_config.api.method == "POST"
-        assert lambda_config.api.authorization_type == "COGNITO_USER_POOLS"
+        assert lambda_config.api.authorization_type == "COGNITO"
 
     def test_lambda_stack_with_real_sample_config(self, monkeypatch):
         """Test Lambda stack with real sample config using CdkAppFactory pattern."""
@@ -580,31 +580,36 @@ class TestLambdaStackReal:
 
                 # Find the lambda stack - debug stack names first
                 print(f"Available stacks: {[stack.stack_name for stack in stacks]}")
-                
+
                 # The sample config uses pipeline mode, so we need to find the pipeline stack
                 # Look for any stack that contains our Lambda resources
                 lambda_stack = None
                 for stack in stacks:
                     template = stack.template
                     lambda_functions = [
-                        res for res in template.get("Resources", {}).values()
+                        res
+                        for res in template.get("Resources", {}).values()
                         if res.get("Type") == "AWS::Lambda::Function"
                     ]
                     if len(lambda_functions) > 0:
                         lambda_stack = stack
                         break
-                
+
                 # If no stack has Lambda functions, just use the first stack for basic validation
                 if lambda_stack is None and len(stacks) > 0:
                     lambda_stack = stacks[0]
-                    print(f"No Lambda functions found, using first stack for validation: {lambda_stack.stack_name}")
+                    print(
+                        f"No Lambda functions found, using first stack for validation: {lambda_stack.stack_name}"
+                    )
 
-                assert lambda_stack is not None, f"No stacks found. Available stacks: {[stack.stack_name for stack in stacks]}"
+                assert (
+                    lambda_stack is not None
+                ), f"No stacks found. Available stacks: {[stack.stack_name for stack in stacks]}"
                 print(f"✅ Using stack: {lambda_stack.stack_name}")
 
                 # Verify the stack template contains the expected resources
                 template = lambda_stack.template
-                
+
                 # Debug: Print all resource types in the template
                 all_resources = template.get("Resources", {})
                 resource_types = {}
@@ -613,25 +618,29 @@ class TestLambdaStackReal:
                     if res_type not in resource_types:
                         resource_types[res_type] = 0
                     resource_types[res_type] += 1
-                
+
                 print(f"Template resource types: {resource_types}")
                 print(f"Total resources in template: {len(all_resources)}")
-                
+
                 # Check that Lambda functions were created (may be 0 for pipeline stacks)
                 lambda_functions = [
-                    res for res in template.get("Resources", {}).values()
+                    res
+                    for res in template.get("Resources", {}).values()
                     if res.get("Type") == "AWS::Lambda::Function"
                 ]
-                
+
                 print(f"✅ Found {len(lambda_functions)} Lambda functions")
 
                 # For pipeline mode, the main validation is that synthesis succeeded without ValidationError
-                print("✅ Main validation passed: Stack synthesis succeeded without ValidationError!")
+                print(
+                    "✅ Main validation passed: Stack synthesis succeeded without ValidationError!"
+                )
 
             except Exception as e:
                 print(f"❌ Overlapping routes test failed: {e}")
                 # Print more details about the error for debugging
                 import traceback
+
                 traceback.print_exc()
                 raise AssertionError(f"Overlapping routes handling failed: {e}") from e
 
@@ -641,7 +650,7 @@ class TestLambdaStackReal:
         from cdk_factory.app import CdkAppFactory
         import tempfile
         import os
-        
+
         # Set up environment variables
         monkeypatch.setenv("ENVIRONMENT", "dev")
         monkeypatch.setenv("WORKLOAD_NAME", "overlapping-routes-test")
@@ -685,7 +694,8 @@ class TestLambdaStackReal:
                 for stack in stacks:
                     template = stack.template
                     lambda_functions = [
-                        res for res in template.get("Resources", {}).values()
+                        res
+                        for res in template.get("Resources", {}).values()
                         if res.get("Type") == "AWS::Lambda::Function"
                     ]
                     if len(lambda_functions) > 0:
@@ -697,13 +707,14 @@ class TestLambdaStackReal:
 
                 # Verify the stack template contains the expected resources
                 template = lambda_stack.template
-                
+
                 # Check that Lambda functions were created
                 lambda_functions = [
-                    res for res in template.get("Resources", {}).values()
+                    res
+                    for res in template.get("Resources", {}).values()
                     if res.get("Type") == "AWS::Lambda::Function"
                 ]
-                
+
                 # We should have 7 Lambda functions for our overlapping routes
                 expected_functions = 7
                 assert len(lambda_functions) >= expected_functions, (
@@ -714,10 +725,11 @@ class TestLambdaStackReal:
 
                 # Check that API Gateway methods were created without conflicts
                 api_methods = [
-                    res for res in template.get("Resources", {}).values()
+                    res
+                    for res in template.get("Resources", {}).values()
                     if res.get("Type") == "AWS::ApiGateway::Method"
                 ]
-                
+
                 # We should have methods for all our routes
                 assert len(api_methods) >= expected_functions, (
                     f"Expected at least {expected_functions} API Gateway methods, "
@@ -727,10 +739,11 @@ class TestLambdaStackReal:
 
                 # Verify that resources with shared paths were created correctly
                 api_resources = [
-                    res for res in template.get("Resources", {}).values()
+                    res
+                    for res in template.get("Resources", {}).values()
                     if res.get("Type") == "AWS::ApiGateway::Resource"
                 ]
-                
+
                 # We should have resources for the path segments, but shared ones shouldn't be duplicated
                 print(f"✅ Created {len(api_resources)} API Gateway resources")
 
@@ -740,6 +753,7 @@ class TestLambdaStackReal:
                 print(f"❌ Overlapping routes test failed: {e}")
                 # Print more details about the error for debugging
                 import traceback
+
                 traceback.print_exc()
                 raise AssertionError(f"Overlapping routes handling failed: {e}") from e
 

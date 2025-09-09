@@ -146,7 +146,7 @@
                       "root_resource_id": "wm4ctmgbu7root",
                       "authorizer": {
                         "id": "8m223r",
-                        "type": "COGNITO_USER_POOLS"
+                        "type": "COGNITO"
                       }
                     },
                     "resources": [
