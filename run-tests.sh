@@ -35,6 +35,7 @@ pip install --upgrade pip
 pip install -r ./requirements.txt
 pip install -r ./requirements.dev.txt
 pip install -r ./requirements.tests.txt
+pip install -e .
 
 # Check if pytest is installed in the virtual environment
 if [ ! -f ".unittest/bin/pytest" ]; then

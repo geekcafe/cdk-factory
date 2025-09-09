@@ -49,11 +49,6 @@ class ApiGatewayConfigRouteConfig:
         return self._config.get("request_parameters", {})
 
     @property
-    def skip_authorizer(self) -> bool:
-        """Whether to skip authorizer setup"""
-        return self._config.get("skip_authorizer", False)
-
-    @property
     def routes(self) -> str:
         """API Gateway routes (alias for route)"""
         return self.route
@@ -61,12 +56,7 @@ class ApiGatewayConfigRouteConfig:
     @property
     def api_gateway_id(self) -> str:
         """API Gateway ID for existing gateways"""
-        return self._config.get("api_gateway_id", "") or self._config.get("api_gateway_id", "")
-
-    @property
-    def authorizer_id(self) -> str:
-        """Authorizer ID for existing authorizers"""
-        return self._config.get("authorizer_id", "") or self._config.get("authorizer_id", "")
+        return self._config.get("api_gateway_id", "")
 
     def __get(self, key: str) -> Any:
         """Helper method to get config values"""

@@ -112,7 +112,7 @@ class TestLambdaStackReal:
                     "api": {
                         "route": "/test/endpoint",
                         "method": "POST",
-                        "skip_authorizer": True,
+                        "authorization_type": "NONE",
                         "api_key_required": False,
                         "request_parameters": {},
                         "api_gateway_id": None,
@@ -253,7 +253,7 @@ class TestLambdaStackReal:
             },
         )
 
-        # Since skip_authorizer is True, no authorizer should be created
+        # Since authorization_type is NONE, no authorizer should be created
         template.resource_count_is("AWS::ApiGateway::Authorizer", 0)
 
     def test_lambda_stack_build_with_authorizer_real_synthesis(
@@ -294,7 +294,7 @@ class TestLambdaStackReal:
                     "api": {
                         "route": "/secure/endpoint",
                         "method": "GET",
-                        "skip_authorizer": False,  # Enable authorizer
+                        "authorization_type": "COGNITO_USER_POOLS",  # Enable authorizer
                         "api_key_required": False,
                         "request_parameters": {},
                         "gateway_id": None,
@@ -393,7 +393,7 @@ class TestLambdaStackReal:
                     "api": {
                         "route": "/existing/auth/endpoint",
                         "method": "POST",
-                        "skip_authorizer": False,
+                        "authorization_type": "COGNITO_USER_POOLS",
                         "api_key_required": False,
                         "request_parameters": {},
                         "api_gateway_id": None,
@@ -503,7 +503,7 @@ class TestLambdaStackReal:
             "api": {
                 "route": "/api/endpoint",
                 "method": "POST",
-                "skip_authorizer": False,
+                "authorization_type": "COGNITO_USER_POOLS",
                 "api_key_required": False,
                 "request_parameters": {},
                 "api_gateway_id": None,
@@ -517,7 +517,7 @@ class TestLambdaStackReal:
         assert lambda_config.handler == "app.lambda_handler"
         assert lambda_config.api.routes == "/api/endpoint"
         assert lambda_config.api.method == "POST"
-        assert not lambda_config.api.skip_authorizer
+        assert lambda_config.api.authorization_type == "COGNITO_USER_POOLS"
 
     def test_lambda_stack_with_real_sample_config(self, monkeypatch):
         """Test Lambda stack with real sample config using CdkAppFactory pattern."""

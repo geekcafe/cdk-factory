@@ -96,14 +96,14 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         api_gateway = self.integration_utility.create_api_gateway_with_config(
             api_id, self.api_config, self.stack_config
         )
-        
+
         # Setup API Gateway components in logical order
         self._setup_api_resources_and_methods(api_gateway)
         api_keys = self._setup_api_keys()
         self._setup_usage_plans(api_gateway, api_keys)
         authorizer = self._setup_cognito_authorizer(api_gateway, api_id)
         self._setup_lambda_routes(api_gateway, api_id, routes, authorizer)
-        
+
         # Finalize deployment and stage creation
         stage = self.__finalize_api_gateway_deployments()
         self._store_deployment_stage_reference(api_gateway, stage)
@@ -117,7 +117,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         """Setup API Gateway resources and methods from configuration"""
         if not self.api_config.resources:
             return
-            
+
         for resource_config in self.api_config.resources:
             path = resource_config.get("path")
             if not path:
@@ -142,10 +142,10 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
 
         # Create the integration
         integration = self._create_method_integration(method_config, integration_type)
-        
+
         # Create method responses
         method_responses = self._create_method_responses(method_config)
-        
+
         # Get authorization type
         authorization_type = self._get_authorization_type(method_config)
 
@@ -191,24 +191,18 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                         },
                     )
                 ],
-                request_templates={
-                    "application/json": '{"statusCode": 200}'
-                },
+                request_templates={"application/json": '{"statusCode": 200}'},
             )
 
     def _create_method_responses(self, method_config):
         """Create method responses for a method"""
         method_responses = []
-        for response in method_config.get(
-            "method_responses", [{"status_code": "200"}]
-        ):
+        for response in method_config.get("method_responses", [{"status_code": "200"}]):
             status_code = response.get("status_code", "200")
             response_models = {}
 
             # Handle response models
-            for content_type, model_name in response.get(
-                "response_models", {}
-            ).items():
+            for content_type, model_name in response.get("response_models", {}).items():
                 if model_name == "Empty":
                     response_models[content_type] = apigateway.Model.EMPTY_MODEL
                 # Add more model mappings as needed
@@ -234,7 +228,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         api_keys = []
         if not self.api_config.api_keys:
             return api_keys
-            
+
         for key_config in self.api_config.api_keys:
             key_name = key_config.get("name")
             if not key_name:
@@ -254,7 +248,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         """Create usage plans if specified in configuration"""
         if not self.api_config.usage_plans:
             return
-            
+
         for plan_config in self.api_config.usage_plans:
             plan_name = plan_config.get("name")
             if not plan_name:
@@ -270,11 +264,17 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 f"{plan_name}-plan",
                 name=plan_name,
                 description=plan_config.get("description"),
-                api_stages=[
-                    apigateway.UsagePlanPerApiStage(
-                        api=api_gateway, stage=getattr(api_gateway, '_deployment_stage', None)
-                    )
-                ] if hasattr(api_gateway, '_deployment_stage') and api_gateway._deployment_stage else [],
+                api_stages=(
+                    [
+                        apigateway.UsagePlanPerApiStage(
+                            api=api_gateway,
+                            stage=getattr(api_gateway, "_deployment_stage", None),
+                        )
+                    ]
+                    if hasattr(api_gateway, "_deployment_stage")
+                    and api_gateway._deployment_stage
+                    else []
+                ),
                 throttle=throttle,
                 quota=quota,
             )
@@ -287,7 +287,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         """Create throttle settings for usage plan"""
         if not plan_config.get("throttle"):
             return None
-            
+
         return apigateway.ThrottleSettings(
             rate_limit=plan_config["throttle"].get("rate_limit"),
             burst_limit=plan_config["throttle"].get("burst_limit"),
@@ -297,19 +297,17 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         """Create quota settings for usage plan"""
         if not plan_config.get("quota"):
             return None
-            
+
         return apigateway.QuotaSettings(
             limit=plan_config["quota"].get("limit"),
-            period=apigateway.Period[
-                plan_config["quota"].get("period", "MONTH")
-            ],
+            period=apigateway.Period[plan_config["quota"].get("period", "MONTH")],
         )
 
     def _setup_cognito_authorizer(self, api_gateway, api_id):
         """Setup Cognito authorizer if configured"""
         if not self.api_config.cognito_authorizer:
             return None
-            
+
         route_config = ApiGatewayConfigRouteConfig({})
         return self.integration_utility.get_or_create_authorizer(
             api_gateway, route_config, self.stack_config, api_id
@@ -325,7 +323,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         suffix = route["path"].strip("/").replace("/", "-") or "health"
         src = route.get("src")
         handler = route.get("handler")
-        
+
         # Create Lambda function
         lambda_fn = self.create_lambda(
             api_id=api_id,
@@ -340,29 +338,35 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             if route_path != "/"
             else api_gateway.root
         )
-        
+
         # Setup Lambda integration
-        self._setup_lambda_integration(api_gateway, api_id, route, lambda_fn, authorizer, suffix)
-        
+        self._setup_lambda_integration(
+            api_gateway, api_id, route, lambda_fn, authorizer, suffix
+        )
+
         # Setup CORS using centralized utility
         self.integration_utility.setup_route_cors(resource, route_path, route)
 
-    def _setup_lambda_integration(self, api_gateway, api_id, route, lambda_fn, authorizer, suffix):
+    def _setup_lambda_integration(
+        self, api_gateway, api_id, route, lambda_fn, authorizer, suffix
+    ):
         """Setup Lambda integration for a route"""
         route_path = route["path"]
-        authorization_type = route.get("authorization_type")
+        # Secure by default: require Cognito authorization unless explicitly set to NONE
+        authorization_type = route.get("authorization_type", "COGNITO_USER_POOLS")
         
+        # If explicitly set to NONE, skip authorization
+        if authorization_type == "NONE":
+            authorizer = None
+
         if route.get("src"):
             # Use shared utility for consistent Lambda integration behavior
             api_route_config = ApiGatewayConfigRouteConfig(
                 {
                     "method": route["method"],
                     "route": route_path,
-                    "authorization_type": (
-                        authorization_type if authorization_type else "NONE"
-                    ),
+                    "authorization_type": authorization_type,
                     "api_key_required": False,
-                    "skip_authorizer": not authorizer,
                     "user_pool_id": (
                         os.getenv("COGNITO_USER_POOL_ID") if authorizer else None
                     ),
@@ -383,50 +387,42 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 api_gateway, route, lambda_fn, authorizer, api_id, suffix
             )
 
-    def _setup_fallback_lambda_integration(self, api_gateway, route, lambda_fn, authorizer, api_id, suffix):
+    def _setup_fallback_lambda_integration(
+        self, api_gateway, route, lambda_fn, authorizer, api_id, suffix
+    ):
         """Setup fallback Lambda integration for routes without src"""
         route_path = route["path"]
         authorization_type = route.get("authorization_type")
-        
+
         resource = (
             api_gateway.root.resource_for_path(route_path)
             if route_path != "/"
             else api_gateway.root
         )
-        
+
         integration = apigateway.LambdaIntegration(lambda_fn)
         method_options = {}
 
         # Handle authorization type
-        if (
-            authorizer
-            and authorization_type
-            and authorization_type.upper() != "NONE"
-        ):
-            method_options["authorization_type"] = (
-                apigateway.AuthorizationType.COGNITO
-            )
+        if authorizer and authorization_type and authorization_type.upper() != "NONE":
+            method_options["authorization_type"] = apigateway.AuthorizationType.COGNITO
             method_options["authorizer"] = authorizer
         else:
-            method_options["authorization_type"] = (
-                apigateway.AuthorizationType.NONE
-            )
+            method_options["authorization_type"] = apigateway.AuthorizationType.NONE
 
         # Add the method with proper options
         try:
-            resource.add_method(
-                route["method"].upper(), integration, **method_options
-            )
-            
+            resource.add_method(route["method"].upper(), integration, **method_options)
+
             # Store integration info for deployment finalization
             integration_info = {
                 "api_gateway": api_gateway,
                 "function_name": f"{api_id}-lambda-{suffix}",
                 "route_path": route_path,
-                "method": route["method"].upper()
+                "method": route["method"].upper(),
             }
             self.api_gateway_integrations.append(integration_info)
-            
+
         except Exception as e:
             error_msg = f"Failed to create method {route['method'].upper()} on {route_path}: {str(e)}"
             print(error_msg)
@@ -440,7 +436,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             try:
                 # This is a bit of a hack, but we need to set the deployment stage
                 # so that api_gateway.url works properly
-                object.__setattr__(api_gateway, '_deployment_stage_internal', stage)
+                object.__setattr__(api_gateway, "_deployment_stage_internal", stage)
             except:
                 pass
 
@@ -450,23 +446,33 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         This ensures that all routes are included in the deployed stage.
         Returns the created stage for the first API Gateway.
         """
-        if not hasattr(self, 'api_gateway_integrations') or not self.api_gateway_integrations:
-            logger.info("No API Gateway integrations found, skipping deployment finalization")
+        if (
+            not hasattr(self, "api_gateway_integrations")
+            or not self.api_gateway_integrations
+        ):
+            logger.info(
+                "No API Gateway integrations found, skipping deployment finalization"
+            )
             return None
 
         # Use consolidated utility to group integrations
-        from cdk_factory.utilities.api_gateway_integration_utility import ApiGatewayIntegrationUtility
+        from cdk_factory.utilities.api_gateway_integration_utility import (
+            ApiGatewayIntegrationUtility,
+        )
+
         utility = ApiGatewayIntegrationUtility(self)
-        api_gateways = utility.group_integrations_by_api_gateway(self.api_gateway_integrations)
+        api_gateways = utility.group_integrations_by_api_gateway(
+            self.api_gateway_integrations
+        )
 
         created_stage = None
-        
+
         # Create deployments and stages using consolidated utility
         for api_key, api_info in api_gateways.items():
-            api_gateway = api_info['api_gateway']
-            integrations = api_info['integrations']
-            counter = api_info['counter']
-            
+            api_gateway = api_info["api_gateway"]
+            integrations = api_info["integrations"]
+            counter = api_info["counter"]
+
             # Use consolidated deployment and stage creation
             stage = utility.finalize_api_gateway_deployment(
                 api_gateway=api_gateway,
@@ -474,13 +480,13 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 stack_config=self.stack_config,
                 api_config=self.api_config,
                 construct_scope=self,
-                counter=counter
+                counter=counter,
             )
-            
+
             # Store the first created stage to return
             if created_stage is None:
                 created_stage = stage
-        
+
         return created_stage
 
     def _export_ssm_parameters(self, api_gateway, authorizer=None):
@@ -502,7 +508,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             "api_arn": api_gateway.arn_for_execute_api(),
             "root_resource_id": api_gateway.rest_api_root_resource_id,
         }
-        
+
         # Add URL by constructing it manually since we have a custom deployment pattern
         try:
             # Construct the API URL manually using the API ID and region
@@ -711,7 +717,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 "ApiBasePathMapping",
                 domain_name=api_gateway_domain_resource,
                 rest_api=api,
-                stage=getattr(api, '_deployment_stage', None) or api.deployment_stage,
+                stage=getattr(api, "_deployment_stage", None) or api.deployment_stage,
                 base_path="",  # Root path
             )
 

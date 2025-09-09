@@ -54,9 +54,8 @@ class ApiGatewayIntegrationUtility:
         if not api_config:
             raise ValueError("API Gateway config is missing in Lambda function config")
 
-        # Get or create authorizer if needed
-
-        if not api_config.skip_authorizer and not self.authorizer:
+        # Get or create authorizer if needed (only for COGNITO_USER_POOLS authorization)
+        if api_config.authorization_type != "NONE" and not self.authorizer:
             self.authorizer = self.get_or_create_authorizer(
                 api_gateway, api_config, stack_config
             )
@@ -78,17 +77,26 @@ class ApiGatewayIntegrationUtility:
             )
         else:
             # Use L2 constructs for new authorizers
-            # Determine authorization type based on whether authorizer is provided
-            if self.authorizer:
+            # Determine authorization type and authorizer based on authorization_type
+            if api_config.authorization_type == "NONE":
+                # Public access - no authorization required
+                auth_type = apigateway.AuthorizationType.NONE
+                authorizer_to_use = None
+            elif self.authorizer:
+                # Cognito authorization with existing authorizer
                 auth_type = apigateway.AuthorizationType.COGNITO
+                authorizer_to_use = self.authorizer
             else:
+                # Use configured authorization type
                 auth_type = apigateway.AuthorizationType[api_config.authorization_type]
+                authorizer_to_use = None
+            
             method = None
             try:
                 method = resource.add_method(
                     api_config.method.upper(),
                     integration,
-                    authorizer=self.authorizer,
+                    authorizer=authorizer_to_use,
                     api_key_required=api_config.api_key_required,
                     request_parameters=api_config.request_parameters,
                     authorization_type=auth_type,

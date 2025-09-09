@@ -196,7 +196,7 @@
               "path": "/app/health",
               "method": "GET",
               "src": "./lambdas/api_gateway_health",
-              "handler": "app.lambda_handler",
+              "handler": "app.lambda_handler",              
               "cors": {
                 "methods": [
                   "GET"
