@@ -439,7 +439,7 @@ class TestLambdaStackReal:
             "AWS::ApiGateway::Method",
             {
                 "HttpMethod": "POST",
-                "AuthorizationType": "COGNITO",
+                "AuthorizationType": "COGNITO_USER_POOLS",
                 "AuthorizerId": "abc123def456",  # Should reference existing authorizer
             },
         )
