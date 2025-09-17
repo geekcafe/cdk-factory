@@ -68,7 +68,7 @@ class ApiGatewayIntegrationUtility:
         )
 
         # Add method to API Gateway
-        resource = self.get_or_create_resource(api_gateway, api_config.routes)
+        resource = self.get_or_create_resource(api_gateway, api_config.routes, stack_config)
 
         # Handle existing authorizer ID using L1 constructs
         if self._get_existing_authorizer_id_with_ssm_fallback(api_config, stack_config):
@@ -602,11 +602,19 @@ class ApiGatewayIntegrationUtility:
         return self.authorizer
 
     def get_or_create_resource(
-        self, api_gateway: apigateway.RestApi, route_path: str
+        self, api_gateway: apigateway.RestApi, route_path: str, stack_config=None
     ) -> apigateway.Resource:
-        """Get or create API Gateway resource for the given route path"""
+        """Get or create API Gateway resource for the given route path with cross-stack support"""
         if not route_path or route_path == "/":
             return api_gateway.root
+
+        # Check for existing resource import configuration
+        if stack_config:
+            api_gateway_config = stack_config.dictionary.get("api_gateway", {})
+            existing_resources = api_gateway_config.get("existing_resources", {})
+            
+            if existing_resources:
+                return self._create_resource_with_imports(api_gateway, route_path, existing_resources)
 
         # Use the built-in resource_for_path method which handles existing resources correctly
         try:
@@ -657,6 +665,94 @@ class ApiGatewayIntegrationUtility:
                     raise
 
         return current_resource
+
+    def _create_resource_with_imports(
+        self, api_gateway: apigateway.RestApi, route_path: str, existing_resources: dict
+    ) -> apigateway.Resource:
+        """Create resource path using existing resource imports to avoid conflicts"""
+        from aws_cdk import aws_apigateway as apigateway
+        
+        # Remove leading slash and split path
+        path_parts = route_path.lstrip("/").split("/")
+        current_resource = api_gateway.root
+        current_path = ""
+        
+        # Navigate through path parts, importing existing resources where configured
+        for i, part in enumerate(path_parts):
+            if not part:  # Skip empty parts
+                continue
+                
+            current_path = "/" + "/".join(path_parts[:i+1])
+            
+            # Check if this path segment should be imported from existing resources
+            if current_path in existing_resources:
+                resource_config = existing_resources[current_path]
+                resource_id = resource_config.get("resource_id")
+                
+                if resource_id:
+                    logger.info(f"Importing existing resource for path {current_path} with ID: {resource_id}")
+                    
+                    # Import the existing resource using L1 constructs
+                    current_resource = self._import_existing_resource(
+                        api_gateway, current_resource, part, resource_id, current_path
+                    )
+                else:
+                    # Create normally if no resource_id specified
+                    current_resource = self._add_resource_safely(current_resource, part)
+            else:
+                # Create normally for non-imported paths
+                current_resource = self._add_resource_safely(current_resource, part)
+        
+        return current_resource
+    
+    def _import_existing_resource(
+        self, api_gateway: apigateway.RestApi, parent_resource: apigateway.Resource, 
+        path_part: str, resource_id: str, full_path: str
+    ) -> apigateway.Resource:
+        """Import an existing API Gateway resource by ID"""
+        from aws_cdk import aws_apigateway as apigateway
+        
+        try:
+            # Use CfnResource to reference existing resource
+            # This creates a reference without trying to create the resource
+            imported_resource = apigateway.Resource.from_resource_id(
+                self.scope,
+                f"imported-resource-{hash(full_path) % 10000}",
+                resource_id
+            )
+            
+            logger.info(f"Successfully imported existing resource: {path_part} (ID: {resource_id})")
+            return imported_resource
+            
+        except Exception as e:
+            logger.warning(f"Failed to import resource {path_part} with ID {resource_id}: {e}")
+            # Fallback to normal creation
+            return self._add_resource_safely(parent_resource, path_part)
+    
+    def _add_resource_safely(
+        self, parent_resource: apigateway.Resource, path_part: str
+    ) -> apigateway.Resource:
+        """Add resource with conflict handling"""
+        try:
+            return parent_resource.add_resource(path_part)
+        except Exception as e:
+            if "AlreadyExists" in str(e) or "same parent already has this name" in str(e):
+                logger.warning(f"Resource {path_part} already exists, attempting to find existing resource")
+                
+                # Try to find the existing resource in children
+                for child in parent_resource.node.children:
+                    if (
+                        hasattr(child, "path_part")
+                        and getattr(child, "path_part", None) == path_part
+                    ):
+                        logger.info(f"Found existing resource: {path_part}")
+                        return child
+                
+                # If not found in children, re-raise the error
+                logger.error(f"Could not find or create resource: {path_part}")
+                raise e
+            else:
+                raise e
 
     def _get_existing_api_gateway_id_with_ssm_fallback(
         self, api_config: ApiGatewayConfigRouteConfig, stack_config

@@ -60,7 +60,7 @@ class LiveSsmResolver:
         Resolve SSM parameter with live API call.
 
         Args:
-            parameter_path: SSM parameter path (e.g., /movatra/dev/cognito/user-pool/user-pool-arn)
+            parameter_path: SSM parameter path (e.g., /workload/dev/cognito/user-pool/user-pool-arn)
             fallback_value: Value to return if live resolution fails
 
         Returns:
