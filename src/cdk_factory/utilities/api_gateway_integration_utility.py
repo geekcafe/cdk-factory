@@ -1382,15 +1382,17 @@ class ApiGatewayIntegrationUtility:
         modified_config = deepcopy(api_config)
 
         auth_type = str(getattr(api_config, "authorization_type", "COGNITO")).upper()
-
-        # Check for explicit override flag
-        explicit_override = (
-            str(getattr(api_config, "allow_public_override", False)).lower() == "true"
-        )
-
         route_path = getattr(api_config, "routes", "unknown")
         method = getattr(api_config, "method", "unknown")
 
+        # Check for explicit override flag
+        explicit_override = getattr(api_config, "allow_public_override", False)
+        # Handle both boolean and string values
+        if isinstance(explicit_override, str):
+            explicit_override = explicit_override.lower() in ("true", "1", "yes")
+        else:
+            explicit_override = bool(explicit_override)
+        
         logger = logging.getLogger(__name__)
 
         # Case 1: Cognito available + NONE requested + No explicit override = ERROR

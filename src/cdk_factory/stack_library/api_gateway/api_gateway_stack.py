@@ -487,6 +487,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                     "user_pool_id": (
                         os.getenv("COGNITO_USER_POOL_ID") if authorizer else None
                     ),
+                    "allow_public_override": route.get("allow_public_override", False),
                 }
             )
 
