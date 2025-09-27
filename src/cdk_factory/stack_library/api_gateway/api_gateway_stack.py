@@ -347,15 +347,132 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         # Setup CORS using centralized utility
         self.integration_utility.setup_route_cors(resource, route_path, route)
 
+    def _validate_authorization_configuration(self, route, has_cognito_authorizer):
+        """
+        Validate authorization configuration for security and clarity.
+
+        This method implements 'secure by default' with explicit overrides:
+        - If Cognito is available and route wants NONE auth, requires explicit override
+        - If Cognito is not available and route wants COGNITO auth, raises error
+        - Provides verbose warnings for monitoring and security awareness
+
+        Args:
+            route (dict): Route configuration
+            has_cognito_authorizer (bool): Whether a Cognito authorizer is configured
+
+        Raises:
+            ValueError: When there are security conflicts without explicit overrides
+        """
+        import logging
+
+        auth_type = str(route.get("authorization_type", "COGNITO")).upper()
+        explicit_override = (
+            str(route.get("allow_public_override", False)).lower() == "true"
+        )
+        route_path = route.get("path", "unknown")
+        method = route.get("method", "unknown")
+
+        logger = logging.getLogger(__name__)
+
+        # Case 1: Cognito available + NONE requested + No explicit override = ERROR
+        if has_cognito_authorizer and auth_type == "NONE" and not explicit_override:
+            error_msg = (
+                f"🚨 SECURITY CONFLICT DETECTED for route {route_path} ({method}):\n"
+                f"   ❌ Cognito authorizer is configured (manual or auto-import)\n"
+                f"   ❌ authorization_type is set to 'NONE' (public access)\n"
+                f"   ❌ This creates a security risk - public endpoint with auth available\n\n"
+                f"💡 SOLUTIONS:\n"
+                f"   1. Remove Cognito configuration if you want public access\n"
+                f"   2. Add 'allow_public_override': true to explicitly allow public access\n"
+                f"   3. Remove 'authorization_type': 'NONE' to use secure Cognito auth\n\n"
+                f"🔒 This prevents accidental public endpoints when authentication is available.\n\n"
+                f"👉 ApiGatewayStack documentation for more details: https://github.com/your-repo/api-gateway-stack"
+            )
+            raise ValueError(error_msg)
+
+        # Case 2: No Cognito + COGNITO explicitly requested = ERROR
+        # Only error if COGNITO was explicitly requested, not if it's the default
+        if not has_cognito_authorizer and route.get("authorization_type") == "COGNITO":
+            error_msg = (
+                f"🚨 CONFIGURATION ERROR for route {route_path} ({method}):\n"
+                f"   ❌ authorization_type is explicitly set to 'COGNITO' but no Cognito authorizer configured\n"
+                f"   ❌ Cannot secure endpoint without authentication provider\n\n"
+                f"💡 SOLUTIONS:\n"
+                f"   1. Add Cognito configuration to enable authentication\n"
+                f"   2. Set authorization_type to 'NONE' for public access\n"
+                f"   3. Configure SSM auto-import for user_pool_arn\n"
+                f"   4. Remove explicit authorization_type to use default behavior"
+            )
+            raise ValueError(error_msg)
+
+        # Case 3: Cognito available + NONE requested + Explicit override = WARN
+        if has_cognito_authorizer and auth_type == "NONE" and explicit_override:
+            warning_msg = (
+                f"⚠️  PUBLIC ENDPOINT CONFIGURED: {route_path} ({method})\n"
+                f"   🔓 This endpoint is intentionally public (allow_public_override: true)\n"
+                f"   🔐 Cognito authentication is available but overridden\n"
+                f"   📊 Consider monitoring this endpoint for unexpected usage patterns\n"
+                f"   🔍 Review periodically: Should this endpoint be secured?"
+            )
+
+            # Print to console during deployment for visibility
+            print(warning_msg)
+
+            # Structured logging for monitoring and metrics
+            logger.warning(
+                "Public endpoint configured with Cognito available",
+                extra={
+                    "route": route_path,
+                    "method": method,
+                    "security_override": True,
+                    "cognito_available": True,
+                    "authorization_type": "NONE",
+                    "metric_name": "public_endpoint_with_cognito",
+                    "security_decision": "intentional_public",
+                    "recommendation": "review_periodically",
+                },
+            )
+
+        # Case 4: No Cognito + NONE = INFO (expected for public-only APIs)
+        if not has_cognito_authorizer and auth_type == "NONE":
+            logger.info(
+                f"Public endpoint configured (no Cognito available): {route_path} ({method})",
+                extra={
+                    "route": route_path,
+                    "method": method,
+                    "authorization_type": "NONE",
+                    "cognito_available": False,
+                    "security_decision": "public_only_api",
+                },
+            )
+
     def _setup_lambda_integration(
         self, api_gateway, api_id, route, lambda_fn, authorizer, suffix
     ):
         """Setup Lambda integration for a route"""
+        import logging
+
         route_path = route["path"]
         # Secure by default: require Cognito authorization unless explicitly set to NONE
         authorization_type = route.get("authorization_type", "COGNITO")
-        
-        # If explicitly set to NONE, skip authorization
+
+        # If no Cognito authorizer available and default COGNITO, fall back to NONE
+        if (
+            not authorizer
+            and authorization_type == "COGNITO"
+            and "authorization_type" not in route
+        ):
+            authorization_type = "NONE"
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"No Cognito authorizer available for route {route_path} ({route.get('method', 'unknown')}), "
+                f"defaulting to public access (NONE authorization)"
+            )
+
+        # Validate authorization configuration for security
+        self._validate_authorization_configuration(route, authorizer is not None)
+
+        # If set to NONE (explicitly or by fallback), skip authorization
         if authorization_type == "NONE":
             authorizer = None
 
@@ -391,9 +508,27 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         self, api_gateway, route, lambda_fn, authorizer, api_id, suffix
     ):
         """Setup fallback Lambda integration for routes without src"""
+        import logging
+
         route_path = route["path"]
         # Secure by default: require Cognito authorization unless explicitly set to NONE
         authorization_type = route.get("authorization_type", "COGNITO")
+
+        # If no Cognito authorizer available and default COGNITO, fall back to NONE
+        if (
+            not authorizer
+            and authorization_type == "COGNITO"
+            and "authorization_type" not in route
+        ):
+            authorization_type = "NONE"
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"No Cognito authorizer available for route {route_path} ({route.get('method', 'unknown')}), "
+                f"defaulting to public access (NONE authorization)"
+            )
+
+        # Validate authorization configuration for security
+        self._validate_authorization_configuration(route, authorizer is not None)
 
         resource = (
             api_gateway.root.resource_for_path(route_path)

@@ -77,6 +77,7 @@ def test_api_gateway_stack_full_config():
                         "method": "GET",
                         "handler": "app.lambda_handler",
                         "authorization_type": "NONE",
+                        "allow_public_override": True,  # Required for public access with Cognito available
                         "cors": {"methods": ["GET"], "origins": ["*"]},
                     },
                 ],
@@ -84,7 +85,7 @@ def test_api_gateway_stack_full_config():
                     "record_name": "api.example.com",
                     "id": "Z12345678901234567890",
                     "name": "example.com",
-                },
+                }
             }
         },
         workload=dummy_workload.dictionary,

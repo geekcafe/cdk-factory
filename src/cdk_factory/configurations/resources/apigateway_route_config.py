@@ -68,3 +68,13 @@ class ApiGatewayConfigRouteConfig:
     def user_pool_id(self) -> str | None:
         """User pool ID for existing authorizers"""
         return self._config.get("user_pool_id")
+
+    @property
+    def allow_public_override(self) -> bool:
+        """Whether to allow public access when Cognito is available"""
+        return str(self._config.get("allow_public_override", False)).lower() == "true"
+
+    @property
+    def dictionary(self) -> Dict[str, Any]:
+        """Access to the underlying configuration dictionary"""
+        return self._config

@@ -54,6 +54,20 @@ class ApiGatewayIntegrationUtility:
         if not api_config:
             raise ValueError("API Gateway config is missing in Lambda function config")
 
+        # Validate authorization configuration for security
+        has_cognito_authorizer = (
+            self.authorizer is not None
+            or self._get_existing_authorizer_id_with_ssm_fallback(
+                api_config, stack_config
+            )
+            is not None
+        )
+
+        # Apply enhanced authorization validation and fallback logic
+        api_config = self._validate_and_adjust_authorization_configuration(
+            api_config, has_cognito_authorizer
+        )
+
         # Get or create authorizer if needed (only for COGNITO_USER_POOLS authorization)
         if api_config.authorization_type != "NONE" and not self.authorizer:
             self.authorizer = self.get_or_create_authorizer(
@@ -68,7 +82,9 @@ class ApiGatewayIntegrationUtility:
         )
 
         # Add method to API Gateway
-        resource = self.get_or_create_resource(api_gateway, api_config.routes, stack_config)
+        resource = self.get_or_create_resource(
+            api_gateway, api_config.routes, stack_config
+        )
 
         # Handle existing authorizer ID using L1 constructs
         if self._get_existing_authorizer_id_with_ssm_fallback(api_config, stack_config):
@@ -90,7 +106,7 @@ class ApiGatewayIntegrationUtility:
                 # Use configured authorization type
                 auth_type = apigateway.AuthorizationType[api_config.authorization_type]
                 authorizer_to_use = None
-            
+
             method = None
             try:
                 method = resource.add_method(
@@ -612,9 +628,11 @@ class ApiGatewayIntegrationUtility:
         if stack_config:
             api_gateway_config = stack_config.dictionary.get("api_gateway", {})
             existing_resources = api_gateway_config.get("existing_resources", {})
-            
+
             if existing_resources:
-                return self._create_resource_with_imports(api_gateway, route_path, existing_resources)
+                return self._create_resource_with_imports(
+                    api_gateway, route_path, existing_resources
+                )
 
         # Use the built-in resource_for_path method which handles existing resources correctly
         try:
@@ -671,27 +689,29 @@ class ApiGatewayIntegrationUtility:
     ) -> apigateway.Resource:
         """Create resource path using existing resource imports to avoid conflicts"""
         from aws_cdk import aws_apigateway as apigateway
-        
+
         # Remove leading slash and split path
         path_parts = route_path.lstrip("/").split("/")
         current_resource = api_gateway.root
         current_path = ""
-        
+
         # Navigate through path parts, importing existing resources where configured
         for i, part in enumerate(path_parts):
             if not part:  # Skip empty parts
                 continue
-                
-            current_path = "/" + "/".join(path_parts[:i+1])
-            
+
+            current_path = "/" + "/".join(path_parts[: i + 1])
+
             # Check if this path segment should be imported from existing resources
             if current_path in existing_resources:
                 resource_config = existing_resources[current_path]
                 resource_id = resource_config.get("resource_id")
-                
+
                 if resource_id:
-                    logger.info(f"Importing existing resource for path {current_path} with ID: {resource_id}")
-                    
+                    logger.info(
+                        f"Importing existing resource for path {current_path} with ID: {resource_id}"
+                    )
+
                     # Import the existing resource using L1 constructs
                     current_resource = self._import_existing_resource(
                         api_gateway, current_resource, part, resource_id, current_path
@@ -702,33 +722,39 @@ class ApiGatewayIntegrationUtility:
             else:
                 # Create normally for non-imported paths
                 current_resource = self._add_resource_safely(current_resource, part)
-        
+
         return current_resource
-    
+
     def _import_existing_resource(
-        self, api_gateway: apigateway.RestApi, parent_resource: apigateway.Resource, 
-        path_part: str, resource_id: str, full_path: str
+        self,
+        api_gateway: apigateway.RestApi,
+        parent_resource: apigateway.Resource,
+        path_part: str,
+        resource_id: str,
+        full_path: str,
     ) -> apigateway.Resource:
         """Import an existing API Gateway resource by ID"""
         from aws_cdk import aws_apigateway as apigateway
-        
+
         try:
             # Use CfnResource to reference existing resource
             # This creates a reference without trying to create the resource
             imported_resource = apigateway.Resource.from_resource_id(
-                self.scope,
-                f"imported-resource-{hash(full_path) % 10000}",
-                resource_id
+                self.scope, f"imported-resource-{hash(full_path) % 10000}", resource_id
             )
-            
-            logger.info(f"Successfully imported existing resource: {path_part} (ID: {resource_id})")
+
+            logger.info(
+                f"Successfully imported existing resource: {path_part} (ID: {resource_id})"
+            )
             return imported_resource
-            
+
         except Exception as e:
-            logger.warning(f"Failed to import resource {path_part} with ID {resource_id}: {e}")
+            logger.warning(
+                f"Failed to import resource {path_part} with ID {resource_id}: {e}"
+            )
             # Fallback to normal creation
             return self._add_resource_safely(parent_resource, path_part)
-    
+
     def _add_resource_safely(
         self, parent_resource: apigateway.Resource, path_part: str
     ) -> apigateway.Resource:
@@ -736,9 +762,13 @@ class ApiGatewayIntegrationUtility:
         try:
             return parent_resource.add_resource(path_part)
         except Exception as e:
-            if "AlreadyExists" in str(e) or "same parent already has this name" in str(e):
-                logger.warning(f"Resource {path_part} already exists, attempting to find existing resource")
-                
+            if "AlreadyExists" in str(e) or "same parent already has this name" in str(
+                e
+            ):
+                logger.warning(
+                    f"Resource {path_part} already exists, attempting to find existing resource"
+                )
+
                 # Try to find the existing resource in children
                 for child in parent_resource.node.children:
                     if (
@@ -747,7 +777,7 @@ class ApiGatewayIntegrationUtility:
                     ):
                         logger.info(f"Found existing resource: {path_part}")
                         return child
-                
+
                 # If not found in children, re-raise the error
                 logger.error(f"Could not find or create resource: {path_part}")
                 raise e
@@ -826,7 +856,7 @@ class ApiGatewayIntegrationUtility:
         # Try enhanced SSM parameter lookup with auto-discovery
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
         ssm_config = api_gateway_config.get("ssm", {})
-        
+
         if ssm_config.get("enabled", False):
             try:
                 from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
@@ -848,26 +878,34 @@ class ApiGatewayIntegrationUtility:
                 imports_config = ssm_config.get("imports", {})
                 if "authorizer_id" in imports_config:
                     import_value = imports_config["authorizer_id"]
-                    
+
                     if import_value == "auto":
                         logger.info("Using auto-import for authorizer ID")
                         imported_values = ssm_mixin.auto_import_resources()
                         authorizer_id = imported_values.get("authorizer_id")
                         if authorizer_id:
-                            logger.info(f"Found authorizer ID via auto-import: {authorizer_id}")
+                            logger.info(
+                                f"Found authorizer ID via auto-import: {authorizer_id}"
+                            )
                             return authorizer_id
                     else:
                         # Use direct parameter import for specific SSM path
-                        logger.info(f"Looking up authorizer ID from SSM parameter: {import_value}")
+                        logger.info(
+                            f"Looking up authorizer ID from SSM parameter: {import_value}"
+                        )
                         authorizer_id = ssm_mixin._import_enhanced_ssm_parameter(
                             import_value, "authorizer_id"
                         )
                         if authorizer_id:
-                            logger.info(f"Found authorizer ID from SSM: {authorizer_id}")
+                            logger.info(
+                                f"Found authorizer ID from SSM: {authorizer_id}"
+                            )
                             return authorizer_id
 
             except Exception as e:
-                logger.warning(f"Failed to retrieve authorizer ID via enhanced SSM: {e}")
+                logger.warning(
+                    f"Failed to retrieve authorizer ID via enhanced SSM: {e}"
+                )
 
         # Fallback to traditional SSM parameter lookup
         authorizer_config = stack_config.dictionary.get("api_gateway", {}).get(
@@ -1030,7 +1068,9 @@ class ApiGatewayIntegrationUtility:
 
         return exported_params
 
-    def setup_route_cors(self, resource: apigateway.Resource, route_path: str, route: dict):
+    def setup_route_cors(
+        self, resource: apigateway.Resource, route_path: str, route: dict
+    ):
         """Setup CORS for a route - centralized method for both API Gateway and Lambda stacks"""
         cors_cfg = route.get("cors")
         methods = cors_cfg.get("methods") if cors_cfg else None
@@ -1103,28 +1143,30 @@ class ApiGatewayIntegrationUtility:
         stack_config: StackConfig,
         api_config: Optional[ApiGatewayConfig] = None,
         construct_scope: Optional[Construct] = None,
-        counter: int = 1
+        counter: int = 1,
     ) -> apigateway.Stage:
         """
         Create deployment and stage for API Gateway with all integrations.
         Consolidates logic from both API Gateway and Lambda stacks.
         """
         scope = construct_scope or self.scope
-        
+
         # Determine stage name with fallback logic
         stage_name = self._get_stage_name(stack_config, api_config)
-        
+
         # Check if using existing stage
         use_existing = self._should_use_existing_stage(stack_config)
-        
-        logger.info(f"Creating deployment for API Gateway with {len(integrations)} integrations")
-        
+
+        logger.info(
+            f"Creating deployment for API Gateway with {len(integrations)} integrations"
+        )
+
         # Create deployment
         deployment_id = f"api-gateway-{counter}-deployment-final"
         if len(integrations) == 1 and integrations[0].get("function_name"):
             # Lambda stack deployment
             deployment_id = "api-gateway-deployment"
-        
+
         deployment = apigateway.Deployment(
             scope,
             deployment_id,
@@ -1134,83 +1176,95 @@ class ApiGatewayIntegrationUtility:
         )
         # Add timestamp to deployment logical ID to prevent conflicts and force new deployment
         deployment.add_to_logical_id(datetime.now(UTC).isoformat())
-        
+
         # Create stage if not using existing
         stage = None
         if not use_existing:
-            stage_options = self._create_stage_options(api_config) if api_config else None
+            stage_options = (
+                self._create_stage_options(api_config) if api_config else None
+            )
             stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage"
             if len(integrations) == 1 and integrations[0].get("function_name"):
                 # Lambda stack stage
                 stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage-lambdas"
-            
+
             stage_kwargs = {
                 "deployment": deployment,
                 "stage_name": stage_name,
-                "description": f"Stage {stage_name} with {len(integrations)} integrations"
+                "description": f"Stage {stage_name} with {len(integrations)} integrations",
             }
-            
+
             # Add stage options if available
             if stage_options:
-                stage_kwargs.update({
-                    "access_log_destination": stage_options.access_log_destination,
-                    "access_log_format": stage_options.access_log_format,
-                    "logging_level": stage_options.logging_level,
-                    "data_trace_enabled": stage_options.data_trace_enabled,
-                    "metrics_enabled": stage_options.metrics_enabled,
-                    "tracing_enabled": stage_options.tracing_enabled,
-                    "throttling_rate_limit": stage_options.throttling_rate_limit,
-                    "throttling_burst_limit": stage_options.throttling_burst_limit
-                })
-            
+                stage_kwargs.update(
+                    {
+                        "access_log_destination": stage_options.access_log_destination,
+                        "access_log_format": stage_options.access_log_format,
+                        "logging_level": stage_options.logging_level,
+                        "data_trace_enabled": stage_options.data_trace_enabled,
+                        "metrics_enabled": stage_options.metrics_enabled,
+                        "tracing_enabled": stage_options.tracing_enabled,
+                        "throttling_rate_limit": stage_options.throttling_rate_limit,
+                        "throttling_burst_limit": stage_options.throttling_burst_limit,
+                    }
+                )
+
             stage = apigateway.Stage(scope, stage_id, **stage_kwargs)
-        
-        logger.info(f"Created deployment and stage '{stage_name}' for API Gateway: {api_gateway.rest_api_name}")
-        logger.info(f"Routes available at: https://{api_gateway.rest_api_id}.execute-api.{scope.region}.amazonaws.com/{stage_name}")
-        
+
+        logger.info(
+            f"Created deployment and stage '{stage_name}' for API Gateway: {api_gateway.rest_api_name}"
+        )
+        logger.info(
+            f"Routes available at: https://{api_gateway.rest_api_id}.execute-api.{scope.region}.amazonaws.com/{stage_name}"
+        )
+
         return stage
-    
-    def _get_stage_name(self, stack_config: StackConfig, api_config: Optional[ApiGatewayConfig] = None) -> str:
+
+    def _get_stage_name(
+        self, stack_config: StackConfig, api_config: Optional[ApiGatewayConfig] = None
+    ) -> str:
         """Get stage name with fallback logic from both stacks"""
         # Try Lambda stack config format first
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
         stage_name = api_gateway_config.get("stage", {}).get("name")
-        
+
         if stage_name:
             return stage_name
-        
+
         # Try API Gateway stack config format
-        if api_config and hasattr(api_config, 'stage_name') and api_config.stage_name:
+        if api_config and hasattr(api_config, "stage_name") and api_config.stage_name:
             stage_name = api_config.stage_name
         else:
             # Fallback to legacy format
             stage_name = api_gateway_config.get("stage_name", "prod")
-        
+
         # Handle special cases
         if stage_name is None:
             raise ValueError("Stage name is required in API Gateway config")
-        
+
         if stage_name.lower() == "auto":
             try:
                 stage_name = stack_config.name
             except Exception as e:
                 raise ValueError("Stage name is required in API Gateway config") from e
-        
+
         return stage_name
-    
+
     def _should_use_existing_stage(self, stack_config: StackConfig) -> bool:
         """Check if should use existing stage"""
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
         use_existing = api_gateway_config.get("stage", {}).get("use_existing", False)
         return str(use_existing).lower() == "true"
-    
-    def _create_stage_options(self, api_config: ApiGatewayConfig) -> apigateway.StageOptions:
+
+    def _create_stage_options(
+        self, api_config: ApiGatewayConfig
+    ) -> apigateway.StageOptions:
         """Create stage options with full configuration"""
         log_group = self._setup_log_group()
         access_log_format = self._get_log_format()
-        
+
         deploy_options = api_config.deploy_options or {}
-        
+
         return apigateway.StageOptions(
             access_log_destination=apigateway.LogGroupLogDestination(log_group),
             access_log_format=access_log_format,
@@ -1219,32 +1273,32 @@ class ApiGatewayIntegrationUtility:
             metrics_enabled=deploy_options.get("metrics_enabled", False),
             tracing_enabled=deploy_options.get("tracing_enabled", True),
             throttling_rate_limit=deploy_options.get("throttling_rate_limit", 1000),
-            throttling_burst_limit=deploy_options.get("throttling_burst_limit", 2000)
+            throttling_burst_limit=deploy_options.get("throttling_burst_limit", 2000),
         )
-    
+
     def _setup_log_group(self) -> logs.LogGroup:
         """Setup CloudWatch log group for API Gateway"""
         if self._log_group:
             return self._log_group
-        
+
         self._log_group = logs.LogGroup(
             self.scope,
             "ApiGatewayLogGroup",
             removal_policy=RemovalPolicy.DESTROY,
             retention=logs.RetentionDays.ONE_MONTH,
         )
-        
+
         self._log_group.grant_write(iam.ServicePrincipal("apigateway.amazonaws.com"))
         log_role = self._setup_log_role()
         self._log_group.grant_write(log_role)
-        
+
         return self._log_group
-    
+
     def _setup_log_role(self) -> iam.Role:
         """Setup IAM role for API Gateway logging"""
         if self._log_role:
             return self._log_role
-        
+
         self._log_role = iam.Role(
             self.scope,
             "ApiGatewayLogRole",
@@ -1255,42 +1309,176 @@ class ApiGatewayIntegrationUtility:
                 )
             ],
         )
-        
+
         return self._log_role
-    
+
     def _get_log_format(self) -> apigateway.AccessLogFormat:
         """Get access log format for API Gateway"""
         return apigateway.AccessLogFormat.custom(
-            json.dumps({
-                "requestId": "$context.requestId",
-                "extendedRequestId": "$context.extendedRequestId",
-                "method": "$context.httpMethod",
-                "route": "$context.resourcePath",
-                "status": "$context.status",
-                "requestBody": "$input.body",
-                "responseBody": "$context.responseLength",
-                "headers": "$context.requestHeaders",
-                "requestContext": "$context.requestContext",
-            })
+            json.dumps(
+                {
+                    "requestId": "$context.requestId",
+                    "extendedRequestId": "$context.extendedRequestId",
+                    "method": "$context.httpMethod",
+                    "route": "$context.resourcePath",
+                    "status": "$context.status",
+                    "requestBody": "$input.body",
+                    "responseBody": "$context.responseLength",
+                    "headers": "$context.requestHeaders",
+                    "requestContext": "$context.requestContext",
+                }
+            )
         )
-    
-    def group_integrations_by_api_gateway(self, integrations: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+
+    def group_integrations_by_api_gateway(
+        self, integrations: List[Dict[str, Any]]
+    ) -> Dict[int, Dict[str, Any]]:
         """Group integrations by API Gateway using object identity"""
         api_gateways = {}
         api_counter = 0
-        
+
         for integration in integrations:
-            api_gateway = integration.get('api_gateway')
+            api_gateway = integration.get("api_gateway")
             if api_gateway:
                 # Use object identity as key instead of CDK token
                 api_key = id(api_gateway)
                 if api_key not in api_gateways:
                     api_counter += 1
                     api_gateways[api_key] = {
-                        'api_gateway': api_gateway,
-                        'integrations': [],
-                        'counter': api_counter
+                        "api_gateway": api_gateway,
+                        "integrations": [],
+                        "counter": api_counter,
                     }
-                api_gateways[api_key]['integrations'].append(integration)
-        
+                api_gateways[api_key]["integrations"].append(integration)
+
         return api_gateways
+
+    def _validate_and_adjust_authorization_configuration(
+        self, api_config: ApiGatewayConfigRouteConfig, has_cognito_authorizer: bool
+    ) -> ApiGatewayConfigRouteConfig:
+        """
+        Validate and adjust authorization configuration for security and clarity.
+
+        This method implements 'secure by default' with explicit overrides:
+        - If Cognito is available and route wants NONE auth, requires explicit override
+        - If Cognito is not available and route wants COGNITO auth, raises error
+        - Provides verbose warnings for monitoring and security awareness
+        - Returns a potentially modified api_config with adjusted authorization_type
+
+        Args:
+            api_config (ApiGatewayConfigRouteConfig): Route configuration
+            has_cognito_authorizer (bool): Whether a Cognito authorizer is configured
+
+        Returns:
+            ApiGatewayConfigRouteConfig: Potentially modified configuration
+
+        Raises:
+            ValueError: When there are security conflicts without explicit overrides
+        """
+        import logging
+        from copy import deepcopy
+
+        # Create a copy to avoid modifying the original
+        modified_config = deepcopy(api_config)
+
+        auth_type = str(getattr(api_config, "authorization_type", "COGNITO")).upper()
+
+        # Check for explicit override flag
+        explicit_override = (
+            str(getattr(api_config, "allow_public_override", False)).lower() == "true"
+        )
+
+        route_path = getattr(api_config, "routes", "unknown")
+        method = getattr(api_config, "method", "unknown")
+
+        logger = logging.getLogger(__name__)
+
+        # Case 1: Cognito available + NONE requested + No explicit override = ERROR
+        if has_cognito_authorizer and auth_type == "NONE" and not explicit_override:
+            error_msg = (
+                f"🚨 SECURITY CONFLICT DETECTED for route {route_path} ({method}):\n"
+                f"   ❌ Cognito authorizer is configured (manual or auto-import)\n"
+                f"   ❌ authorization_type is set to 'NONE' (public access)\n"
+                f"   ❌ This creates a security risk - public endpoint with auth available\n\n"
+                f"💡 SOLUTIONS:\n"
+                f"   1. Remove Cognito configuration if you want public access\n"
+                f"   2. Add 'allow_public_override': true to explicitly allow public access\n"
+                f"   3. Remove 'authorization_type': 'NONE' to use secure Cognito auth\n\n"
+                f"🔒 This prevents accidental public endpoints when authentication is available.\n\n"
+                f"👉 ApiGatewayIntegrationUtility documentation for more details: https://github.com/your-repo/api-gateway-stack"
+            )
+            raise ValueError(error_msg)
+
+        # Case 2: No Cognito + COGNITO explicitly requested = ERROR
+        # Only error if COGNITO was explicitly requested, not if it's the default
+        original_auth_type = None
+        if hasattr(api_config, "dictionary") and api_config.dictionary:
+            original_auth_type = api_config.dictionary.get("authorization_type")
+
+        if not has_cognito_authorizer and original_auth_type == "COGNITO":
+            error_msg = (
+                f"🚨 CONFIGURATION ERROR for route {route_path} ({method}):\n"
+                f"   ❌ authorization_type is explicitly set to 'COGNITO' but no Cognito authorizer configured\n"
+                f"   ❌ Cannot secure endpoint without authentication provider\n\n"
+                f"💡 SOLUTIONS:\n"
+                f"   1. Add Cognito configuration to enable authentication\n"
+                f"   2. Set authorization_type to 'NONE' for public access\n"
+                f"   3. Configure SSM auto-import for user_pool_arn\n"
+                f"   4. Remove explicit authorization_type to use default behavior"
+            )
+            raise ValueError(error_msg)
+
+        # Case 3: Cognito available + NONE requested + Explicit override = WARN
+        if has_cognito_authorizer and auth_type == "NONE" and explicit_override:
+            warning_msg = (
+                f"⚠️  PUBLIC ENDPOINT CONFIGURED: {route_path} ({method})\n"
+                f"   🔓 This endpoint is intentionally public (allow_public_override: true)\n"
+                f"   🔐 Cognito authentication is available but overridden\n"
+                f"   📊 Consider monitoring this endpoint for unexpected usage patterns\n"
+                f"   🔍 Review periodically: Should this endpoint be secured?"
+            )
+
+            # Print to console during deployment for visibility
+            print(warning_msg)
+
+            # Structured logging for monitoring and metrics
+            logger.warning(
+                "Public endpoint configured with Cognito available",
+                extra={
+                    "route": route_path,
+                    "method": method,
+                    "security_override": True,
+                    "cognito_available": True,
+                    "authorization_type": "NONE",
+                    "metric_name": "public_endpoint_with_cognito",
+                    "security_decision": "intentional_public",
+                    "recommendation": "review_periodically",
+                },
+            )
+
+        # Case 4: No Cognito + default COGNITO = Fall back to NONE
+        if (
+            not has_cognito_authorizer
+            and auth_type == "COGNITO"
+            and original_auth_type is None
+        ):
+            modified_config.authorization_type = "NONE"
+            logger.info(
+                f"No Cognito authorizer available for route {route_path} ({method}), "
+                f"defaulting to public access (NONE authorization)"
+            )
+
+        # Case 5: No Cognito + NONE = INFO (expected for public-only APIs)
+        if not has_cognito_authorizer and auth_type == "NONE":
+            logger.info(
+                f"Public endpoint configured (no Cognito available): {route_path} ({method})",
+                extra={
+                    "route": route_path,
+                    "method": method,
+                    "authorization_type": "NONE",
+                    "cognito_available": False,
+                    "security_decision": "public_only_api",
+                },
+            )
+
+        return modified_config

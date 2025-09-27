@@ -148,6 +148,7 @@ class TestApiGatewayAuthorizationTypes(unittest.TestCase):
                             "src": "./src/cdk_factory/lambdas",
                             "handler": "health_handler.lambda_handler",
                             "authorization_type": "NONE",  # Explicit public access
+                            "allow_public_override": True,  # Required for public access with Cognito available
                         },
                         {
                             "path": "/secure-explicit",
