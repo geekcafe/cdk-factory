@@ -47,16 +47,23 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
             }
         )
 
-        # Set up logging capture
+        # Set up logging capture for both stack and utility
         self.log_capture = StringIO()
         self.log_handler = logging.StreamHandler(self.log_capture)
-        self.logger = logging.getLogger("cdk_factory.stack_library.api_gateway.api_gateway_stack")
-        self.logger.addHandler(self.log_handler)
-        self.logger.setLevel(logging.INFO)
+        
+        # Capture logs from both the stack and utility
+        self.stack_logger = logging.getLogger("cdk_factory.stack_library.api_gateway.api_gateway_stack")
+        self.utility_logger = logging.getLogger("cdk_factory.utilities.api_gateway_integration_utility")
+        
+        self.stack_logger.addHandler(self.log_handler)
+        self.utility_logger.addHandler(self.log_handler)
+        self.stack_logger.setLevel(logging.INFO)
+        self.utility_logger.setLevel(logging.INFO)
 
     def tearDown(self):
         """Clean up test environment"""
-        self.logger.removeHandler(self.log_handler)
+        self.stack_logger.removeHandler(self.log_handler)
+        self.utility_logger.removeHandler(self.log_handler)
 
     def test_security_conflict_detection_without_override(self):
         """Test that security conflicts are detected when Cognito is available but NONE auth requested without override"""

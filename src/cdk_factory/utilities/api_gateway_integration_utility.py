@@ -1384,6 +1384,8 @@ class ApiGatewayIntegrationUtility:
         auth_type = str(getattr(api_config, "authorization_type", "COGNITO")).upper()
         route_path = getattr(api_config, "routes", "unknown")
         method = getattr(api_config, "method", "unknown")
+        
+        logger = logging.getLogger(__name__)
 
         # Check for explicit override flag
         explicit_override = getattr(api_config, "allow_public_override", False)
