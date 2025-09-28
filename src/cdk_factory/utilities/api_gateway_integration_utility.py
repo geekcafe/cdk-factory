@@ -1108,20 +1108,29 @@ class ApiGatewayIntegrationUtility:
             )
             http_method = "GET"
 
-        # Create method using L1 construct with existing authorizer ID
+        # Use the validated authorization type from api_config
+        auth_type = api_config.authorization_type
+        method_props = {
+            "http_method": http_method,
+            "resource_id": resource.resource_id,
+            "rest_api_id": api_gateway.rest_api_id,
+            "authorization_type": auth_type,
+            "api_key_required": api_config.api_key_required,
+            "request_parameters": api_config.request_parameters,
+            "integration": integration_props,
+        }
+        
+        # Only add authorizer_id if authorization type is not NONE
+        if auth_type != "NONE":
+            method_props["authorizer_id"] = self._get_existing_authorizer_id_with_ssm_fallback(
+                api_config, stack_config
+            )
+
+        # Create method using L1 construct with validated authorization configuration
         method = apigateway.CfnMethod(
             self.scope,
             f"method-{http_method.lower()}-{resource.node.id}-existing-auth",
-            http_method=http_method,
-            resource_id=resource.resource_id,
-            rest_api_id=api_gateway.rest_api_id,
-            authorization_type="COGNITO_USER_POOLS",
-            authorizer_id=self._get_existing_authorizer_id_with_ssm_fallback(
-                api_config, stack_config
-            ),
-            api_key_required=api_config.api_key_required,
-            request_parameters=api_config.request_parameters,
-            integration=integration_props,
+            **method_props
         )
 
         # Add Lambda permission for API Gateway to invoke the function
