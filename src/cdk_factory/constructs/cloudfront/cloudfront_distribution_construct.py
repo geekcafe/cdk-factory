@@ -184,6 +184,20 @@ class CloudFrontDistributionConstruct(Construct):
         """
         function_associations = []
 
+        # Check if URL rewrite is enabled for SPA/static site routing
+        enable_url_rewrite = False
+        if self.stack_config and isinstance(self.stack_config, StackConfig):
+            cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+            enable_url_rewrite = cloudfront_config.get("enable_url_rewrite", False)
+        
+        if enable_url_rewrite:
+            function_associations.append(
+                cloudfront.FunctionAssociation(
+                    function=self.__get_url_rewrite_function(),
+                    event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
+                )
+            )
+
         if self.restrict_to_known_hosts and self.aliases:
             function_associations.append(
                 cloudfront.FunctionAssociation(
@@ -195,6 +209,44 @@ class CloudFrontDistributionConstruct(Construct):
             )
 
         return function_associations
+
+    def __get_url_rewrite_function(self) -> cloudfront.Function:
+        """
+        Creates a CloudFront function that rewrites URLs for SPA/static site routing.
+        This enables clean URLs by routing /about to /about/index.html
+        
+        Returns:
+            cloudfront.Function: URL rewrite function for static site routing
+        """
+        function_code = """
+        function handler(event) {
+            var request = event.request;
+            var uri = request.uri;
+            
+            // If URI doesn't have a file extension and doesn't end with /
+            if (!uri.includes('.') && !uri.endsWith('/')) {
+                request.uri = uri + '/index.html';
+            }
+            // If URI ends with / but not index.html
+            else if (uri.endsWith('/') && !uri.endsWith('index.html')) {
+                request.uri = uri + 'index.html';
+            }
+            // If URI is exactly /
+            else if (uri === '/') {
+                request.uri = '/index.html';
+            }
+            
+            return request;
+        }
+        """
+
+        url_rewrite_function = cloudfront.Function(
+            self,
+            "UrlRewriteFunction",
+            comment="Rewrites clean URLs to /folder/index.html for static site routing",
+            code=cloudfront.FunctionCode.from_inline(function_code),
+        )
+        return url_rewrite_function
 
     def __get_cloudfront_host_restrictions(
         self, hosts: List[str]
