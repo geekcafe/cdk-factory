@@ -1,0 +1,71 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "CDK_WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT_NUMBER",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
+      },
+      {
+        "placeholder": "{{DOMAIN}}",
+        "env_var_name": "RUM_DOMAIN",
+        "cdk_parameter_name": "Domain"
+      }
+    ]
+  },
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "RUM monitoring for web application",
+    "stacks": [
+      {
+        "name": "rum-monitor",
+        "module": "rum_stack",
+        "enabled": true,
+        "rum": {
+          "name": "{{WORKLOAD_NAME}}-monitor",
+          "domain": "{{DOMAIN}}",
+          "allow_cookies": true,
+          "enable_xray": false,
+          "session_sample_rate": 0.1,
+          "telemetries": ["errors", "performance", "http"],
+          "cw_log_enabled": false,
+          "custom_events_enabled": false,
+          "create_cognito_identity_pool": true,
+          "create_cognito_user_pool": true,
+          "ssm_exports": {
+            "app_monitor_name": "/{{WORKLOAD_NAME}}/rum/app-monitor-name",
+            "app_monitor_id": "/{{WORKLOAD_NAME}}/rum/app-monitor-id",
+            "identity_pool_id": "/{{WORKLOAD_NAME}}/rum/identity-pool-id"
+          },
+          "tags": {
+            "Environment": "{{ENVIRONMENT}}",
+            "Application": "{{WORKLOAD_NAME}}"
+          }
+        }
+      }
+    ],
+    "deployments": [
+      {
+        "name": "dev",
+        "environment": "{{ENVIRONMENT}}",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "us-east-1",
+        "mode": "stack",
+        "stacks": [
+          "rum-monitor"
+        ],
+        "enabled": true
+      }
+    ]
+  }
+}

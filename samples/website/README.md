@@ -1,60 +1,102 @@
 # WebSite Sample README
 
-This sample shows how you can use a pre-configured stack library to deploy a static website.
+Deploy a static website using the pre-built website stack.
 
-You have two options when running this:
-1. Simply Deploy the stack without a CI/CD deployment.  Do this if you want to simply test it out.
-1. Deploy it as an AWS CodePipeline Deployment.
+## What this sample does
+- **S3 bucket** for static assets
+- **CloudFront distribution** fronting the bucket (with automatic invalidation on deploy)
+- **Optional Route53 + ACM** for custom domains and HTTPS
 
-## The flow is controlled in the configuration(s)
-1. config.stack.json
-1. config.pipeline.json
+Source files live in `samples/website/src/www/`.
 
-## Simple Stack Deployment 
-For a simple stack deployment, use the `config.stack.json`
+## Files in this sample
+- **`config_min.json`**: minimal configuration demonstrating both a direct stack deploy and a pipeline mode
+- **`commands/cdk_synth.sh`**: synth command used by the pipeline stage
+- **`src/www/`**: example website files (`index.html`, `403.html`, `404.html`)
 
+## Prerequisites
+- **Node.js** (for `npx cdk`), **Python 3.10+**
+- **AWS credentials** configured for the target account
+- Install project dependencies (from repo root):
+  - `pip install -r requirements.txt`
 
-## Pipeline Deployment
-For a full AWS CodePipeline Deployment you will use the `config.pipeline.json`
+## Quick start: synth a simple stack
+Use the provided minimal config:
 
-### Prerequisites
-- You can either point to this public repo 
-- Or (preferably) clone this repo and point to your cloned/forked copy.  
-
-
-> Fair warning, if you point to this repo, anytime we make code changes, `commit` and `push` to GitHub, it will invoke your pipeline (assuming your creating the CI/CD pipeline).  
-
-This sample will:
-1. Define a deployment CodePipeline for automatic updates (if using the `config.pipeline.json`).
-1. Create an S3 Bucket for hosting the static site
-1. Create a CloudFront distribution for the site.
-1. [Optionally]: Register the CloudFront with a Route53 Hosted Zone for your custom Domain
-4. [Optionally]: Create an SSL/TLS certificate for HTTPS connections
-
-
-This is a simple example, which allows you to simply point the cdk_factory to the configs found here.  It's a quick and direct way to run a simple deployment.
-
-## Deploy with a custom domain e.g.  mydomain.com
-If you have a domain hosted in AWS and access to the HostedZone in the account you are deploying to, you can use this command.
 ```sh
-
-cdk synth \
-    -c config=../../samples/website/website_config.json \
-    -c AccountNumber="<AWS ACCOUNT>" \   
-    -c AccountRegion="<REGION>" \
-    -c CodeRepoName="company/my-repo-name" \
-    -c CodeRepoConnectorArn="aws::repo_arn" \
-    -c SiteBucketName="my-bucket-2" \
-    -c HostedZoneId="zone1234" \
-    -c HostedZoneName="dev.example.com"
+cdk synth -c config=../../samples/website/config_min.json
 ```
 
-These samples are located in this library.
+`config_min.json` uses environment variables for required placeholders. Set these before running if not already present:
 
-However in real-life scenarios, you will want to consume this package in your own project e.g.
-1. Create a new python project
-1. pip install cdk-factory
-1. Define your resources 
-1. Deploy it
+**Quick export for local testing:**
+```sh
+export CDK_WORKLOAD_NAME="my-website"
+export AWS_ACCOUNT_NUMBER="123456789012"
+export DEVOPS_AWS_ACCOUNT="123456789012"
+export DEVOPS_REGION="us-east-1"
+export CODE_REPOSITORY_NAME="myorg/my-repo"
+export CODE_REPOSITORY_CONNECTOR_ARN="arn:aws:codestar-connections:us-east-1:123456789012:connection/abc123"
+export SITE_BUCKET_NAME="my-site"
+export ENVIRONMENT="dev"
+```
 
-You can find a working example in GitHub [geekcafe/cdk-factory-sample-static-website](https://github.com/geekcafe/cdk-factory-sample-static-website/)
+**Required variables:**
+
+- **CDK_WORKLOAD_NAME** (e.g., `website`)
+- **AWS_ACCOUNT_NUMBER**
+- **DEVOPS_AWS_ACCOUNT** (for pipeline account; can equal AWS_ACCOUNT_NUMBER for single-account)
+- **DEVOPS_REGION** (e.g., `us-east-1`)
+- **CODE_REPOSITORY_NAME** (e.g., `company/my-repo-name`)
+- **CODE_REPOSITORY_CONNECTOR_ARN** (for CodeStar Connections)
+- **SITE_BUCKET_NAME** (short name; full bucket name is derived)
+- **ENVIRONMENT** (e.g., `dev`)
+
+The minimal config sets up:
+- A stack-mode deployment for the website bucket
+- A pipeline-mode deployment that uses `commands/cdk_synth.sh`
+
+## Pipeline deployment
+When `mode` is `pipeline` in `config_min.json`, CodePipeline will invoke `commands/cdk_synth.sh` to run `cdk synth`. Ensure your connection ARN and repository name are correct in your environment variables so the pipeline can source and build successfully.
+
+## Deploy
+After synth, you can deploy with the same config path:
+
+```sh
+cdk deploy -c config=../../samples/website/config_min.json
+```
+
+## Custom domain (optional)
+To use a custom domain with Route53 and ACM, add `dns` and `cert` to the website stack section in your config, for example:
+
+```json
+{
+  "name": "web-site",
+  "module": "static_website_stack",
+  "enabled": true,
+  "bucket": { "name": "{{SITE_BUCKET_NAME}}", "exists": true },
+  "src": { "location": "file_system", "path": "{{WWW_FILES}}" },
+  "dns": {
+    "hosted_zone_id": "Z1234567890ABC",
+    "hosted_zone_name": "example.com",
+    "aliases": ["www.example.com"]
+  },
+  "cert": {
+    "domain_name": "www.example.com",
+    "alternate_names": ["example.com"]
+  }
+}
+```
+
+Notes:
+- When `dns.hosted_zone_id` is set, `aliases` must be a non-empty list; Route53 A/AAAA records will be created for each alias.
+- Certificate validation uses DNS in the specified hosted zone.
+
+## Using this outside the repo
+For real projects:
+- **pip install cdk-factory**
+- Create your own config modeled after `samples/website/config_min.json`
+- Keep your website assets in a folder and point `src.path` to it
+- Run `cdk synth`/`cdk deploy` with `-c config=<your-config-path>`
+
+Example reference project: [geekcafe/cdk-factory-sample-static-website](https://github.com/geekcafe/cdk-factory-sample-static-website/)
