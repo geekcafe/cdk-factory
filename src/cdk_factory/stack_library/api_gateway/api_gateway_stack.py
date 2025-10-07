@@ -316,10 +316,112 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
     def _setup_lambda_routes(self, api_gateway, api_id, routes, authorizer):
         """Setup Lambda routes and integrations"""
         for route in routes:
-            self._setup_single_lambda_route(api_gateway, api_id, route, authorizer)
+            # Check if this route references an existing Lambda via SSM
+            lambda_arn_ssm_path = route.get("lambda_arn_ssm_path")
+            lambda_name_ref = route.get("lambda_name")
+            
+            if lambda_arn_ssm_path or lambda_name_ref:
+                # Import existing Lambda from SSM
+                self._setup_existing_lambda_route(api_gateway, api_id, route, authorizer)
+            else:
+                # Create new Lambda (legacy pattern)
+                self._setup_single_lambda_route(api_gateway, api_id, route, authorizer)
+
+    def _setup_existing_lambda_route(self, api_gateway, api_id, route, authorizer):
+        """
+        Setup API Gateway route with existing Lambda function imported from SSM.
+        This is the NEW PATTERN for separating Lambda and API Gateway stacks.
+        """
+        route_path = route["path"]
+        suffix = route_path.strip("/").replace("/", "-") or "health"
+        
+        # Get Lambda ARN from SSM Parameter Store
+        lambda_arn = self._get_lambda_arn_from_ssm(route)
+        
+        if not lambda_arn:
+            raise ValueError(
+                f"Could not resolve Lambda ARN for route {route_path}. "
+                f"Ensure Lambda stack has deployed and exported ARN to SSM."
+            )
+        
+        # Import Lambda function from ARN
+        lambda_fn = _lambda.Function.from_function_arn(
+            self,
+            f"{api_id}-imported-lambda-{suffix}",
+            lambda_arn
+        )
+        
+        logger.info(f"Imported Lambda for route {route_path}: {lambda_arn}")
+        
+        # Setup API Gateway resource
+        resource = (
+            api_gateway.root.resource_for_path(route_path)
+            if route_path != "/"
+            else api_gateway.root
+        )
+        
+        # Setup Lambda integration
+        self._setup_lambda_integration(
+            api_gateway, api_id, route, lambda_fn, authorizer, suffix
+        )
+        
+        # Setup CORS using centralized utility
+        self.integration_utility.setup_route_cors(resource, route_path, route)
+    
+    def _get_lambda_arn_from_ssm(self, route: dict) -> str:
+        """
+        Get Lambda ARN from SSM Parameter Store.
+        Supports both explicit SSM paths and auto-discovery via lambda_name.
+        """
+        # Option 1: Explicit SSM path provided
+        lambda_arn_ssm_path = route.get("lambda_arn_ssm_path")
+        if lambda_arn_ssm_path:
+            logger.info(f"Looking up Lambda ARN from SSM: {lambda_arn_ssm_path}")
+            try:
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self,
+                    f"lambda-arn-param-{hash(lambda_arn_ssm_path) % 10000}",
+                    lambda_arn_ssm_path
+                )
+                return param.string_value
+            except Exception as e:
+                logger.error(f"Failed to retrieve Lambda ARN from SSM path {lambda_arn_ssm_path}: {e}")
+                raise
+        
+        # Option 2: Auto-discovery via lambda_name
+        lambda_name = route.get("lambda_name")
+        if lambda_name:
+            # Build SSM path using convention from lambda_stack
+            ssm_imports_config = self.stack_config.dictionary.get("api_gateway", {}).get("ssm", {}).get("imports", {})
+            # Try 'workload' first, fall back to 'organization' for backward compatibility
+            workload = ssm_imports_config.get("workload", ssm_imports_config.get("organization", self.deployment.workload_name))
+            environment = ssm_imports_config.get("environment", self.deployment.environment)
+            
+            ssm_path = f"/{workload}/{environment}/lambda/{lambda_name}/arn"
+            logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
+            
+            try:
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self,
+                    f"lambda-arn-{lambda_name}-param",
+                    ssm_path
+                )
+                return param.string_value
+            except Exception as e:
+                logger.error(f"Failed to auto-discover Lambda ARN for '{lambda_name}' from {ssm_path}: {e}")
+                raise ValueError(
+                    f"Lambda ARN not found in SSM for '{lambda_name}'. "
+                    f"Ensure the Lambda stack has deployed and exported the ARN to: {ssm_path}"
+                )
+        
+        return None
 
     def _setup_single_lambda_route(self, api_gateway, api_id, route, authorizer):
-        """Setup a single Lambda route with integration and CORS"""
+        """
+        Setup a single Lambda route with integration and CORS.
+        LEGACY PATTERN: Creates a new Lambda function inline.
+        Prefer _setup_existing_lambda_route for new implementations.
+        """
         suffix = route["path"].strip("/").replace("/", "-") or "health"
         src = route.get("src")
         handler = route.get("handler")

@@ -288,7 +288,7 @@ export CUSTOM_API_GATEWAY_ID="abcd1234ef"
 
 Use a consistent naming convention for SSM parameters:
 ```
-/organization/environment/service/resource-type/parameter-name
+/workload/environment/service/resource-type/parameter-name
 ```
 
 Examples:
@@ -469,7 +469,7 @@ Ensure your CDK deployment role has the necessary SSM permissions:
 
 - Use SecureString parameters for sensitive values
 - Implement least-privilege access policies
-- Use parameter hierarchies for organization
+- Use parameter hierarchies for workload
 - Enable parameter store logging for audit trails
 
 ## Support

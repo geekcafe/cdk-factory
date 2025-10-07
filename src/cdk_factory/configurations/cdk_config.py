@@ -70,10 +70,13 @@ class CdkConfig:
         relative_config_path = ""
         # is this a relative path or a real path
         if not config_path.startswith("."):
-
-            root_path = os.path.commonpath([config_path, runtime_directory])
-            if root_path in config_path:
-                relative_config_path = config_path.replace(root_path, ".")
+            # Ensure both paths are absolute to avoid mixing absolute and relative paths
+            abs_config_path = os.path.abspath(config_path)
+            abs_runtime_directory = os.path.abspath(runtime_directory)
+            
+            root_path = os.path.commonpath([abs_config_path, abs_runtime_directory])
+            if root_path in abs_config_path:
+                relative_config_path = abs_config_path.replace(root_path, ".")
 
             print(f"👉 Relative Config: {relative_config_path}")
         else:

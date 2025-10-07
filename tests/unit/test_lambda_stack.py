@@ -132,8 +132,8 @@ class TestLambdaStackReal:
         )
 
         assert stack is not None
-        assert hasattr(stack, "api_gateway_integrations")
-        assert stack.api_gateway_integrations == []
+        assert hasattr(stack, "exported_lambda_arns")
+        assert stack.exported_lambda_arns == {}
         assert stack.stack_config is None
         assert stack.deployment is None
         assert stack.workload is None
@@ -167,7 +167,8 @@ class TestLambdaStackReal:
         assert stack.deployment == deployment_config
         assert stack.workload == workload_config
         assert len(stack.functions) == 1
-        assert len(stack.api_gateway_integrations) == 0
+        # No API Gateway integrations in new pattern
+        assert len(stack.exported_lambda_arns) == 1
 
         # Verify CloudFormation resources are created
         template.has_resource_properties(
@@ -182,6 +183,9 @@ class TestLambdaStackReal:
 
         # Should not have API Gateway resources for basic lambda
         template.resource_count_is("AWS::ApiGateway::RestApi", 0)
+        
+        # Should not have SSM parameters if SSM is not enabled
+        # (SSM export requires ssm.enabled: true in config)
 
     def test_lambda_stack_build_with_api_real_synthesis(
         self,
@@ -191,8 +195,8 @@ class TestLambdaStackReal:
         stack_config_with_api_lambda,
         monkeypatch,
     ):
-        """Test Lambda stack builds with API Gateway integration using real CDK synthesis."""
-        from aws_cdk.assertions import Template
+        """Test Lambda stack raises deprecation error when API Gateway config is present."""
+        import pytest
 
         # Set required environment variable for authorizer
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
@@ -204,57 +208,13 @@ class TestLambdaStackReal:
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Build the stack with real synthesis
-        stack.build(
-            stack_config=stack_config_with_api_lambda,
-            deployment=deployment_config,
-            workload=workload_config,
-        )
-
-        # Synthesize the stack to CloudFormation template
-        template = Template.from_stack(stack)
-
-        # Verify stack properties
-        assert stack.stack_config == stack_config_with_api_lambda
-        assert stack.deployment == deployment_config
-        assert stack.workload == workload_config
-        assert len(stack.functions) == 1
-        assert len(stack.api_gateway_integrations) == 1
-
-        # Verify CloudFormation resources are created
-        # Lambda function should be present
-        template.has_resource_properties(
-            "AWS::Lambda::Function",
-            {
-                "Handler": "app.lambda_handler",
-                "Runtime": "python3.11",
-                "Timeout": 30,
-                "MemorySize": 256,
-            },
-        )
-
-        # API Gateway should be present
-        template.has_resource("AWS::ApiGateway::RestApi", {})
-
-        # API Gateway method should be present
-        template.has_resource_properties(
-            "AWS::ApiGateway::Method",
-            {
-                "HttpMethod": "POST",
-            },
-        )
-
-        # Lambda permission for API Gateway should be present
-        template.has_resource_properties(
-            "AWS::Lambda::Permission",
-            {
-                "Action": "lambda:InvokeFunction",
-                "Principal": "apigateway.amazonaws.com",
-            },
-        )
-
-        # Since authorization_type is NONE, no authorizer should be created
-        template.resource_count_is("AWS::ApiGateway::Authorizer", 0)
+        # Build the stack with real synthesis - should raise deprecation error
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
+            stack.build(
+                stack_config=stack_config_with_api_lambda,
+                deployment=deployment_config,
+                workload=workload_config,
+            )
 
     def test_lambda_stack_build_with_authorizer_real_synthesis(
         self,
@@ -263,13 +223,13 @@ class TestLambdaStackReal:
         workload_config,
         monkeypatch,
     ):
-        """Test Lambda stack builds with API Gateway authorizer using real CDK synthesis."""
-        from aws_cdk.assertions import Template
+        """Test Lambda stack raises deprecation error when API Gateway config with authorizer is present."""
+        import pytest
 
         # Set required environment variable for authorizer
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
-        # Create stack config with authorizer enabled
+        # Create stack config with authorizer enabled - should trigger deprecation
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload for Lambda stack testing",
@@ -303,7 +263,6 @@ class TestLambdaStackReal:
                     "api": {
                         "route": "/secure/endpoint",
                         "method": "GET",
-                        # No explicit authorization_type - should default to COGNITO when authorizer is available
                         "api_key_required": False,
                         "request_parameters": {},
                         "gateway_id": None,
@@ -321,43 +280,13 @@ class TestLambdaStackReal:
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Build the stack with real synthesis
-        stack.build(
-            stack_config=stack_config,
-            deployment=deployment_config,
-            workload=workload_config,
-        )
-
-        # Synthesize the stack to CloudFormation template
-        template = Template.from_stack(stack)
-
-        # Verify CloudFormation resources are created
-        # Lambda function should be present
-        template.has_resource_properties(
-            "AWS::Lambda::Function",
-            {
-                "Handler": "app.lambda_handler",
-                "Runtime": "python3.11",
-            },
-        )
-
-        # API Gateway should be present
-        template.has_resource("AWS::ApiGateway::RestApi", {})
-
-        # API Gateway method should be present
-        template.has_resource_properties(
-            "AWS::ApiGateway::Method",
-            {
-                "HttpMethod": "GET",
-            },
-        )
-
-        # Since no Cognito configuration is properly set up for lambda stack,
-        # no authorizer should be created (this is expected behavior)
-        template.resource_count_is("AWS::ApiGateway::Authorizer", 0)
-
-        # Verify the __setup_api_gateway_integration method was executed
-        assert len(stack.api_gateway_integrations) == 1
+        # Build the stack - should raise deprecation error for api_gateway config
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
+            stack.build(
+                stack_config=stack_config,
+                deployment=deployment_config,
+                workload=workload_config,
+            )
 
     def test_lambda_stack_build_with_existing_authorizer_real_synthesis(
         self,
@@ -366,14 +295,13 @@ class TestLambdaStackReal:
         workload_config,
         monkeypatch,
     ):
-        """Test Lambda stack correctly handles existing authorizer ID (currently unsupported)."""
+        """Test Lambda stack raises deprecation error when API config with existing authorizer is present."""
         import pytest
-        from aws_cdk.assertions import Template
 
         # Set required environment variable for authorizer (even though we're using existing)
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
-        # Create stack config with existing authorizer ID
+        # Create stack config with existing authorizer ID - should trigger deprecation
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload for Lambda stack testing",
@@ -416,57 +344,13 @@ class TestLambdaStackReal:
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Build the stack with real synthesis - should now work with L1 constructs
-        stack.build(
-            stack_config=stack_config,
-            deployment=deployment_config,
-            workload=workload_config,
-        )
-
-        # Synthesize the stack to CloudFormation template
-        template = Template.from_stack(stack)
-
-        # Verify CloudFormation resources are created
-        # Lambda function should be present
-        template.has_resource_properties(
-            "AWS::Lambda::Function",
-            {
-                "Handler": "app.lambda_handler",
-                "Runtime": "python3.11",
-            },
-        )
-
-        # API Gateway should be present
-        template.has_resource("AWS::ApiGateway::RestApi", {})
-
-        # API Gateway method should be present with existing authorizer ID
-        template.has_resource_properties(
-            "AWS::ApiGateway::Method",
-            {
-                "HttpMethod": "POST",
-                "AuthorizationType": "COGNITO_USER_POOLS",
-                "AuthorizerId": "abc123def456",  # Should reference existing authorizer
-            },
-        )
-
-        # Lambda permission for API Gateway should be present
-        template.has_resource_properties(
-            "AWS::Lambda::Permission",
-            {
-                "Action": "lambda:InvokeFunction",
-                "Principal": "apigateway.amazonaws.com",
-            },
-        )
-
-        # No new authorizer should be created since we're using existing one
-        template.resource_count_is("AWS::ApiGateway::Authorizer", 0)
-
-        # Verify the __setup_api_gateway_integration method was executed
-        assert len(stack.api_gateway_integrations) == 1
-
-        # Verify that the integration references the existing authorizer
-        integration = stack.api_gateway_integrations[0]
-        assert integration["function_name"] == "test-function-existing-auth"
+        # Build the stack - should raise deprecation error for api config
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
+            stack.build(
+                stack_config=stack_config,
+                deployment=deployment_config,
+                workload=workload_config,
+            )
 
     def test_lambda_function_config_creation(self, deployment_config):
         """Test LambdaFunctionConfig creation with real config."""
@@ -650,11 +534,11 @@ class TestLambdaStackReal:
                 raise AssertionError(f"Overlapping routes handling failed: {e}") from e
 
     def test_overlapping_api_gateway_routes(self, monkeypatch):
-        """Test that overlapping API Gateway routes don't cause resource conflicts"""
-        from aws_cdk.assertions import Template
+        """Test that deprecated overlapping routes config raises error"""
         from cdk_factory.app import CdkAppFactory
         import tempfile
         import os
+        import pytest
 
         # Set up environment variables
         monkeypatch.setenv("ENVIRONMENT", "dev")
@@ -666,7 +550,7 @@ class TestLambdaStackReal:
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "pool789ghi")
         monkeypatch.setenv("APP_TABLE_NAME", "test-table")
 
-        # Use the overlapping routes config file
+        # Use the overlapping routes config file (has deprecated API pattern)
         config_path = "tests/unit/files/lambda/overlapping_routes_config.json"
 
         # Create a temporary directory for CDK output
@@ -680,87 +564,94 @@ class TestLambdaStackReal:
                 outdir=outdir,
             )
 
-            # This should handle overlapping routes without conflicts
-            try:
-                cloud_assembly = factory.synth(
+            # Should raise deprecation error for old API Gateway pattern
+            with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
+                factory.synth(
                     paths=["tests/unit/files/lambda"], cdk_app_file="cdk_app.py"
                 )
 
-                # If we get here, overlapping routes were handled correctly
-                assert cloud_assembly is not None
-                print("✅ Overlapping API Gateway routes handled successfully!")
+    def test_lambda_stack_ssm_export(
+        self,
+        app,
+        deployment_config,
+        workload_config,
+    ):
+        """Test Lambda stack exports ARNs to SSM when enabled."""
+        from aws_cdk.assertions import Template
 
-                # Verify that all stacks were created
-                stacks = cloud_assembly.stacks
-                assert len(stacks) > 0, "No stacks were created"
+        # Create stack config with SSM exports enabled
+        workload_dict = {
+            "name": "test-workload",
+            "description": "Test workload for Lambda stack testing",
+        }
+        stack_dict = {
+            "name": "test-lambda-stack",
+            "enabled": True,
+            "ssm": {
+                "enabled": True,
+                "organization": "test-org",
+                "environment": "test",
+            },
+            "resources": [
+                {
+                    "name": "test-function-ssm",
+                    "src": "tests/unit/files/lambda",
+                    "handler": "app.lambda_handler",
+                    "runtime": "python3.11",
+                    "timeout": 30,
+                    "memory_size": 256,
+                    "environment_variables": [
+                        {"name": "TEST_VAR", "value": "test_value"}
+                    ],
+                    "triggers": [],
+                    "sqs": {"queues": []},
+                    "schedule": None,
+                }
+            ],
+        }
+        stack_config = StackConfig(stack=stack_dict, workload=workload_dict)
 
-                # Find the lambda stack
-                lambda_stack = None
-                for stack in stacks:
-                    template = stack.template
-                    lambda_functions = [
-                        res
-                        for res in template.get("Resources", {}).values()
-                        if res.get("Type") == "AWS::Lambda::Function"
-                    ]
-                    if len(lambda_functions) > 0:
-                        lambda_stack = stack
-                        break
+        # Create stack
+        stack = LambdaStack(
+            scope=app,
+            id="test-lambda-stack-ssm",
+            env=Environment(account="123456789012", region="us-east-1"),
+        )
 
-                assert lambda_stack is not None, "Lambda stack with functions not found"
-                print(f"✅ Lambda stack created: {lambda_stack.stack_name}")
+        # Build the stack
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
 
-                # Verify the stack template contains the expected resources
-                template = lambda_stack.template
+        # Synthesize the stack to CloudFormation template
+        template = Template.from_stack(stack)
 
-                # Check that Lambda functions were created
-                lambda_functions = [
-                    res
-                    for res in template.get("Resources", {}).values()
-                    if res.get("Type") == "AWS::Lambda::Function"
-                ]
+        # Verify Lambda function was created
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            {
+                "Handler": "app.lambda_handler",
+                "Runtime": "python3.11",
+            },
+        )
 
-                # We should have 7 Lambda functions for our overlapping routes
-                expected_functions = 7
-                assert len(lambda_functions) >= expected_functions, (
-                    f"Expected at least {expected_functions} Lambda functions, "
-                    f"but found {len(lambda_functions)}"
-                )
-                print(f"✅ Created {len(lambda_functions)} Lambda functions")
+        # Verify SSM parameters were created for Lambda ARN export
+        template.has_resource_properties(
+            "AWS::SSM::Parameter",
+            {
+                "Type": "String",
+                "Tier": "Standard",
+            },
+        )
 
-                # Check that API Gateway methods were created without conflicts
-                api_methods = [
-                    res
-                    for res in template.get("Resources", {}).values()
-                    if res.get("Type") == "AWS::ApiGateway::Method"
-                ]
+        # Should have 2 SSM parameters: arn and function-name
+        template.resource_count_is("AWS::SSM::Parameter", 2)
 
-                # We should have methods for all our routes
-                assert len(api_methods) >= expected_functions, (
-                    f"Expected at least {expected_functions} API Gateway methods, "
-                    f"but found {len(api_methods)}"
-                )
-                print(f"✅ Created {len(api_methods)} API Gateway methods")
-
-                # Verify that resources with shared paths were created correctly
-                api_resources = [
-                    res
-                    for res in template.get("Resources", {}).values()
-                    if res.get("Type") == "AWS::ApiGateway::Resource"
-                ]
-
-                # We should have resources for the path segments, but shared ones shouldn't be duplicated
-                print(f"✅ Created {len(api_resources)} API Gateway resources")
-
-                print("✅ All overlapping routes test validations passed!")
-
-            except Exception as e:
-                print(f"❌ Overlapping routes test failed: {e}")
-                # Print more details about the error for debugging
-                import traceback
-
-                traceback.print_exc()
-                raise AssertionError(f"Overlapping routes handling failed: {e}") from e
+        # Verify exported_lambda_arns was populated
+        assert len(stack.exported_lambda_arns) == 1
+        assert "test-function-ssm" in stack.exported_lambda_arns
 
     def test_stack_config_validation(self, deployment_config, workload_config):
         """Test that stack config validation works correctly."""

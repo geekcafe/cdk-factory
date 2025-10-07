@@ -140,14 +140,10 @@
                     "name": "factory-lambda-dev-lambdas",
                     "module": "lambda_stack",
                     "enabled": true,
-                    "api_gateway": {
-                      "id": "wm4ctmgbu7",
-                      "arn": "arn:aws:apigateway:us-east-1::/restapis/wm4ctmgbu7",
-                      "root_resource_id": "wm4ctmgbu7root",
-                      "authorizer": {
-                        "id": "8m223r",
-                        "type": "COGNITO"
-                      }
+                    "ssm": {
+                      "enabled": true,
+                      "workload": "factory-lambda",
+                      "environment": "dev"
                     },
                     "resources": [
                       {
@@ -155,24 +151,6 @@
                         "src": "./src/factory_saas_lambda/handlers/groups",
                         "handler": "list_groups.lambda_handler",
                         "description": "Groups: List Groups",
-                        "api": {
-                          "route": "/tenants/{tenant-id}/users/{user-id}/groups",
-                          "method": "GET",
-                          "authorization_type": "COGNITO",
-                          "cors": {
-                            "origins": [
-                              "*"
-                            ],
-                            "methods": [
-                              "GET",
-                              "OPTIONS"
-                            ],
-                            "headers": [
-                              "Content-Type",
-                              "Authorization"
-                            ]
-                          }
-                        },
                         "permissions": [
                           "dynamodb_read"
                         ],
@@ -192,6 +170,53 @@
                         ]
                       }
                     ]
+                  }
+                ]
+              },
+              {
+                "name": "deploy-api-gateway",
+                "stacks": [
+                  {
+                    "name": "factory-lambda-dev-api-gateway",
+                    "module": "api_gateway_stack",
+                    "enabled": true,
+                    "api_gateway": {
+                      "name": "factory-lambda-dev-api",
+                      "description": "API Gateway for Lambda functions",
+                      "api_type": "REST",
+                      "stage_name": "prod",
+                      "ssm": {
+                        "enabled": true,
+                        "workload": "factory-lambda",
+                        "environment": "dev",
+                        "imports": {
+                          "workload": "factory-lambda",
+                          "environment": "dev"
+                        }
+                      },
+                      "routes": [
+                        {
+                          "path": "/tenants/{tenant-id}/users/{user-id}/groups",
+                          "method": "GET",
+                          "lambda_name": "list-groups",
+                          "authorization_type": "NONE",
+                          "allow_public_override": true,
+                          "cors": {
+                            "origins": [
+                              "*"
+                            ],
+                            "methods": [
+                              "GET",
+                              "OPTIONS"
+                            ],
+                            "headers": [
+                              "Content-Type",
+                              "Authorization"
+                            ]
+                          }
+                        }
+                      ]
+                    }
                   }
                 ]
               }

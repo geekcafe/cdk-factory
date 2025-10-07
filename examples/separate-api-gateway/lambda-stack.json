@@ -1,0 +1,62 @@
+{
+  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-lambdas",
+  "module": "lambda_stack",
+  "enabled": true,
+  "ssm": {
+    "enabled": true,
+    "workload": "{{WORKLOAD_NAME}}",
+    "environment": "{{ENVIRONMENT}}"
+  },
+  "resources": [
+    {
+      "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-health-check",
+      "src": "./src/handlers/health",
+      "handler": "app.lambda_handler",
+      "description": "Health check endpoint",
+      "runtime": "python3.12",
+      "timeout": 10,
+      "memory_size": 128,
+      "environment_variables": {
+        "LOG_LEVEL": "INFO",
+        "ENVIRONMENT": "{{ENVIRONMENT}}"
+      }
+    },
+    {
+      "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-user-api",
+      "src": "./src/handlers/user",
+      "handler": "app.lambda_handler",
+      "description": "User API operations",
+      "runtime": "python3.12",
+      "timeout": 30,
+      "memory_size": 512,
+      "environment_variables": {
+        "LOG_LEVEL": "INFO",
+        "ENVIRONMENT": "{{ENVIRONMENT}}",
+        "TABLE_NAME": "{{DYNAMODB_TABLE_NAME}}"
+      },
+      "permissions": [
+        "dynamodb_read",
+        "dynamodb_write"
+      ]
+    },
+    {
+      "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-admin-api",
+      "src": "./src/handlers/admin",
+      "handler": "app.lambda_handler",
+      "description": "Admin API operations",
+      "runtime": "python3.12",
+      "timeout": 30,
+      "memory_size": 512,
+      "environment_variables": {
+        "LOG_LEVEL": "INFO",
+        "ENVIRONMENT": "{{ENVIRONMENT}}",
+        "TABLE_NAME": "{{DYNAMODB_TABLE_NAME}}"
+      },
+      "permissions": [
+        "dynamodb_read",
+        "dynamodb_write",
+        "s3_read"
+      ]
+    }
+  ]
+}

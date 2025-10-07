@@ -1,0 +1,268 @@
+# CDK Factory - Development Rules & Guidelines
+
+## Project Type: AWS CDK Infrastructure Framework
+
+This is a reusable AWS CDK framework for building cloud infrastructure with standardized patterns.
+
+## Architecture Principles
+
+### Stack Separation Pattern (v2.0+)
+- **Lambda Stack**: Creates Lambda functions ONLY, exports ARNs to SSM
+- **API Gateway Stack**: Imports Lambda ARNs from SSM, creates API Gateway
+- **No direct cross-stack references**: Use SSM Parameter Store for loose coupling
+- **Reason**: Enables independent deployments, avoids circular dependencies, follows AWS best practices
+
+### SSM-Based Cross-Stack Communication
+```python
+# Lambda Stack Exports
+/{organization}/{environment}/lambda/{lambda-name}/arn
+/{organization}/{environment}/lambda/{lambda-name}/function-name
+
+# API Gateway Imports
+# Auto-discovery via lambda_name
+{"lambda_name": "my-function"}  # Finds /org/env/lambda/my-function/arn
+
+# Explicit path
+{"lambda_arn_ssm_path": "/custom/path/arn"}
+```
+
+## Code Style & Standards
+
+### Python Standards
+- **Style**: PEP 8 compliant, use `black` for formatting
+- **Type Hints**: Use type annotations for all function signatures
+- **Imports**: Absolute imports from `cdk_factory`, group stdlib/third-party/local
+- **Docstrings**: Google-style docstrings for all public methods
+
+### CDK Patterns
+- Use L2 constructs when available, fall back to L1 only when necessary
+- Always validate configurations before creating resources
+- Provide clear error messages with migration guidance for breaking changes
+- Export important resource identifiers to SSM when `ssm.enabled: true`
+
+## Testing Requirements
+
+### Test Structure
+- **Unit Tests**: `tests/unit/` - Test individual components
+- **Integration Tests**: `tests/integration/` - Test multi-stack scenarios
+- **Use Fixtures**: Pytest fixtures for common test setup
+- **No Mocking CDK**: Test real CDK synthesis, not mocked behavior
+
+### Running Tests
+```bash
+./run-tests.sh  # Creates fresh venv, runs all tests
+pytest tests/unit/test_lambda_stack.py -v  # Specific test file
+```
+
+### Test Patterns
+```python
+from aws_cdk.assertions import Template
+
+def test_stack_creation(app, deployment_config, workload_config):
+    stack = MyStack(app, "TestStack")
+    stack.build(config, deployment_config, workload_config)
+    
+    template = Template.from_stack(stack)
+    template.has_resource("AWS::Lambda::Function", {...})
+```
+
+## Configuration Patterns
+
+### Workload Config Structure
+```json
+{
+  "workload": {
+    "name": "my-app",
+    "devops": {"ci_cd": {"enabled": true}},
+    "stacks": [
+      {
+        "name": "lambda-stack",
+        "module": "lambda_stack",
+        "ssm": {
+          "enabled": true,
+          "organization": "my-app",
+          "environment": "prod"
+        },
+        "resources": [...]
+      },
+      {
+        "name": "api-stack",
+        "module": "api_gateway_stack",
+        "api_gateway": {
+          "ssm": {
+            "imports": {
+              "organization": "my-app",
+              "environment": "prod"
+            }
+          },
+          "routes": [
+            {"path": "/api", "lambda_name": "my-function"}
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+## Deprecation & Migration Strategy
+
+### When Deprecating Features
+1. **Detect deprecated patterns** in config validation
+2. **Raise helpful errors** with clear migration instructions
+3. **Reference documentation**: Point to `docs/MIGRATION_V2.md`
+4. **Show examples**: Include before/after config snippets
+5. **Update tests**: Expect `ValueError` for deprecated patterns
+
+### Error Message Format
+```python
+error_msg = """
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ 🚨 DEPRECATED CONFIGURATION DETECTED                                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Your configuration uses deprecated pattern X, which caused issues Y.
+
+🔧 REQUIRED MIGRATION:
+1. Remove deprecated field
+2. Add new pattern
+3. Update pipeline order
+
+📚 MIGRATION GUIDE:
+https://github.com/org/cdk-factory/blob/main/docs/MIGRATION_V2.md
+
+💡 EXAMPLES:
+See: examples/separate-api-gateway/
+"""
+```
+
+## Documentation Standards
+
+### Required Documentation
+- **README.md**: Overview, quickstart, installation
+- **docs/MIGRATION_V2.md**: Breaking changes migration guide
+- **examples/**: Working examples for each major pattern
+- **Inline Comments**: Explain "why" not "what"
+
+### Example Structure
+```
+examples/
+  separate-api-gateway/
+    lambda-stack.json          # Lambda config
+    api-gateway-stack.json     # API Gateway config
+    README.md                  # Explanation
+```
+
+## Common Patterns
+
+### Lambda Function Creation
+```python
+# Always use utility for consistent patterns
+from cdk_factory.utilities.lambda_function_utilities import LambdaFunctionUtility
+
+lambda_fn = LambdaFunctionUtility.create_function(
+    self, config, deployment, workload
+)
+
+# Export to SSM if enabled
+if ssm_enabled:
+    self._export_lambda_to_ssm(lambda_fn, config)
+```
+
+### API Gateway Lambda Integration
+```python
+# Import from SSM (auto-discovery)
+lambda_arn = self._get_lambda_arn_from_ssm(lambda_name)
+
+# OR explicit path
+lambda_arn = self._get_lambda_arn_from_explicit_path(ssm_path)
+
+# OR legacy inline creation (backward compatibility)
+lambda_fn = self._create_inline_lambda(route_config)
+```
+
+## Error Handling
+
+### Validation Before Resource Creation
+```python
+def build(self, stack_config, deployment, workload):
+    # 1. Check for deprecated patterns
+    self._check_for_deprecated_config(stack_config)
+    
+    # 2. Validate required fields
+    self._validate_config(stack_config)
+    
+    # 3. Create resources
+    self._create_resources(stack_config)
+```
+
+### Clear Error Messages
+- Use emoji for visibility: 🚨 ❌ ✅ 💡 📚
+- Provide actionable solutions
+- Include relevant config snippet
+- Reference documentation
+
+## Git Workflow
+
+### Branch Strategy
+- `main`: Production-ready code
+- `develop`: Integration branch
+- `feature/*`: New features
+- `fix/*`: Bug fixes
+- `docs/*`: Documentation updates
+
+### Commit Messages
+```
+feat: Add SSM-based Lambda import for API Gateway
+fix: Correct deprecation detection for api_gateway config
+docs: Add migration guide for v2.0 breaking changes
+test: Update tests for separated stack pattern
+```
+
+## Dependencies
+
+### Production
+- `aws-cdk-lib`: AWS CDK v2
+- `constructs`: CDK constructs
+- Python 3.11+
+
+### Development
+- `pytest`: Testing framework
+- `black`: Code formatting
+- `mypy`: Type checking
+- `aws-cdk.assertions`: CDK testing utilities
+
+## Performance Considerations
+
+- Minimize SSM parameter lookups (cache when possible)
+- Use batch operations for multiple resources
+- Avoid synthesizing stacks in tests unless necessary
+- Keep Lambda packages small (use layers for common deps)
+
+## Security Best Practices
+
+- Never hardcode credentials or API keys
+- Use SSM Parameter Store for sensitive values
+- Apply least-privilege IAM policies
+- Enable encryption for S3 buckets and DynamoDB tables
+- Validate all user input before creating resources
+
+## Monitoring & Observability
+
+- Export important metrics to CloudWatch
+- Use Lambda Powertools for structured logging
+- Create CloudWatch alarms for critical resources
+- Tag all resources with environment, workload, and purpose
+
+## When to Create New Stack Types
+
+Create a new stack module when:
+1. Resource type requires unique deployment patterns
+2. Cross-stack dependencies are minimal
+3. Reusability across projects is high
+4. Testing can be isolated
+
+Don't create a new stack for:
+1. Single-purpose resources (use existing stack)
+2. Tightly coupled resources (keep in same stack)
+3. Rarely used patterns (extend existing stack)

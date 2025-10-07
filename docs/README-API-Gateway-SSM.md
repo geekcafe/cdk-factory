@@ -211,7 +211,7 @@ python -m pytest tests/unit/ -v
 ### SSM Parameter Security
 - Use SecureString for sensitive values
 - Implement least-privilege access
-- Use parameter hierarchies for organization
+- Use parameter hierarchies for workload
 - Enable parameter store logging
 
 ## 📊 Migration Impact
