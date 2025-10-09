@@ -304,8 +304,27 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         )
 
     def _setup_cognito_authorizer(self, api_gateway, api_id):
-        """Setup Cognito authorizer if configured"""
+        """Setup Cognito authorizer if configured AND if any routes need it"""
         if not self.api_config.cognito_authorizer:
+            return None
+        
+        # Check if any routes actually need the authorizer
+        # Don't create it if all routes are public (authorization_type: NONE)
+        routes = self.api_config.routes or []
+        needs_authorizer = any(
+            route.get("authorization_type") != "NONE" 
+            for route in routes
+        )
+        
+        # If we're not creating an authorizer but Cognito is configured,
+        # inform the integration utility so it can still perform security validations
+        if not needs_authorizer:
+            logger.info(
+                "Cognito authorizer configured but no routes require authorization. "
+                "Skipping authorizer creation but maintaining security validation context."
+            )
+            # Set a flag so the integration utility knows Cognito was available
+            self.integration_utility.cognito_configured = True
             return None
 
         route_config = ApiGatewayConfigRouteConfig({})

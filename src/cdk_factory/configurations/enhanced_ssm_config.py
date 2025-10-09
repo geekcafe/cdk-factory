@@ -86,7 +86,9 @@ class EnhancedSsmConfig:
         self, attribute: str, custom_path: Optional[str] = None
     ) -> str:
         """Generate SSM parameter path using pattern or custom path"""
-        if custom_path and custom_path.startswith("/"):
+        # Handle custom_path - must be a string starting with "/"
+        # Protect against incorrect config like: "exports": {"enabled": true}
+        if custom_path and isinstance(custom_path, str) and custom_path.startswith("/"):
             return custom_path
 
         # Convert underscore attribute names to hyphen format for consistent SSM paths

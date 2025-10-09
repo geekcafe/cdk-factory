@@ -9,11 +9,9 @@
     "stage_name": "prod",
     "ssm": {
       "enabled": true,
+      "auto_export": true,
       "workload": "{{WORKLOAD_NAME}}",
       "environment": "{{ENVIRONMENT}}",
-      "exports": {
-        "enabled": true
-      },
       "imports": {
         "workload": "{{WORKLOAD_NAME}}",
         "environment": "{{ENVIRONMENT}}"
