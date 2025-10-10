@@ -137,7 +137,14 @@ class EnhancedSsmConfig:
         if self.ssm_imports:
             if isinstance(self.ssm_imports, dict):
                 # Handle dict format: {"attribute": "auto" or path}
+                # Skip metadata fields that are not actual imports
+                metadata_fields = {"workload", "environment", "organization"}
+                
                 for attribute, import_value in self.ssm_imports.items():
+                    # Skip metadata fields - they specify context, not what to import
+                    if attribute in metadata_fields:
+                        continue
+                        
                     if import_value == "auto":
                         # Use auto-discovery with source mapping
                         imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
