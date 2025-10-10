@@ -243,3 +243,66 @@ class CognitoConfig(EnhancedBaseConfig):
     def ssm(self) -> Dict[str, Any]:
         """Whether to export the user pool name (default: False)"""
         return self.__config.get("ssm", {})
+
+    @property
+    def app_clients(self) -> list | None:
+        """
+        App clients for the user pool.
+        Supports multiple clients with different auth flows and OAuth settings.
+        
+        Structure:
+            [{
+                "name": "web-client",
+                "generate_secret": False,
+                "auth_flows": {
+                    "user_password": True,
+                    "user_srp": True,
+                    "custom": False,
+                    "admin_user_password": False
+                },
+                "oauth": {
+                    "flows": {
+                        "authorization_code_grant": True,
+                        "implicit_code_grant": False,
+                        "client_credentials": False
+                    },
+                    "scopes": ["email", "openid", "profile"],
+                    "callback_urls": ["https://example.com/callback"],
+                    "logout_urls": ["https://example.com/logout"]
+                },
+                "supported_identity_providers": ["COGNITO"],
+                "prevent_user_existence_errors": True,
+                "enable_token_revocation": True,
+                "access_token_validity": {"minutes": 60},
+                "id_token_validity": {"minutes": 60},
+                "refresh_token_validity": {"days": 30},
+                "read_attributes": ["email", "name"],
+                "write_attributes": ["name"]
+            }]
+        
+        Example:
+            [
+                {
+                    "name": "web-app",
+                    "generate_secret": False,
+                    "auth_flows": {
+                        "user_password": True,
+                        "user_srp": True
+                    }
+                },
+                {
+                    "name": "backend-service",
+                    "generate_secret": True,
+                    "oauth": {
+                        "flows": {
+                            "client_credentials": True
+                        },
+                        "scopes": ["api/read", "api/write"]
+                    }
+                }
+            ]
+        
+        Returns:
+            list: List of app client configurations
+        """
+        return self.__config.get("app_clients")

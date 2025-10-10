@@ -1,0 +1,169 @@
+{
+  "workload": {
+    "name": "my-app",
+    "description": "Sample Cognito User Pool with Multiple App Clients: Amplify (no OAuth), OAuth-based web app, mobile app, and backend service",
+    "stacks": [
+      {
+        "name": "cognito-stack",
+        "module": "cognito_stack",
+        "enabled": true,
+        "cognito": {
+          "user_pool_name": "my-app-users",
+          "self_sign_up_enabled": true,
+          "sign_in_aliases": {
+            "email": true,
+            "username": true
+          },
+          "password_policy": {
+            "min_length": 8,
+            "require_lowercase": true,
+            "require_uppercase": true,
+            "require_digits": true,
+            "require_symbols": false
+          },
+          "mfa": "OPTIONAL",
+          "account_recovery": "EMAIL_ONLY",
+          "app_clients": [
+            {
+              "name": "amplify-web-app",
+              "generate_secret": false,
+              "auth_flows": {
+                "user_srp": true,
+                "custom": false
+              },
+              "prevent_user_existence_errors": true,
+              "enable_token_revocation": true,
+              "access_token_validity": {
+                "minutes": 60
+              },
+              "id_token_validity": {
+                "minutes": 60
+              },
+              "refresh_token_validity": {
+                "days": 30
+              }
+            },
+            {
+              "name": "oauth-web-app",
+              "generate_secret": false,
+              "auth_flows": {
+                "user_password": true,
+                "user_srp": true,
+                "custom": false,
+                "admin_user_password": false
+              },
+              "oauth": {
+                "flows": {
+                  "authorization_code_grant": true,
+                  "implicit_code_grant": false,
+                  "client_credentials": false
+                },
+                "scopes": ["email", "openid", "profile"],
+                "callback_urls": [
+                  "https://example.com/callback",
+                  "http://localhost:3000/callback"
+                ],
+                "logout_urls": [
+                  "https://example.com/logout",
+                  "http://localhost:3000/logout"
+                ]
+              },
+              "supported_identity_providers": ["COGNITO"],
+              "prevent_user_existence_errors": true,
+              "enable_token_revocation": true,
+              "access_token_validity": {
+                "minutes": 60
+              },
+              "id_token_validity": {
+                "minutes": 60
+              },
+              "refresh_token_validity": {
+                "days": 30
+              },
+              "read_attributes": [
+                "email",
+                "email_verified",
+                "name",
+                "given_name",
+                "family_name"
+              ],
+              "write_attributes": [
+                "name",
+                "given_name",
+                "family_name"
+              ]
+            },
+            {
+              "name": "mobile-app",
+              "generate_secret": false,
+              "auth_flows": {
+                "user_password": false,
+                "user_srp": true,
+                "custom": false,
+                "admin_user_password": false
+              },
+              "oauth": {
+                "flows": {
+                  "authorization_code_grant": true,
+                  "implicit_code_grant": false,
+                  "client_credentials": false
+                },
+                "scopes": ["email", "openid", "profile"],
+                "callback_urls": [
+                  "myapp://callback"
+                ],
+                "logout_urls": [
+                  "myapp://logout"
+                ]
+              },
+              "supported_identity_providers": ["COGNITO"],
+              "prevent_user_existence_errors": true,
+              "enable_token_revocation": true,
+              "access_token_validity": {
+                "hours": 1
+              },
+              "id_token_validity": {
+                "hours": 1
+              },
+              "refresh_token_validity": {
+                "days": 90
+              }
+            },
+            {
+              "name": "backend-service",
+              "generate_secret": true,
+              "auth_flows": {
+                "user_password": false,
+                "user_srp": false,
+                "custom": false,
+                "admin_user_password": true
+              },
+              "oauth": {
+                "flows": {
+                  "authorization_code_grant": false,
+                  "implicit_code_grant": false,
+                  "client_credentials": true
+                },
+                "scopes": ["api/read", "api/write"]
+              },
+              "supported_identity_providers": ["COGNITO"],
+              "prevent_user_existence_errors": true,
+              "enable_token_revocation": true,
+              "access_token_validity": {
+                "minutes": 30
+              },
+              "refresh_token_validity": {
+                "days": 1
+              }
+            }
+          ],
+          "ssm": {
+            "enabled": true,
+            "organization": "my-app",
+            "environment": "prod"
+          }
+        }
+      }
+    ]
+  }
+}

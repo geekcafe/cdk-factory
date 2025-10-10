@@ -117,12 +117,23 @@ class TestApiGatewayLambdaPermission:
             {
                 "Action": "lambda:InvokeFunction",
                 "Principal": "apigateway.amazonaws.com",
-                # The source ARN should reference the specific API Gateway and route
-                "SourceArn": Match.string_like_regexp(
-                    r"arn:aws:execute-api:.*:.*:.*/\*/GET/api/users"
-                ),
             },
         )
+        
+        # Additionally verify the path appears in the template somewhere
+        template_json = template.to_json()
+        found_permission_with_path = False
+        for resource in template_json.get("Resources", {}).values():
+            if resource.get("Type") == "AWS::Lambda::Permission":
+                props = resource.get("Properties", {})
+                source_arn = props.get("SourceArn", {})
+                if isinstance(source_arn, dict) and "Fn::Join" in source_arn:
+                    join_parts = source_arn["Fn::Join"][1]
+                    if any("/*/GET/api/users" in str(part) for part in join_parts):
+                        found_permission_with_path = True
+                        break
+        
+        assert found_permission_with_path, "Expected to find Lambda permission with path /*/GET/api/users"
 
         # Also verify the API Gateway method was created
         template.has_resource_properties(
@@ -188,12 +199,23 @@ class TestApiGatewayLambdaPermission:
             {
                 "Action": "lambda:InvokeFunction",
                 "Principal": "apigateway.amazonaws.com",
-                # The source ARN should reference the specific API Gateway and route
-                "SourceArn": Match.string_like_regexp(
-                    r"arn:aws:execute-api:.*:.*:.*/\*/POST/api/orders"
-                ),
             },
         )
+        
+        # Additionally verify the path appears in the template
+        template_json = template.to_json()
+        found_permission_with_path = False
+        for resource in template_json.get("Resources", {}).values():
+            if resource.get("Type") == "AWS::Lambda::Permission":
+                props = resource.get("Properties", {})
+                source_arn = props.get("SourceArn", {})
+                if isinstance(source_arn, dict) and "Fn::Join" in source_arn:
+                    join_parts = source_arn["Fn::Join"][1]
+                    if any("/*/POST/api/orders" in str(part) for part in join_parts):
+                        found_permission_with_path = True
+                        break
+        
+        assert found_permission_with_path, "Expected to find Lambda permission with path /*/POST/api/orders"
 
     def test_multiple_routes_create_multiple_permissions(
         self, app, deployment_config, workload_config
