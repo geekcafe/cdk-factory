@@ -20,17 +20,25 @@ echo "=================================="
 
 
 
-# Check if pytest is installed in the virtual environment
-if [ ! -f ".venv/bin/pytest" ]; then
-    echo -e "${RED}Error: pytest not found in virtual environment${NC}"
-    echo "Please install pytest:"
-    echo "  source .venv/bin/activate"
-    echo "  pip install pytest"
-    exit 1
+# Create and activate virtual environment if it doesn't exist
+if [ ! -d ".venv" ]; then
+    echo -e "${YELLOW}Creating virtual environment...${NC}"
+    python3 -m venv .venv
 fi
 
 echo -e "${YELLOW}Activating virtual environment...${NC}"
 source ./.venv/bin/activate
+
+# Install dependencies
+echo -e "${YELLOW}Installing dependencies...${NC}"
+pip install -q -r requirements.dev.txt
+pip install -q -r requirements.tests.txt
+
+# Check if pytest is installed in the virtual environment
+if ! command -v pytest &> /dev/null; then
+    echo -e "${RED}Error: pytest could not be installed or found in the virtual environment.${NC}"
+    exit 1
+fi
 
 echo -e "${YELLOW}Running unit tests...${NC}"
 echo ""
