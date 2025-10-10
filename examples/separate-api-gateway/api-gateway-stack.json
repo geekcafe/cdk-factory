@@ -1,0 +1,81 @@
+{
+  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-api-gateway",
+  "module": "api_gateway_stack",
+  "enabled": true,
+  "api_gateway": {
+    "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-api",
+    "description": "API Gateway for {{WORKLOAD_NAME}} application",
+    "api_type": "REST",
+    "stage_name": "prod",
+    "ssm": {
+      "enabled": true,
+      "auto_export": true,
+      "workload": "{{WORKLOAD_NAME}}",
+      "environment": "{{ENVIRONMENT}}",
+      "imports": {
+        "workload": "{{WORKLOAD_NAME}}",
+        "environment": "{{ENVIRONMENT}}"
+      }
+    },
+    "deploy_options": {
+      "data_trace_enabled": false,
+      "metrics_enabled": true,
+      "tracing_enabled": true,
+      "throttling_rate_limit": 1000,
+      "throttling_burst_limit": 2000
+    },
+    "cognito_authorizer": {
+      "enabled": false,
+      "user_pool_arn": "{{COGNITO_USER_POOL_ARN}}"
+    },
+    "routes": [
+      {
+        "path": "/health",
+        "method": "GET",
+        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-health-check",
+        "authorization_type": "NONE",
+        "allow_public_override": true,
+        "cors": {
+          "origins": ["*"],
+          "methods": ["GET", "OPTIONS"],
+          "headers": ["Content-Type", "Authorization"]
+        }
+      },
+      {
+        "path": "/users",
+        "method": "GET",
+        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-user-api",
+        "authorization_type": "NONE",
+        "allow_public_override": true,
+        "cors": {
+          "origins": ["*"],
+          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+          "headers": ["Content-Type", "Authorization"]
+        }
+      },
+      {
+        "path": "/users",
+        "method": "POST",
+        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-user-api",
+        "authorization_type": "NONE",
+        "allow_public_override": true,
+        "cors": {
+          "origins": ["*"],
+          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+          "headers": ["Content-Type", "Authorization"]
+        }
+      },
+      {
+        "path": "/admin/stats",
+        "method": "GET",
+        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-admin-api",
+        "authorization_type": "COGNITO",
+        "cors": {
+          "origins": ["https://admin.example.com"],
+          "methods": ["GET", "OPTIONS"],
+          "headers": ["Content-Type", "Authorization"]
+        }
+      }
+    ]
+  }
+}

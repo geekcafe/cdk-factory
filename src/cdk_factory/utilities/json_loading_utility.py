@@ -14,16 +14,30 @@ class JsonLoadingUtility:
     """
     JSON Loading Utility
     This class is used to load a JSON file.  We have a special syntax that allows
-    chaining JSON files together using __inherits__
+    chaining JSON files together using __imports__ or __inherits__ (legacy).
+
+    The __imports__ keyword allows you to:
+    - Import from external JSON files: "__imports__": "./base-config.json"
+    - Import from nested sections: "__imports__": "workload.defaults"
+    - Import from directories: "__imports__": "./configs/"
+    - Import multiple sources: "__imports__": ["base.json", "overrides.json"]
 
     Examples:
-     TODO - show some examples
+        # Single file import
+        {"__imports__": "./base-config.json", "name": "override"}
+        
+        # Multiple imports (merged in order)
+        {"__imports__": ["base.json", "env-specific.json"]}
+        
+        # Nested section reference
+        {"__imports__": "workload.defaults.lambda"}
     """
 
     def __init__(self, path) -> None:
         self.path = path
         self.base_path = os.path.dirname(path)
-        self.nested_key = "__inherits__"
+        # Support both __imports__ (preferred) and __inherits__ (legacy)
+        self.import_keys = ["__imports__", "__inherits__"]
 
     def load(self):
         """Load and parse the JSON object for nested resources."""
@@ -60,36 +74,74 @@ class JsonLoadingUtility:
     ):
         """Resolve references in a configuration section."""
         if isinstance(section, dict):
-            if self.nested_key in section:
-                nested_path = str(section.pop(self.nested_key))
-                # print(f"Resolving parent path: {nested_path}")
-                if nested_path.endswith(".json"):
-                    nested_root_path = os.path.join(self.base_path, nested_path)
-                    nested_section = self.__load_json_file(nested_root_path)
-                elif os.path.isdir(os.path.join(self.base_path, nested_path)):
-                    nested_section = []
-                    dir_path = os.path.join(self.base_path, nested_path)
-                    for filename in os.listdir(dir_path):
-                        if filename.endswith(".json"):
-                            file_path = os.path.join(dir_path, filename)
-                            # print(f"Loading file: {file_path}")
-                            file_section = self.__load_json_file(file_path)
-                            nested_section.append(file_section)
+            # Check for import keys (try __imports__ first, fall back to __inherits__)
+            import_key = None
+            for key in self.import_keys:
+                if key in section:
+                    import_key = key
+                    break
+            
+            if import_key:
+                nested_paths = section.pop(import_key)
+                
+                # Support both single path (string) and multiple paths (list)
+                if isinstance(nested_paths, str):
+                    nested_paths = [nested_paths]
+                elif not isinstance(nested_paths, list):
+                    raise ValueError(
+                        f"{import_key} must be a string or list of paths, got {type(nested_paths)}. "
+                        f"Example: '{import_key}': './base.json' or '{import_key}': ['base.json', 'overrides.json']"
+                    )
+                
+                # Process each path and merge results
+                merged_section = None
+                
+                for nested_path in nested_paths:
+                    nested_path = str(nested_path)
+                    # print(f"Resolving parent path: {nested_path}")
+                    
+                    if nested_path.endswith(".json"):
+                        nested_root_path = os.path.join(self.base_path, nested_path)
+                        nested_section = self.__load_json_file(nested_root_path)
+                    elif os.path.isdir(os.path.join(self.base_path, nested_path)):
+                        nested_section = []
+                        dir_path = os.path.join(self.base_path, nested_path)
+                        for filename in os.listdir(dir_path):
+                            if filename.endswith(".json"):
+                                file_path = os.path.join(dir_path, filename)
+                                # print(f"Loading file: {file_path}")
+                                file_section = self.__load_json_file(file_path)
+                                nested_section.append(file_section)
+                        # print("done with nested sections")
+                    else:
+                        nested_section = self.get_nested_config(root_config, nested_path)
 
-                    # print("done with nested sections")
-                else:
-                    nested_section = self.get_nested_config(root_config, nested_path)
-
-                nested_section_resolved = self.resolve_references(
-                    nested_section, root_config
-                )
-                if len(section) > 0 and isinstance(nested_section_resolved, dict):
-                    nested_section_resolved.update(section)
-                elif len(section) > 0 and isinstance(nested_section_resolved, list):
+                    nested_section_resolved = self.resolve_references(
+                        nested_section, root_config
+                    )
+                    
+                    # Merge resolved sections
+                    if merged_section is None:
+                        merged_section = nested_section_resolved
+                    else:
+                        # Merge logic based on type
+                        if isinstance(merged_section, dict) and isinstance(nested_section_resolved, dict):
+                            self.merge_sections(merged_section, nested_section_resolved)
+                        elif isinstance(merged_section, list) and isinstance(nested_section_resolved, list):
+                            merged_section.extend(nested_section_resolved)
+                        else:
+                            raise RuntimeError(
+                                f"Cannot merge incompatible types: {type(merged_section)} and {type(nested_section_resolved)}"
+                            )
+                
+                # Apply any additional properties from the section
+                if len(section) > 0 and isinstance(merged_section, dict):
+                    merged_section.update(section)
+                elif len(section) > 0 and isinstance(merged_section, list):
                     raise RuntimeError("we need to resolve this section")
-                    # nested_section_resolved.append(section)
+                    # merged_section.append(section)
 
-                section = nested_section_resolved
+                section = merged_section
 
             if isinstance(section, dict):
                 for key, value in section.items():

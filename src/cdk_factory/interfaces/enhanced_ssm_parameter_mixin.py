@@ -142,28 +142,39 @@ class EnhancedSsmParameterMixin:
         Returns:
             Created SSM parameter
         """
-        # Handle different value types
-        if isinstance(value, list):
-            string_value = ",".join(str(v) for v in value)
-            cdk_param_type = ssm.ParameterType.STRING_LIST
-        elif param_type == "SecureString":
-            string_value = str(value)
-            cdk_param_type = ssm.ParameterType.SECURE_STRING
-        else:
-            string_value = str(value)
-            cdk_param_type = ssm.ParameterType.STRING
-            
         # Generate a unique construct ID from the path
         construct_id = f"ssm-param-{path.replace('/', '-').replace('_', '-')}"
         
-        return ssm.StringParameter(
-            self.scope,
-            construct_id,
-            parameter_name=path,
-            string_value=string_value,
-            description=description,
-            type=cdk_param_type
-        )
+        # Handle different value types - use appropriate CDK constructs
+        if isinstance(value, list):
+            # For list values, use StringListParameter
+            return ssm.StringListParameter(
+                self.scope,
+                construct_id,
+                parameter_name=path,
+                string_list_value=value,
+                description=description
+            )
+        elif param_type == "SecureString":
+            # For secure strings, use L1 CfnParameter with Type=SecureString
+            return ssm.CfnParameter(
+                self.scope,
+                construct_id,
+                name=path,
+                value=str(value),
+                type="SecureString",
+                description=description
+            )
+        else:
+            # For regular strings, use StringParameter (no type parameter needed in CDK v2)
+            return ssm.StringParameter(
+                self.scope,
+                construct_id,
+                parameter_name=path,
+                string_value=str(value),
+                description=description
+                # Note: 'type' parameter removed - deprecated in CDK v2
+            )
     
     def _import_enhanced_ssm_parameter(self, path: str, attribute: str) -> Optional[str]:
         """

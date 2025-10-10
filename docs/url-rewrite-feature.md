@@ -218,9 +218,9 @@ bucket/version/about.html ❌
 /app.js → NOT rewritten ✅
 ```
 
-## Example: Dictator Watch Dog
+## Example: Vue.js Static Site
 
-This feature was developed for the Dictator Watch Dog project to fix SEO issues where all pages were serving homepage content.
+This feature was developed for the Vue.js static site project to fix SEO issues where all pages were serving homepage content.
 
 **Before:**
 - 97% canonical errors (33/34 pages)

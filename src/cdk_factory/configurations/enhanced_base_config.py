@@ -56,9 +56,14 @@ class EnhancedBaseConfig(BaseConfig):
         return self._enhanced_ssm.enabled if self._enhanced_ssm else False
     
     @property
+    def ssm_workload(self) -> str:
+        """Get the workload name for SSM parameter paths"""
+        return self._enhanced_ssm.workload if self._enhanced_ssm else "cdk-factory"
+    
+    @property
     def ssm_organization(self) -> str:
-        """Get the organization name for SSM parameter paths"""
-        return self._enhanced_ssm.organization if self._enhanced_ssm else "cdk-factory"
+        """Deprecated: Use ssm_workload instead. Kept for backward compatibility."""
+        return self.ssm_workload
     
     @property
     def ssm_environment(self) -> str:
@@ -68,7 +73,7 @@ class EnhancedBaseConfig(BaseConfig):
     @property
     def ssm_pattern(self) -> str:
         """Get the SSM parameter path pattern"""
-        return self._enhanced_ssm.pattern if self._enhanced_ssm else "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}"
+        return self._enhanced_ssm.pattern if self._enhanced_ssm else "/{workload}/{environment}/{stack_type}/{resource_name}/{attribute}"
     
     @property
     def ssm_auto_export(self) -> bool:
@@ -98,7 +103,7 @@ class EnhancedBaseConfig(BaseConfig):
         # Fallback to simple path generation
         if custom_path and custom_path.startswith("/"):
             return custom_path
-        return f"/{self.ssm_organization}/{self.ssm_environment}/{attribute}"
+        return f"/{self.ssm_workload}/{self.ssm_environment}/{attribute}"
     
     def get_export_definitions(self, context: Dict[str, Any] = None) -> List[SsmParameterDefinition]:
         """

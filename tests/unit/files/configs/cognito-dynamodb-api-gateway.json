@@ -115,7 +115,7 @@
           "exists": false,
           "ssm": {
             "enabled": true,
-            "organization": "my-cool-app",
+            "workload": "my-cool-app",
             "environment": "dev",
             "auto_export": true,
             "auto_import": false
@@ -155,7 +155,7 @@
           ],
           "ssm": {
             "enabled": true,
-            "organization": "my-cool-app",
+            "workload": "my-cool-app",
             "environment": "dev",
             "auto_export": true,
             "auto_import": false
@@ -175,7 +175,7 @@
           "description": "API Gateway with Cognito Authorizer and CORS",
           "ssm": {
             "enabled": true,
-            "organization": "my-cool-app",
+            "workload": "my-cool-app",
             "environment": "dev",
             "auto_export": true,
             "auto_import": true,
@@ -212,6 +212,7 @@
               "src": "./lambdas/api_gateway_health",
               "handler": "app.lambda_handler",
               "authorization_type": "NONE",
+              "allow_public_override": true,
               "cors": {
                 "methods": [
                   "GET"

@@ -101,7 +101,7 @@ def lambda_handler(event, context):
     def test_normal_resource_creation(
         self, app, temp_lambda_dir, deployment_config, workload_config
     ):
-        """Test normal API Gateway resource creation without imports."""
+        """Test that old API Gateway pattern raises deprecation error."""
         stack_config = StackConfig(
             {
                 "name": "test-normal-stack",
@@ -134,34 +134,14 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Mock the Lambda function building since we're testing API Gateway integration
-        with pytest.MonkeyPatch().context() as m:
-            m.setenv("SKIP_LAMBDA_BUILD", "true")
+        # Should raise deprecation error for old API Gateway pattern
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
             stack.build(stack_config, deployment_config, workload_config)
-
-        # Verify API Gateway resources were created
-        template = app.synth().get_stack_by_name("TestNormalStack").template
-
-        # Check for API Gateway resources in CloudFormation template
-        resources = template.get("Resources", {})
-
-        # Should have API Gateway deployment and stage
-        deployment_resources = [
-            r
-            for r in resources.values()
-            if r.get("Type") == "AWS::ApiGateway::Deployment"
-        ]
-        stage_resources = [
-            r for r in resources.values() if r.get("Type") == "AWS::ApiGateway::Stage"
-        ]
-
-        assert len(deployment_resources) >= 1, "Should create API Gateway deployment"
-        assert len(stage_resources) >= 1, "Should create API Gateway stage"
 
     def test_existing_resource_import(
         self, app, temp_lambda_dir, deployment_config, workload_config
     ):
-        """Test API Gateway resource creation with existing resource imports."""
+        """Test that old API Gateway pattern with resource imports raises deprecation error."""
         stack_config = StackConfig(
             {
                 "name": "test-import-stack",
@@ -202,36 +182,14 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Mock the Lambda function building since we're testing API Gateway integration
-        with pytest.MonkeyPatch().context() as m:
-            m.setenv("SKIP_LAMBDA_BUILD", "true")
+        # Should raise deprecation error for old API Gateway pattern
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
             stack.build(stack_config, deployment_config, workload_config)
-
-        # Verify stack was created successfully
-        template = app.synth().get_stack_by_name("TestImportStack").template
-
-        # Check for API Gateway resources in CloudFormation template
-        resources = template.get("Resources", {})
-
-        # Should still have deployment and stage resources
-        deployment_resources = [
-            r
-            for r in resources.values()
-            if r.get("Type") == "AWS::ApiGateway::Deployment"
-        ]
-        stage_resources = [
-            r for r in resources.values() if r.get("Type") == "AWS::ApiGateway::Stage"
-        ]
-
-        assert (
-            len(deployment_resources) >= 1
-        ), "Should create API Gateway deployment with imports"
-        assert len(stage_resources) >= 1, "Should create API Gateway stage with imports"
 
     def test_multiple_existing_resource_imports(
         self, app, temp_lambda_dir, deployment_config, workload_config
     ):
-        """Test API Gateway resource creation with multiple existing resource imports."""
+        """Test that old API Gateway pattern with multiple resource imports raises deprecation error."""
         stack_config = StackConfig(
             {
                 "name": "test-multi-import-stack",
@@ -276,22 +234,14 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Mock the Lambda function building since we're testing API Gateway integration
-        with pytest.MonkeyPatch().context() as m:
-            m.setenv("SKIP_LAMBDA_BUILD", "true")
+        # Should raise deprecation error for old API Gateway pattern
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
             stack.build(stack_config, deployment_config, workload_config)
-
-        # Verify stack was created successfully
-        template = app.synth().get_stack_by_name("TestMultiImportStack").template
-
-        # Check that the template was generated without errors
-        assert template is not None, "CloudFormation template should be generated"
-        assert "Resources" in template, "Template should contain resources"
 
     def test_mixed_import_and_create_resources(
         self, app, temp_lambda_dir, deployment_config, workload_config
     ):
-        """Test API Gateway with some imported resources and some created resources."""
+        """Test that old API Gateway pattern with mixed resources raises deprecation error."""
         stack_config = StackConfig(
             {
                 "name": "test-mixed-stack",
@@ -345,33 +295,14 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Mock the Lambda function building since we're testing API Gateway integration
-        with pytest.MonkeyPatch().context() as m:
-            m.setenv("SKIP_LAMBDA_BUILD", "true")
+        # Should raise deprecation error for old API Gateway pattern
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
             stack.build(stack_config, deployment_config, workload_config)
-
-        # Verify stack was created successfully
-        template = app.synth().get_stack_by_name("TestMixedStack").template
-
-        # Check that the template was generated without errors
-        assert template is not None, "CloudFormation template should be generated"
-        assert "Resources" in template, "Template should contain resources"
-
-        # Should have resources for both imported and created paths
-        resources = template.get("Resources", {})
-        deployment_resources = [
-            r
-            for r in resources.values()
-            if r.get("Type") == "AWS::ApiGateway::Deployment"
-        ]
-        assert (
-            len(deployment_resources) >= 1
-        ), "Should create API Gateway deployment for mixed resources"
 
     def test_invalid_resource_import_fallback(
         self, app, temp_lambda_dir, deployment_config, workload_config
     ):
-        """Test that invalid resource imports fall back to normal creation."""
+        """Test that old API Gateway pattern with invalid resource imports raises deprecation error."""
         stack_config = StackConfig(
             {
                 "name": "test-fallback-stack",
@@ -412,18 +343,6 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Mock the Lambda function building since we're testing API Gateway integration
-        with pytest.MonkeyPatch().context() as m:
-            m.setenv("SKIP_LAMBDA_BUILD", "true")
+        # Should raise deprecation error for old API Gateway pattern
+        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
             stack.build(stack_config, deployment_config, workload_config)
-
-        # Verify stack was created successfully (should fallback to normal creation)
-        template = app.synth().get_stack_by_name("TestFallbackStack").template
-
-        # Check that the template was generated without errors
-        assert (
-            template is not None
-        ), "CloudFormation template should be generated with fallback"
-        assert (
-            "Resources" in template
-        ), "Template should contain resources with fallback"

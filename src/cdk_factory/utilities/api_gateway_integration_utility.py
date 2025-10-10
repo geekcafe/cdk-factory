@@ -40,6 +40,7 @@ class ApiGatewayIntegrationUtility:
         self.account = scope.account
         self.api_gateway = None
         self.authorizer = None
+        self.cognito_configured = False  # Flag for when Cognito is configured but authorizer not created
         self._log_group = None
         self._log_role = None
 
@@ -55,8 +56,10 @@ class ApiGatewayIntegrationUtility:
             raise ValueError("API Gateway config is missing in Lambda function config")
 
         # Validate authorization configuration for security
+        # Check if Cognito is available (either authorizer created OR configured but not created)
         has_cognito_authorizer = (
             self.authorizer is not None
+            or self.cognito_configured
             or self._get_existing_authorizer_id_with_ssm_fallback(
                 api_config, stack_config
             )
@@ -614,6 +617,10 @@ class ApiGatewayIntegrationUtility:
             authorizer_name=authorizer_name,
             identity_source=identity_source,
         )
+        
+        # The authorizer is automatically attached to the API Gateway when used in a method
+        # But we need to ensure it's created in the context of the API's scope
+        # The actual attachment happens when the authorizer is referenced in method creation
 
         return self.authorizer
 

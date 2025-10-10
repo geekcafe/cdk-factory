@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}CDK Factory Unit Test Runner${NC}"
 echo "=================================="
 
-
+./pysetup.sh --ci
 
 # Check if pytest is installed in the virtual environment
 if [ ! -f ".venv/bin/pytest" ]; then

@@ -18,7 +18,7 @@ This enhanced pattern provides both prescriptive defaults for easy adoption and 
 
 #### Default Pattern
 ```
-/{organization}/{environment}/{stack-type}/{resource-name}/{attribute}
+/{workload}/{environment}/{stack-type}/{resource-name}/{attribute}
 ```
 
 #### Examples
@@ -34,11 +34,11 @@ This enhanced pattern provides both prescriptive defaults for easy adoption and 
 {
   "ssm": {
     "enabled": true,
-    "organization": "cdk-factory",
+    "workload": "cdk-factory",
     "environment": "${ENVIRONMENT}",
     "auto_export": true,
     "auto_import": true,
-    "pattern": "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}",
+    "pattern": "/{workload}/{environment}/{stack_type}/{resource_name}/{attribute}",
     "exports": {
       "vpc_id": "auto",
       "vpc_cidr": "auto",
@@ -97,8 +97,8 @@ class EnhancedSsmConfig:
         return self.config.get("enabled", True)
     
     @property
-    def organization(self) -> str:
-        return self.config.get("organization", "cdk-factory")
+    def workload(self) -> str:
+        return self.config.get("workload", "cdk-factory")
     
     @property
     def environment(self) -> str:
@@ -112,7 +112,7 @@ class EnhancedSsmConfig:
     
     @property
     def pattern(self) -> str:
-        return self.config.get("pattern", "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}")
+        return self.config.get("pattern", "/{workload}/{environment}/{stack_type}/{resource_name}/{attribute}")
     
     @property
     def auto_export(self) -> bool:
@@ -128,7 +128,7 @@ class EnhancedSsmConfig:
             return custom_path
             
         return self.pattern.format(
-            organization=self.organization,
+            workload=self.workload,
             environment=self.environment,
             stack_type=self.resource_type,
             resource_name=self.resource_name,
@@ -327,7 +327,7 @@ This automatically:
   "ssm": {
     "enabled": true,
     "environment": "${DEPLOY_ENV}",
-    "organization": "mycompany"
+    "workload": "mycompany"
   },
   "vpc": {
     "name": "main-vpc",
@@ -346,8 +346,8 @@ With `DEPLOY_ENV=production`, exports to:
 {
   "ssm": {
     "enabled": true,
-    "pattern": "/{organization}/{environment}/{resource_name}-{attribute}",
-    "organization": "acme",
+    "pattern": "/{workload}/{environment}/{resource_name}-{attribute}",
+    "workload": "acme",
     "environment": "prod"
   },
   "api_gateway": {
@@ -389,7 +389,7 @@ Exports to:
 {
   "ssm": {
     "enabled": true,
-    "organization": "myapp",
+    "workload": "myapp",
     "environment": "prod"
   },
   "vpc": {
@@ -403,7 +403,7 @@ Exports to:
 {
   "ssm": {
     "enabled": true,
-    "organization": "myapp", 
+    "workload": "myapp", 
     "environment": "prod",
     "imports": {
       "vpc_id": "auto"

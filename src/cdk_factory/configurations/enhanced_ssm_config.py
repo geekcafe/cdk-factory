@@ -42,8 +42,10 @@ class EnhancedSsmConfig:
         return self.config.get("enabled", True)
 
     @property
-    def organization(self) -> str:
-        return self.config.get("organization", "default")
+    def workload(self) -> str:
+        """Get workload name for SSM parameter paths (backward compatible with 'organization')"""
+        # Try 'workload' first, fall back to 'organization' for backward compatibility
+        return self.config.get("workload", self.config.get("organization", "default"))
 
     @property
     def environment(self) -> str:
@@ -58,7 +60,7 @@ class EnhancedSsmConfig:
     def pattern(self) -> str:
         return self.config.get(
             "pattern",
-            "/{organization}/{environment}/{stack_type}/{resource_name}/{attribute}",
+            "/{workload}/{environment}/{stack_type}/{resource_name}/{attribute}",
         )
 
 
@@ -84,15 +86,18 @@ class EnhancedSsmConfig:
         self, attribute: str, custom_path: Optional[str] = None
     ) -> str:
         """Generate SSM parameter path using pattern or custom path"""
-        if custom_path and custom_path.startswith("/"):
+        # Handle custom_path - must be a string starting with "/"
+        # Protect against incorrect config like: "exports": {"enabled": true}
+        if custom_path and isinstance(custom_path, str) and custom_path.startswith("/"):
             return custom_path
 
         # Convert underscore attribute names to hyphen format for consistent SSM paths
         formatted_attribute = attribute.replace("_", "-")
 
-        # Use enhanced pattern
+        # Use enhanced pattern (support both workload and organization for backward compatibility)
         return self.pattern.format(
-            organization=self.organization,
+            workload=self.workload,
+            organization=self.workload,  # Backward compatibility
             environment=self.environment,
             stack_type=self.resource_type,
             resource_name=self.resource_name,
@@ -236,7 +241,7 @@ class EnhancedSsmConfig:
         formatted_resource_name = source_resource_name.replace("_", "-")
         formatted_resource_type = source_resource_type.replace("_", "-")
         
-        return f"/{self.organization}/{self.environment}/{formatted_resource_type}/{formatted_resource_name}/{formatted_attribute}"
+        return f"/{self.workload}/{self.environment}/{formatted_resource_type}/{formatted_resource_name}/{formatted_attribute}"
 
 
 # Resource type definitions for auto-discovery

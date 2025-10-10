@@ -1,0 +1,74 @@
+{
+  "cdk": {
+    "parameters": [
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "env_var_name": "ENVIRONMENT",
+        "cdk_parameter_name": "Environment"
+      },
+      {
+        "placeholder": "{{WORKLOAD_NAME}}",
+        "env_var_name": "WORKLOAD_NAME",
+        "cdk_parameter_name": "WorkloadName"
+      },
+      {
+        "placeholder": "{{AWS_ACCOUNT}}",
+        "env_var_name": "AWS_ACCOUNT",
+        "cdk_parameter_name": "AccountNumber"
+      },
+      {
+        "placeholder": "{{AWS_REGION}}",
+        "env_var_name": "AWS_REGION",
+        "cdk_parameter_name": "AccountRegion"
+      },
+      {
+        "placeholder": "{{DYNAMODB_TABLE_NAME}}",
+        "env_var_name": "DYNAMODB_TABLE_NAME",
+        "cdk_parameter_name": "DynamoDbTableName"
+      },
+      {
+        "placeholder": "{{COGNITO_USER_POOL_ARN}}",
+        "env_var_name": "COGNITO_USER_POOL_ARN",
+        "cdk_parameter_name": "CognitoUserPoolArn"
+      }
+    ]
+  },
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "Example application with separate Lambda and API Gateway stacks",
+    "deployments": [
+      {
+        "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-pipeline",
+        "environment": "{{ENVIRONMENT}}",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "{{AWS_REGION}}",
+        "mode": "pipeline",
+        "pipeline": {
+          "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-pipeline",
+          "enabled": true,
+          "stages": [
+            {
+              "name": "deploy-lambdas",
+              "description": "Deploy Lambda functions and export ARNs to SSM",
+              "stacks": [
+                {
+                  "__inherits__": "./lambda-stack.json"
+                }
+              ]
+            },
+            {
+              "name": "deploy-api-gateway",
+              "description": "Deploy API Gateway and wire Lambda integrations",
+              "stacks": [
+                {
+                  "__inherits__": "./api-gateway-stack.json"
+                }
+              ]
+            }
+          ]
+        },
+        "enabled": true
+      }
+    ]
+  }
+}

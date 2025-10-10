@@ -30,7 +30,7 @@
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "dev",
       "auto_import": true
     },
@@ -61,7 +61,7 @@
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "dev",
       "auto_import": false,
       "imports": {
@@ -248,7 +248,7 @@ The API Gateway integration follows this configuration hierarchy:
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "infrastructure",
       "auto_import": true
     }
@@ -262,7 +262,7 @@ The API Gateway integration follows this configuration hierarchy:
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "infrastructure",
       "auto_import": false,
       "imports": {
@@ -303,7 +303,7 @@ The API Gateway integration follows this configuration hierarchy:
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "infrastructure-${ENVIRONMENT}",
       "auto_import": true
     }
@@ -347,7 +347,7 @@ The API Gateway integration follows this configuration hierarchy:
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "api-gateway-stack",
       "auto_import": true
     }
@@ -376,7 +376,7 @@ The API Gateway integration follows this configuration hierarchy:
   "api_gateway": {
     "ssm": {
       "enabled": true,
-      "organization": "my-cool-app",
+      "workload": "my-cool-app",
       "environment": "api-gateway-stack",
       "auto_import": true
     }
@@ -612,19 +612,19 @@ logging.getLogger('ApiGatewayIntegrationUtility').setLevel(logging.DEBUG)
      "api_gateway": {
        "ssm": {
          "enabled": true,
-         "organization": "nonexistent",
+         "workload": "nonexistent",
          "environment": "invalid",
          "auto_import": true
        }
      }
    }
    
-   // ✅ Use correct organization and environment
+   // ✅ Use correct workload and environment
    {
      "api_gateway": {
        "ssm": {
          "enabled": true,
-         "organization": "my-cool-app",
+         "workload": "my-cool-app",
          "environment": "infrastructure",
          "auto_import": true
        }

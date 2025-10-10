@@ -34,11 +34,7 @@ from cdk_factory.configurations.resources.lambda_function import (
     SQS as SQSConfig,
 )
 
-from cdk_factory.utilities.api_gateway_integration_utility import (
-    ApiGatewayIntegrationUtility,
-)
-from aws_cdk import aws_apigateway as apigateway
-from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ssm as ssm
 
 from cdk_factory.utilities.docker_utilities import DockerUtilities
 from cdk_factory.stack.stack_module_registry import register_stack
@@ -71,8 +67,7 @@ class LambdaStack(IStack):
         self.stack_config: StackConfig | None = None
         self.deployment: DeploymentConfig | None = None
         self.workload: WorkloadConfig | None = None
-        self.api_gateway_integrations: list = []
-        self.integration_utility = None
+        self.exported_lambda_arns: dict = {}  # Store exported Lambda ARNs
 
         self.__nag_rule_suppressions()
 
@@ -90,8 +85,9 @@ class LambdaStack(IStack):
         self.deployment = deployment
         self.workload = workload
 
-        # Initialize integration utility for consistent API Gateway behavior
-        self.integration_utility = ApiGatewayIntegrationUtility(self)
+        # Check for deprecated API Gateway configuration in lambda resources
+        self.__check_for_deprecated_api_config(stack_config)
+
         resources = stack_config.dictionary.get("resources", [])
         if len(resources) == 0:
             resources = stack_config.dictionary.get("lambdas", [])
@@ -100,14 +96,13 @@ class LambdaStack(IStack):
 
         lambda_functions: List[LambdaFunctionConfig] = []
         for resource in resources:
-
             config = LambdaFunctionConfig(config=resource, deployment=deployment)
             lambda_functions.append(config)
 
         self.functions = self.__setup_lambdas(lambda_functions)
         
-        # Trigger API Gateway deployment after all integrations are added
-        self.__finalize_api_gateway_deployments()
+        # Export Lambda ARNs to SSM Parameter Store for API Gateway integration
+        self.__export_lambda_arns_to_ssm()
 
     def __nag_rule_suppressions(self):
         pass
@@ -191,12 +186,12 @@ class LambdaStack(IStack):
                             f"A resource policy for {rp.get('principal')} has not been defined"
                         )
 
-            # Handle API Gateway integration if configured
-            if function_config.api:
-                self.__setup_api_gateway_integration(
-                    lambda_function=lambda_function,
-                    function_config=function_config,
-                )
+            # Store Lambda function for SSM export
+            self.exported_lambda_arns[function_config.name] = {
+                "arn": lambda_function.function_arn,
+                "name": lambda_function.function_name,
+                "function": lambda_function,
+            }
 
             functions.append(lambda_function)
 
@@ -299,66 +294,117 @@ class LambdaStack(IStack):
 
             rule.add_target(aws_events_targets.LambdaFunction(lambda_function))
 
-    def __setup_api_gateway_integration(
-        self, lambda_function: _lambda.Function, function_config: LambdaFunctionConfig
-    ) -> None:
-        """Setup API Gateway integration for Lambda function using shared utility"""
-        api_config = function_config.api
+    def __check_for_deprecated_api_config(self, stack_config: StackConfig) -> None:
+        """
+        Check for deprecated API Gateway configuration in lambda resources.
+        Raises an error with migration guidance if found.
+        """
+        resources = stack_config.dictionary.get("resources", [])
+        if not resources:
+            resources = stack_config.dictionary.get("lambdas", [])
+        
+        deprecated_configs = []
+        for resource in resources:
+            # Check for 'api' key in resource configuration
+            if "api" in resource or "api_gateway" in stack_config.dictionary:
+                deprecated_configs.append(resource.get("name", "unnamed"))
+        
+        if deprecated_configs:
+            error_msg = f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ 🚨 DEPRECATED CONFIGURATION DETECTED                                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-        if not api_config:
-            raise ValueError("API Gateway config is missing in Lambda function config")
+Your lambda_stack configuration includes API Gateway setup, which is now 
+deprecated. This pattern caused deployment issues and violated AWS best practices.
 
-        # Get or create API Gateway using shared utility
-        api_gateway = self.integration_utility.get_or_create_api_gateway(
-            api_config, self.stack_config, self.api_gateway_integrations
-        )
+📋 AFFECTED RESOURCES:
+{chr(10).join(f"   • {name}" for name in deprecated_configs)}
 
-        # Setup the integration using shared utility
-        integration_info = self.integration_utility.setup_lambda_integration(
-            lambda_function, api_config, api_gateway, self.stack_config
-        )
+🔧 REQUIRED MIGRATION (Breaking Change v2.0+):
 
-        # Setup CORS for the route using shared utility
-        route_config = {"cors": api_config.cors} if hasattr(api_config, 'cors') and api_config.cors else {}
-        if route_config.get("cors"):
-            self.integration_utility.setup_route_cors(
-                integration_info["resource"], 
-                api_config.routes, 
-                route_config
-            )
+Lambda stacks should ONLY create Lambda functions. API Gateway integration 
+should be handled in a separate api_gateway_stack.
 
-        # Store integration info for potential cross-stack references
-        integration_info["function_name"] = function_config.name
-        self.api_gateway_integrations.append(integration_info)
+NEW PATTERN:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. Lambda Stack (lambda_stack)                                              │
+│    • Creates Lambda functions                                               │
+│    • Exports Lambda ARNs to SSM Parameter Store                             │
+│    • NO API Gateway configuration                                           │
+│                                                                              │
+│ 2. API Gateway Stack (api_gateway_stack)                                    │
+│    • Imports Lambda ARNs from SSM                                           │
+│    • Creates API Gateway                                                    │
+│    • Wires Lambda integrations                                              │
+│    • Manages stages, deployments, and domains                               │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-        logger.info(f"Created API Gateway integration for {function_config.name}")
+📚 MIGRATION GUIDE:
+https://github.com/geek-cafe/cdk-factory/blob/main/docs/MIGRATION_V2.md
 
-    def __finalize_api_gateway_deployments(self):
-        """Create deployments and stages for API Gateways after all integrations are added"""
-        if not self.api_gateway_integrations:
+💡 QUICK FIX:
+1. Remove 'api' configuration from lambda resources
+2. Remove 'api_gateway' from stack config  
+3. Create new api_gateway_stack configuration
+4. Update pipeline: lambdas deploy first, then api_gateway
+
+❓ NEED HELP?
+See examples: cdk-factory/examples/separate-api-gateway/
+
+════════════════════════════════════════════════════════════════════════════════
+"""
+            raise ValueError(error_msg)
+
+    def __export_lambda_arns_to_ssm(self) -> None:
+        """
+        Export Lambda ARNs to SSM Parameter Store for cross-stack references.
+        This enables the API Gateway stack to import and integrate with these Lambdas.
+        """
+        if not self.exported_lambda_arns:
+            logger.info("No Lambda functions to export to SSM")
             return
         
-        # Use consolidated utility for deployment and stage creation
-        api_gateway = self.api_gateway_integrations[0].get("api_gateway")
+        # Get SSM export configuration
+        ssm_config = self.stack_config.dictionary.get("ssm", {})
+        if not ssm_config.get("enabled", False):
+            logger.info("SSM export is not enabled for this stack")
+            return
         
-        # Use consolidated deployment and stage creation
-        stage = self.integration_utility.finalize_api_gateway_deployment(
-            api_gateway=api_gateway,
-            integrations=self.api_gateway_integrations,
-            stack_config=self.stack_config,
-            api_config=None,  # Lambda stack doesn't have ApiGatewayConfig
-            construct_scope=self,
-            counter=1
-        )
-
-    def _get_api_gateway_stage_name(self) -> str:
-        """Get the API Gateway stage name from configuration"""
-        # Check if there's an API Gateway configuration in the stack config
-        api_gateway_config = self.stack_config.dictionary.get("api_gateway", {})
-        name = api_gateway_config.get("stage", {}).get("name")
-        if name:
-            return name
-        return api_gateway_config.get("stage_name", "prod")
+        # Build SSM parameter prefix
+        # Try 'workload' first, fall back to 'organization' for backward compatibility
+        workload = ssm_config.get("workload", ssm_config.get("organization", self.deployment.workload_name))
+        environment = ssm_config.get("environment", self.deployment.environment)
+        prefix = f"/{workload}/{environment}/lambda"
+        
+        logger.info(f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}")
+        
+        for lambda_name, lambda_info in self.exported_lambda_arns.items():
+            # Create SSM parameter for Lambda ARN
+            param_name = f"{prefix}/{lambda_name}/arn"
+            ssm.StringParameter(
+                self,
+                f"ssm-export-{lambda_name}-arn",
+                parameter_name=param_name,
+                string_value=lambda_info["arn"],
+                description=f"Lambda ARN for {lambda_name}",
+                tier=ssm.ParameterTier.STANDARD,
+            )
+            
+            # Also export function name for convenience
+            param_name_fname = f"{prefix}/{lambda_name}/function-name"
+            ssm.StringParameter(
+                self,
+                f"ssm-export-{lambda_name}-name",
+                parameter_name=param_name_fname,
+                string_value=lambda_info["name"],
+                description=f"Lambda function name for {lambda_name}",
+                tier=ssm.ParameterTier.STANDARD,
+            )
+            
+            logger.info(f"✅ Exported Lambda '{lambda_name}' to SSM: {param_name}")
+        
+        print(f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store")
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig
