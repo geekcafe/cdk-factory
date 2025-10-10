@@ -365,6 +365,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         This is the NEW PATTERN for separating Lambda and API Gateway stacks.
         """
         route_path = route["path"]
+        method = route.get("method", "GET").upper()
         suffix = self._get_route_suffix(route)  # Use shared method for consistent suffix calculation
         
         # Get Lambda ARN from SSM Parameter Store
@@ -376,14 +377,29 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 f"Ensure Lambda stack has deployed and exported ARN to SSM."
             )
         
-        # Import Lambda function from ARN
-        lambda_fn = _lambda.Function.from_function_arn(
+        # Import Lambda function from ARN using fromFunctionAttributes
+        # This allows us to add permissions even for imported functions
+        lambda_fn = _lambda.Function.from_function_attributes(
             self,
             f"{api_id}-imported-lambda-{suffix}",
-            lambda_arn
+            function_arn=lambda_arn,
+            same_environment=True  # Allow permission grants for same-account imports
         )
         
         logger.info(f"Imported Lambda for route {route_path}: {lambda_arn}")
+        
+        # Add explicit resource-based permission for this specific API Gateway
+        # This is CRITICAL for cross-stack Lambda integrations
+        _lambda.CfnPermission(
+            self,
+            f"lambda-permission-{suffix}",
+            action="lambda:InvokeFunction",
+            function_name=lambda_fn.function_arn,
+            principal="apigateway.amazonaws.com",
+            source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{method}{route_path}"
+        )
+        
+        logger.info(f"Granted API Gateway invoke permissions for Lambda: {lambda_arn}")
         
         # Setup API Gateway resource
         resource = (
