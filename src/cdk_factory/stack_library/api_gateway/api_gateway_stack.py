@@ -332,6 +332,19 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
             api_gateway, route_config, self.stack_config, api_id
         )
 
+    def _get_route_suffix(self, route: dict) -> str:
+        """
+        Calculate a unique suffix for route construct IDs.
+        Uses 'name' field if provided, otherwise includes method + path for uniqueness.
+        """
+        if "name" in route and route["name"]:
+            return route["name"]  # Use the unique name provided in config
+        else:
+            # Include method to ensure uniqueness when same path has multiple methods
+            method = route.get("method", "GET").upper()
+            path_suffix = route["path"].strip("/").replace("/", "-") or "health"
+            return f"{method.lower()}-{path_suffix}"
+    
     def _setup_lambda_routes(self, api_gateway, api_id, routes, authorizer):
         """Setup Lambda routes and integrations"""
         for route in routes:
@@ -352,7 +365,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
         This is the NEW PATTERN for separating Lambda and API Gateway stacks.
         """
         route_path = route["path"]
-        suffix = route_path.strip("/").replace("/", "-") or "health"
+        suffix = self._get_route_suffix(route)  # Use shared method for consistent suffix calculation
         
         # Get Lambda ARN from SSM Parameter Store
         lambda_arn = self._get_lambda_arn_from_ssm(route)
@@ -437,15 +450,7 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
 
     def _setup_single_lambda_route(self, api_gateway, api_id, route, authorizer):
         """Setup a single Lambda route with integration and CORS"""
-        # Use the 'name' field if provided, otherwise include method in suffix for uniqueness
-        if "name" in route and route["name"]:
-            suffix = route["name"]  # Use the unique name provided in config
-        else:
-            # Include method to ensure uniqueness when same path has multiple methods
-            method = route.get("method", "GET").upper()
-            path_suffix = route["path"].strip("/").replace("/", "-") or "health"
-            suffix = f"{method.lower()}-{path_suffix}"
-        
+        suffix = self._get_route_suffix(route)  # Use shared method for consistent suffix calculation
         src = route.get("src")
         handler = route.get("handler")
 
