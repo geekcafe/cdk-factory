@@ -295,7 +295,20 @@ class LambdaFunctionUtilities:
         if not os.path.exists(lambda_directory):
             raise FileNotFoundError(f"directory not found: {lambda_directory}")
 
-        shutil.copytree(lambda_directory, output_dir, dirs_exist_ok=True)
+        # Copy lambda directory, excluding __pycache__ and other build artifacts
+        def ignore_patterns(directory, files):
+            """Ignore __pycache__, .pyc files, and other build artifacts"""
+            return [
+                f for f in files 
+                if f == '__pycache__' 
+                or f.endswith('.pyc') 
+                or f.endswith('.pyo')
+                or f == '.pytest_cache'
+                or f == '.mypy_cache'
+                or f == '__pycache__'
+            ]
+        
+        shutil.copytree(lambda_directory, output_dir, dirs_exist_ok=True, ignore=ignore_patterns)
 
     def __requirements(
         self,
@@ -377,7 +390,8 @@ class LambdaFunctionUtilities:
                             logger.warning(f"CodeArtifact login failed (continuing): {e}")
                             # Continue with other logins or pip install
 
-                    commands = f"pip install -r {requirement} -t {output_dir}".split()
+                    # Use --upgrade to avoid warnings about existing directories
+                    commands = f"pip install -r {requirement} -t {output_dir} --upgrade".split()
                     subprocess.check_call(commands)
                 else:
                     logger.warning(
