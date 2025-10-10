@@ -320,7 +320,15 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
 
     def _setup_single_lambda_route(self, api_gateway, api_id, route, authorizer):
         """Setup a single Lambda route with integration and CORS"""
-        suffix = route["path"].strip("/").replace("/", "-") or "health"
+        # Use the 'name' field if provided, otherwise include method in suffix for uniqueness
+        if "name" in route and route["name"]:
+            suffix = route["name"]  # Use the unique name provided in config
+        else:
+            # Include method to ensure uniqueness when same path has multiple methods
+            method = route.get("method", "GET").upper()
+            path_suffix = route["path"].strip("/").replace("/", "-") or "health"
+            suffix = f"{method.lower()}-{path_suffix}"
+        
         src = route.get("src")
         handler = route.get("handler")
 
