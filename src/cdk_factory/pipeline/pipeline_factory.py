@@ -248,11 +248,11 @@ class PipelineFactoryStack(cdk.Stack):
     def _get_steps(self, key: str, stage_config: PipelineStageConfig):
         """
         Gets the build steps from the config.json.
-        
+
         Commands can be:
         - A list of strings (each string is a separate command)
         - A single multi-line string (treated as a single script block)
-        
+
         This allows support for complex shell constructs like if blocks, loops, etc.
         """
         shell_steps: List[pipelines.ShellStep] = []
@@ -264,12 +264,12 @@ class PipelineFactoryStack(cdk.Stack):
                 for step in steps:
                     step_id = step.get("id") or step.get("name")
                     commands = step.get("commands", [])
-                    
+
                     # Normalize commands to a list
                     # If commands is a single string, wrap it in a list
                     if isinstance(commands, str):
                         commands = [commands]
-                    
+
                     shell_step = pipelines.ShellStep(
                         id=step_id,
                         commands=commands,
@@ -359,19 +359,47 @@ class PipelineFactoryStack(cdk.Stack):
 
         build_commands = self._get_build_commands()
 
-        cdk_out_directory = self.workload.output_directory
+        # Calculate where cdk.out will be created relative to project root
+        # The build commands cd into cdk_directory and create ./cdk.out there
+        # We need to tell the pipeline where to find those artifacts
+        import os
+        from pathlib import Path
         
-        # CdkAppFactory already provides the correct path:
-        # - For pipelines: relative path (e.g., "../../cdk.out" or "cdk.out")
-        # - For local: absolute path (but this code only runs for pipelines)
-        # If somehow we get an absolute path, convert it to just the basename
-        if cdk_out_directory and os.path.isabs(cdk_out_directory):
-            # Fallback: just use the last component
-            cdk_out_directory = os.path.basename(cdk_out_directory)
+        # Get the directory portion of cdk_app_file
+        cdk_dir_path = Path(cdk_directory)
+        
+        # If we have CODEBUILD_SRC_DIR, use it as the base to calculate relative path
+        codebuild_src = os.getenv('CODEBUILD_SRC_DIR')
+        
+        if codebuild_src and cdk_dir_path.is_absolute():
+            # Calculate relative path from CodeBuild source directory
+            # Example: /codebuild/.../src/devops/cdk-iac relative to /codebuild/.../src = devops/cdk-iac
+            try:
+                cdk_relative_dir = os.path.relpath(str(cdk_dir_path), codebuild_src)
+                # If relpath resulted in going up directories (starts with ..), use empty
+                # If relpath is '.' (same directory), use empty (app.py at root)
+                if cdk_relative_dir.startswith('..') or cdk_relative_dir == '.':
+                    cdk_relative_dir = ""
+            except ValueError:
+                # Paths on different drives (Windows) - fallback to empty
+                cdk_relative_dir = ""
+        elif cdk_dir_path.is_absolute():
+            # No CODEBUILD_SRC_DIR but path is absolute - can't determine relative path reliably
+            # Fallback to empty (will use "cdk.out" at root)
+            cdk_relative_dir = ""
+        else:
+            # Path is already relative - use as-is
+            cdk_relative_dir = str(cdk_dir_path)
+        
+        # Construct the path to cdk.out relative to project root
+        if cdk_relative_dir:
+            cdk_out_directory = f"{cdk_relative_dir}/cdk.out"
+        else:
+            cdk_out_directory = "cdk.out"
 
         build_commands.append(f"echo 👉 cdk_directory: {cdk_directory}")
-        build_commands.append(f"echo 👉 cdk_out_directory (relative): {cdk_out_directory}")
-        build_commands.append("echo 👉 PWD from synth shell step: ${PWD}")
+        build_commands.append(f"echo 👉 cdk_out_directory: {cdk_out_directory}")
+        build_commands.append("echo 👉 PWD from synth shell step: ${{PWD}}")
 
         shell = pipelines.ShellStep(
             "CDK Synth",
