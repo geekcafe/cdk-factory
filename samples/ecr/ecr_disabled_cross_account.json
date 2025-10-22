@@ -1,0 +1,25 @@
+{
+  "workload": {
+    "name": "same-account-app",
+    "devops": {
+      "account": "123456789012"
+    }
+  },
+  "stacks": [
+    {
+      "name": "ecr-stack",
+      "module": "ecr_stack",
+      "resources": [
+        {
+          "name": "internal-service",
+          "image_scan_on_push": "true",
+          "empty_on_delete": "false",
+          "cross_account_access": {
+            "enabled": false,
+            "comment": "Explicitly disable cross-account access"
+          }
+        }
+      ]
+    }
+  ]
+}

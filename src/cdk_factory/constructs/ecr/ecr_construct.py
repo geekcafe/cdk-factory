@@ -33,6 +33,7 @@ class ECRConstruct(Construct, SsmParameterMixin):
 
         self.scope = scope
         self.deployment = deployment
+        self.repo = repo
         self.ecr_name = repo.name
         self.image_scan_on_push = repo.image_scan_on_push
         self.empty_on_delete = repo.empty_on_delete
@@ -98,28 +99,17 @@ class ECRConstruct(Construct, SsmParameterMixin):
         )
         
         # Add dependencies to ensure SSM parameters are created after the ECR repository
-        for param in params.values():
-            if param and param.node.default_child and isinstance(param.node.default_child, CfnResource):
-                param.node.default_child.add_dependency(
-                    cast(CfnResource, self.ecr.node.default_child)
-                )
+        if params:
+            for param in params.values():
+                if param and hasattr(param, 'node') and param.node.default_child and isinstance(param.node.default_child, CfnResource):
+                    param.node.default_child.add_dependency(
+                        cast(CfnResource, self.ecr.node.default_child)
+                    )
 
     def __set_life_cycle_rules(self) -> None:
-        # ToDo/FixMe: tag_pattern_list is not recognized in the current version in AWS
-
-        try:
-            # always keep images tagged as prod
-            self.ecr.add_lifecycle_rule(
-                tag_pattern_list=["prod*"], max_image_count=9999
-            )
-        except Exception as e:  # pylint: disable=w0718
-            if "unexpected keyword argument" in str(e):
-                logger.warning(
-                    "tag_pattern_list is not available in this version of the aws cdk"
-                )
-            else:
-                raise
-
+        # Note: tag_pattern_list is deprecated and causes circular dependencies in CDK synthesis
+        # Only add lifecycle rule for untagged images if configured
+        
         if not self.auto_delete_untagged_images_in_days:
             return None
 
@@ -143,49 +133,131 @@ class ECRConstruct(Construct, SsmParameterMixin):
         )
 
     def __setup_cross_account_access_permissions(self):
-        # Cross-account access policy
-
-        if self.deployment.account == self.deployment.workload.get("devops", {}).get(
-            "account"
-        ):
-            # we're in the same account as the "devops" so we don't need cross account
-            # permisions
+        """
+        Setup cross-account access permissions with flexible configuration support.
+        
+        Supports both legacy (default Lambda access) and new configurable approach.
+        """
+        # Check if cross-account access is disabled
+        if not self.repo.cross_account_enabled:
+            logger.info(f"Cross-account access disabled for {self.ecr_name}")
             return
 
-        ecr = self.ecr or self.__get_ecr()
-        cross_account_policy_statement = iam.PolicyStatement(
+        # Check if we're in the same account as devops
+        if self.deployment.account == self.deployment.workload.get("devops", {}).get("account"):
+            logger.info(f"Same account as devops, skipping cross-account permissions for {self.ecr_name}")
+            return
+
+        access_config = self.repo.cross_account_access
+        
+        if access_config and access_config.get("services"):
+            # New configurable approach
+            logger.info(f"Setting up configurable cross-account access for {self.ecr_name}")
+            self.__setup_configurable_access(access_config)
+        else:
+            # Legacy approach - default Lambda access for backward compatibility
+            logger.info(f"Setting up legacy cross-account access (Lambda only) for {self.ecr_name}")
+            self.__setup_legacy_lambda_access()
+
+    def __setup_configurable_access(self, access_config: dict):
+        """Setup cross-account access using configuration"""
+        
+        # Get list of accounts (default to deployment account)
+        accounts = access_config.get("accounts", [self.deployment.account])
+        
+        # Add account principal policies if accounts are specified
+        if accounts:
+            self.__add_account_principal_policy(accounts)
+        
+        # Add service-specific policies
+        services = access_config.get("services", [])
+        for service_config in services:
+            self.__add_service_principal_policy(service_config)
+
+    def __add_account_principal_policy(self, accounts: list):
+        """Add policy for AWS account principals"""
+        principals = [iam.AccountPrincipal(account) for account in accounts]
+        
+        policy_statement = iam.PolicyStatement(
             actions=[
                 "ecr:GetDownloadUrlForLayer",
                 "ecr:BatchGetImage",
                 "ecr:BatchCheckLayerAvailability",
             ],
-            principals=[
-                iam.AccountPrincipal(self.deployment.account)
-            ],  # Replace with the account ID of the Lambda function
-            resources=[ecr.repository_arn],
+            principals=principals,
             effect=iam.Effect.ALLOW,
         )
 
-        # Attach the policy to the ECR repository
-        response = ecr.add_to_resource_policy(cross_account_policy_statement)
+        response = self.ecr.add_to_resource_policy(policy_statement)
+        if not response.statement_added:
+            logger.warning(f"Failed to add account principal policy for {', '.join(accounts)}")
+        else:
+            logger.info(f"Added account principal policy for accounts: {', '.join(accounts)}")
 
-        # fails, we're not adding it this way
-        assert response.statement_added
+    def __add_service_principal_policy(self, service_config: dict):
+        """Add policy for service principal (Lambda, ECS, CodeBuild, etc.)"""
+        service_name = service_config.get("name", "unknown")
+        service_principal = service_config.get("service_principal")
+        actions = service_config.get("actions", ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"])
+        conditions = service_config.get("condition")
 
-        response = self.ecr.add_to_resource_policy(
-            iam.PolicyStatement(
-                effect=iam.Effect.ALLOW,
-                actions=["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
-                principals=[iam.ServicePrincipal("lambda.amazonaws.com")],
-                conditions={
-                    "StringLike": {
-                        "aws:sourceArn": [
-                            f"arn:aws:lambda:{self.deployment.region}:{self.deployment.account}:function:*"
-                        ]
-                    }
-                },
-                resources=[ecr.repository_arn],
-            )
+        if not service_principal:
+            # Infer service principal from common service names
+            service_principal_map = {
+                "lambda": "lambda.amazonaws.com",
+                "ecs": "ecs-tasks.amazonaws.com",
+                "ecs-tasks": "ecs-tasks.amazonaws.com",
+                "codebuild": "codebuild.amazonaws.com",
+                "codepipeline": "codepipeline.amazonaws.com",
+                "ec2": "ec2.amazonaws.com",
+            }
+            service_principal = service_principal_map.get(service_name.lower())
+            
+        if not service_principal:
+            logger.warning(f"Unknown service principal for service: {service_name}")
+            return
+
+        policy_statement = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=actions,
+            principals=[iam.ServicePrincipal(service_principal)],
+        )
+        
+        # Add conditions if specified
+        if conditions:
+            for condition_key, condition_value in conditions.items():
+                policy_statement.add_condition(condition_key, condition_value)
+
+        response = self.ecr.add_to_resource_policy(policy_statement)
+        if not response.statement_added:
+            logger.warning(f"Failed to add service principal policy for {service_name}")
+        else:
+            logger.info(f"Added service principal policy for {service_name} ({service_principal})")
+
+    def __setup_legacy_lambda_access(self):
+        """Legacy method: Setup default Lambda-only cross-account access"""
+        
+        # Add account principal policy
+        self.__add_account_principal_policy([self.deployment.account])
+        
+        # Add Lambda service principal policy with default condition
+        lambda_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+            principals=[iam.ServicePrincipal("lambda.amazonaws.com")],
+        )
+        
+        lambda_policy.add_condition(
+            "StringLike",
+            {
+                "aws:sourceArn": [
+                    f"arn:aws:lambda:{self.deployment.region}:{self.deployment.account}:function:*"
+                ]
+            }
         )
 
-        assert response.statement_added
+        response = self.ecr.add_to_resource_policy(lambda_policy)
+        if not response.statement_added:
+            logger.warning("Failed to add Lambda service principal policy")
+        else:
+            logger.info("Added legacy Lambda service principal policy")

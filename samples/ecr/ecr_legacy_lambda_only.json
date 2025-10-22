@@ -1,0 +1,23 @@
+{
+  "workload": {
+    "name": "legacy-app",
+    "devops": {
+      "account": "111111111111"
+    }
+  },
+  "stacks": [
+    {
+      "name": "ecr-stack",
+      "module": "ecr_stack",
+      "resources": [
+        {
+          "name": "lambda-function-image",
+          "image_scan_on_push": "true",
+          "empty_on_delete": "false",
+          "auto_delete_untagged_images_in_days": 14,
+          "comment": "No cross_account_access config means legacy Lambda-only access is automatically configured"
+        }
+      ]
+    }
+  ]
+}

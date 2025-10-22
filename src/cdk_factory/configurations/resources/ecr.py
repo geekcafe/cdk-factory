@@ -16,7 +16,7 @@ class ECRConfig(EnhancedBaseConfig):
     ) -> None:
         super().__init__(config, resource_type="ecr", resource_name=config.get("name", "ecr") if config else "ecr")
         self.__config = config
-        self.__deployment = config
+        self.__deployment = deployment
         self.__ssm_prefix_template = config.get("ssm_prefix_template", None)
 
     @property
@@ -74,12 +74,13 @@ class ECRConfig(EnhancedBaseConfig):
         Clear out untagged images after x days.  This helps save costs.
         Untagged images will stay forever if you don't clean them out.
         """
+        days = None
         if self.__config and isinstance(self.__config, dict):
             days = self.__config.get("auto_delete_untagged_images_in_days")
             if days:
                 days = int(days)
 
-        return None
+        return days
 
     @property
     def use_existing(self) -> bool:
@@ -118,6 +119,50 @@ class ECRConfig(EnhancedBaseConfig):
         if not value:
             raise RuntimeError("Region is not defined")
         return value
+
+    @property
+    def cross_account_access(self) -> dict:
+        """
+        Cross-account access configuration.
+        
+        Example:
+        {
+            "enabled": true,
+            "accounts": ["123456789012", "987654321098"],
+            "services": [
+                {
+                    "name": "lambda",
+                    "actions": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+                    "condition": {
+                        "StringLike": {
+                            "aws:sourceArn": "arn:aws:lambda:*:*:function:*"
+                        }
+                    }
+                },
+                {
+                    "name": "ecs-tasks",
+                    "service_principal": "ecs-tasks.amazonaws.com",
+                    "actions": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+                },
+                {
+                    "name": "codebuild",
+                    "service_principal": "codebuild.amazonaws.com",
+                    "actions": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"]
+                }
+            ]
+        }
+        """
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("cross_account_access", {})
+        return {}
+
+    @property
+    def cross_account_enabled(self) -> bool:
+        """Whether cross-account access is explicitly enabled"""
+        access_config = self.cross_account_access
+        if access_config:
+            return str(access_config.get("enabled", "true")).lower() == "true"
+        return True  # Default to enabled for backward compatibility
         
     # SSM properties are now inherited from EnhancedBaseConfig
     # Keeping these for any direct access patterns in existing code

@@ -1,0 +1,65 @@
+{
+  "workload": {
+    "name": "my-app",
+    "devops": {
+      "account": "111111111111"
+    }
+  },
+  "stacks": [
+    {
+      "name": "ecr-stack",
+      "module": "ecr_stack",
+      "resources": [
+        {
+          "name": "backend-api",
+          "image_scan_on_push": "true",
+          "empty_on_delete": "false",
+          "auto_delete_untagged_images_in_days": 7,
+          "cross_account_access": {
+            "enabled": true,
+            "accounts": [
+              "123456789012",
+              "987654321098"
+            ],
+            "services": [
+              {
+                "name": "lambda",
+                "actions": [
+                  "ecr:BatchGetImage",
+                  "ecr:GetDownloadUrlForLayer"
+                ],
+                "condition": {
+                  "StringLike": {
+                    "aws:sourceArn": "arn:aws:lambda:*:123456789012:function:*"
+                  }
+                }
+              },
+              {
+                "name": "ecs-tasks",
+                "service_principal": "ecs-tasks.amazonaws.com",
+                "actions": [
+                  "ecr:BatchGetImage",
+                  "ecr:GetDownloadUrlForLayer",
+                  "ecr:BatchCheckLayerAvailability"
+                ]
+              },
+              {
+                "name": "codebuild",
+                "actions": [
+                  "ecr:BatchGetImage",
+                  "ecr:GetDownloadUrlForLayer",
+                  "ecr:BatchCheckLayerAvailability"
+                ]
+              }
+            ]
+          },
+          "ssm_exports": {
+            "name": "/my-app/prod/ecr/backend-api/name",
+            "uri": "/my-app/prod/ecr/backend-api/uri",
+            "arn": "/my-app/prod/ecr/backend-api/arn"
+          }
+        }
+      ]
+    }
+  ]
+}
