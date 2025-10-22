@@ -224,6 +224,18 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             )
             
+            # Build health check if configured
+            health_check_config = container_config.get("health_check")
+            health_check = None
+            if health_check_config:
+                health_check = ecs.HealthCheck(
+                    command=health_check_config.get("command", ["CMD-SHELL", "exit 0"]),
+                    interval=cdk.Duration.seconds(health_check_config.get("interval", 30)),
+                    timeout=cdk.Duration.seconds(health_check_config.get("timeout", 5)),
+                    retries=health_check_config.get("retries", 3),
+                    start_period=cdk.Duration.seconds(health_check_config.get("start_period", 0)),
+                )
+            
             # Add container to task definition
             container = self.task_definition.add_container(
                 container_name,
@@ -238,6 +250,7 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                 memory_limit_mib=container_config.get("memory"),
                 memory_reservation_mib=container_config.get("memory_reservation"),
                 essential=container_config.get("essential", True),
+                health_check=health_check,
             )
             
             # Add port mappings
@@ -248,17 +261,6 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                         container_port=port_mapping.get("container_port", 80),
                         protocol=ecs.Protocol.TCP,
                     )
-                )
-            
-            # Add health check if configured
-            health_check = container_config.get("health_check")
-            if health_check:
-                container.add_health_check(
-                    command=health_check.get("command", ["CMD-SHELL", "exit 0"]),
-                    interval=cdk.Duration.seconds(health_check.get("interval", 30)),
-                    timeout=cdk.Duration.seconds(health_check.get("timeout", 5)),
-                    retries=health_check.get("retries", 3),
-                    start_period=cdk.Duration.seconds(health_check.get("start_period", 0)),
                 )
 
     def _load_secrets(self, secrets_config: Dict[str, str]) -> Dict[str, ecs.Secret]:
@@ -484,32 +486,40 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
         
         # Service name
         if "service_name" in ssm_exports:
-            self.create_ssm_parameter(
+            self.export_ssm_parameter(
+                scope=self,
                 id="ServiceNameParam",
+                value=self.service.service_name,
                 parameter_name=ssm_exports["service_name"],
-                string_value=self.service.service_name,
+                description=f"ECS Service Name: {service_name}",
             )
         
         # Service ARN
         if "service_arn" in ssm_exports:
-            self.create_ssm_parameter(
+            self.export_ssm_parameter(
+                scope=self,
                 id="ServiceArnParam",
+                value=self.service.service_arn,
                 parameter_name=ssm_exports["service_arn"],
-                string_value=self.service.service_arn,
+                description=f"ECS Service ARN: {service_name}",
             )
         
         # Cluster name
         if "cluster_name" in ssm_exports:
-            self.create_ssm_parameter(
+            self.export_ssm_parameter(
+                scope=self,
                 id="ClusterNameParam",
+                value=self.cluster.cluster_name,
                 parameter_name=ssm_exports["cluster_name"],
-                string_value=self.cluster.cluster_name,
+                description=f"ECS Cluster Name for {service_name}",
             )
         
         # Task definition ARN
         if "task_definition_arn" in ssm_exports:
-            self.create_ssm_parameter(
+            self.export_ssm_parameter(
+                scope=self,
                 id="TaskDefinitionArnParam",
+                value=self.task_definition.task_definition_arn,
                 parameter_name=ssm_exports["task_definition_arn"],
-                string_value=self.task_definition.task_definition_arn,
+                description=f"ECS Task Definition ARN for {service_name}",
             )
