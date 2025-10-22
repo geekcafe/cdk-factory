@@ -4,10 +4,16 @@ Geek Cafe, LLC
 Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
+import json
 import os
+import shutil
+import sys
+import warnings
 from pathlib import Path
+from typing import Optional
 import aws_cdk
 from aws_cdk.cx_api import CloudAssembly
+from aws_lambda_powertools import Logger
 
 from cdk_factory.utilities.commandline_args import CommandlineArgs
 from cdk_factory.workload.workload_factory import WorkloadFactory
@@ -35,19 +41,27 @@ class CdkAppFactory:
         self.add_env_context = add_env_context
         self._is_pipeline = is_pipeline
         
-        # Auto-detect outdir for CodeBuild compatibility
-        if outdir is None and self.args.outdir is None and auto_detect_project_root:
-            # For both local dev and CodeBuild: use CDK default (./cdk.out in current directory)
-            # This ensures CDK CLI can always find the files where it expects them
-            # CodeBuild buildspec handles artifact collection from the correct location
-            self.outdir = None
-            
-            # Log for transparency
-            if os.getenv('CODEBUILD_SRC_DIR'):
-                print(f"📦 CodeBuild detected: using CDK default (./cdk.out)")
-                print(f"   └─ BuildSpec will collect artifacts from correct location")
+        # Handle outdir - support both absolute paths (backward compat) and namespaces
+        supplied_outdir = outdir or (self.args.outdir if hasattr(self.args, 'outdir') else None)
+        
+        if supplied_outdir:
+            # If absolute path: use as-is (backward compatible)
+            if os.path.isabs(supplied_outdir):
+                self.outdir = supplied_outdir
+            else:
+                # If relative/name: treat as namespace within /tmp/cdk-factory
+                namespace = supplied_outdir.rstrip('/')
+                if not namespace or namespace in ('.', '..'):
+                    namespace = "default"
+                self.outdir = f"/tmp/cdk-factory/{namespace}/cdk.out"
         else:
-            self.outdir = outdir or self.args.outdir
+            # Default: consistent location
+            self.outdir = "/tmp/cdk-factory/cdk.out"
+        
+        # Clean and recreate directory for fresh synthesis
+        if os.path.exists(self.outdir):
+            shutil.rmtree(self.outdir)
+        os.makedirs(self.outdir, exist_ok=True)
         
         self.app: aws_cdk.App = aws_cdk.App(outdir=self.outdir)
 
@@ -65,15 +79,9 @@ class CdkAppFactory:
 
         print(f"👋 Synthesizing CDK App from the cdk-factory version: {__version__}")
         
-        # Log outdir configuration
-        if self.outdir:
-            resolved_outdir = str(Path(self.outdir).resolve()) if not os.path.isabs(self.outdir) else self.outdir
-            print(f"📂 CDK output directory configured: {self.outdir}")
-            if not os.path.isabs(self.outdir):
-                print(f"   └─ Resolves to: {resolved_outdir}")
-        else:
-            print(f"📂 CDK output directory: using CDK default (./cdk.out in current directory)")
-            print(f"   └─ Current directory: {os.getcwd()}")
+        # Log consistent output directory
+        print(f"📂 CDK output directory: {self.outdir}")
+        print(f"   └─ Consistent location works in both local and CodeBuild environments")
 
         if not paths:
             paths = []

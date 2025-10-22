@@ -26,11 +26,12 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 from cdk_factory.configurations.cdk_config import CdkConfig
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.pipeline.path_utils import convert_app_file_to_relative_directory
 
 logger = Logger()
 
 
-class PipelineFactoryStack(cdk.Stack):
+class PipelineFactoryStack(IStack):
     """
     Pipeline Stacks wrap up your application for a CI/CD pipeline Stack
     """
@@ -355,51 +356,16 @@ class PipelineFactoryStack(cdk.Stack):
     def _get_synth_shell_step(self) -> pipelines.ShellStep:
         if not self.workload.cdk_app_file:
             raise ValueError("CDK app file is not defined")
-        cdk_directory = self.workload.cdk_app_file.removesuffix("/app.py")
 
         build_commands = self._get_build_commands()
 
-        # Calculate where cdk.out will be created relative to project root
-        # The build commands cd into cdk_directory and create ./cdk.out there
-        # We need to tell the pipeline where to find those artifacts
-        import os
-        from pathlib import Path
-        
-        # Get the directory portion of cdk_app_file
-        cdk_dir_path = Path(cdk_directory)
-        
-        # If we have CODEBUILD_SRC_DIR, use it as the base to calculate relative path
-        codebuild_src = os.getenv('CODEBUILD_SRC_DIR')
-        
-        if codebuild_src and cdk_dir_path.is_absolute():
-            # Calculate relative path from CodeBuild source directory
-            # Example: /codebuild/.../src/devops/cdk-iac relative to /codebuild/.../src = devops/cdk-iac
-            try:
-                cdk_relative_dir = os.path.relpath(str(cdk_dir_path), codebuild_src)
-                # If relpath resulted in going up directories (starts with ..), use empty
-                # If relpath is '.' (same directory), use empty (app.py at root)
-                if cdk_relative_dir.startswith('..') or cdk_relative_dir == '.':
-                    cdk_relative_dir = ""
-            except ValueError:
-                # Paths on different drives (Windows) - fallback to empty
-                cdk_relative_dir = ""
-        elif cdk_dir_path.is_absolute():
-            # No CODEBUILD_SRC_DIR but path is absolute - can't determine relative path reliably
-            # Fallback to empty (will use "cdk.out" at root)
-            cdk_relative_dir = ""
-        else:
-            # Path is already relative - use as-is
-            cdk_relative_dir = str(cdk_dir_path)
-        
-        # Construct the path to cdk.out relative to project root
-        if cdk_relative_dir:
-            cdk_out_directory = f"{cdk_relative_dir}/cdk.out"
-        else:
-            cdk_out_directory = "cdk.out"
+        # Use consistent /tmp/cdk-factory/cdk.out location
+        # This matches the output directory configured in CdkAppFactory
+        cdk_out_directory = "/tmp/cdk-factory/cdk.out"
 
-        build_commands.append(f"echo 👉 cdk_directory: {cdk_directory}")
-        build_commands.append(f"echo 👉 cdk_out_directory: {cdk_out_directory}")
-        build_commands.append("echo 👉 PWD from synth shell step: ${PWD}")
+        # Debug logging - will be baked into buildspec
+        build_commands.append(f"echo '👉 CDK output directory: {cdk_out_directory}'")
+        build_commands.append("echo '👉 Consistent location in all environments'")
 
         shell = pipelines.ShellStep(
             "CDK Synth",

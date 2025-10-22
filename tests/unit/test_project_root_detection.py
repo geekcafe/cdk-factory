@@ -29,9 +29,9 @@ class TestProjectRootDetection:
                     runtime_directory=str(cdk_iac_dir)
                 )
                 
-                # In CodeBuild, should use CDK default (./cdk.out)
-                # BuildSpec handles artifact collection from the correct location
-                assert factory.outdir is None
+                # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+                # BuildSpec now collects from absolute path
+                assert factory.outdir == "/tmp/cdk-factory/cdk.out"
             finally:
                 # Clean up
                 if 'CODEBUILD_SRC_DIR' in os.environ:
@@ -53,9 +53,8 @@ class TestProjectRootDetection:
                 runtime_directory=str(cdk_dir)
             )
             
-            # For local dev, should use CDK default (None)
-            # This allows CDK CLI to use ./cdk.out in current directory
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
     
     def test_multiple_markers_detection(self):
         """Test detection using multiple project markers (local dev)"""
@@ -74,22 +73,35 @@ class TestProjectRootDetection:
                 runtime_directory=str(subdir)
             )
             
-            # For local dev, should use CDK default (None)
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
     
-    def test_explicit_outdir_overrides_detection(self):
-        """Test that explicit outdir overrides auto-detection"""
+    def test_explicit_outdir_as_namespace(self):
+        """Test that explicit outdir is used as namespace within /tmp/cdk-factory (v0.9.7+)"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            custom_outdir = str(Path(tmpdir) / 'custom' / 'cdk.out')
             runtime_dir = Path(tmpdir) / 'some' / 'path' / 'devops' / 'cdk-iac'
             runtime_dir.mkdir(parents=True)
             
-            factory = CdkAppFactory(
+            # Test with simple directory name
+            factory1 = CdkAppFactory(
                 runtime_directory=str(runtime_dir),
-                outdir=custom_outdir
+                outdir="my-app"
             )
+            assert factory1.outdir == "/tmp/cdk-factory/my-app/cdk.out"
             
-            assert factory.outdir == custom_outdir
+            # Test with full path (should extract basename)
+            factory2 = CdkAppFactory(
+                runtime_directory=str(runtime_dir),
+                outdir="/custom/path/my-project"
+            )
+            assert factory2.outdir == "/tmp/cdk-factory/my-project/cdk.out"
+            
+            # Test with trailing slash
+            factory3 = CdkAppFactory(
+                runtime_directory=str(runtime_dir),
+                outdir="my-deployment/"
+            )
+            assert factory3.outdir == "/tmp/cdk-factory/my-deployment/cdk.out"
     
     def test_disable_auto_detection(self):
         """Test disabling auto-detection"""
@@ -102,8 +114,9 @@ class TestProjectRootDetection:
                 auto_detect_project_root=False
             )
             
-            # Should be None (CDK default behavior)
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            # (auto_detect_project_root no longer affects outdir)
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
     
     def test_fallback_to_runtime_directory(self):
         """Test fallback when no project markers found (local dev)"""
@@ -116,8 +129,8 @@ class TestProjectRootDetection:
                 runtime_directory=str(bare_dir)
             )
             
-            # For local dev, should use CDK default (None)
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
     
     def test_single_level_devops_detection(self):
         """Test detection when runtime_directory is directly in devops/ (local dev)"""
@@ -134,8 +147,8 @@ class TestProjectRootDetection:
                 runtime_directory=str(devops_dir)
             )
             
-            # For local dev, should use CDK default (None)
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
     
     def test_with_git_directory(self):
         """Test detection with .git directory (local dev)"""
@@ -151,8 +164,8 @@ class TestProjectRootDetection:
                 runtime_directory=str(subdir)
             )
             
-            # For local dev, should use CDK default (None)
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
     
     def test_without_git_with_other_markers(self):
         """Test detection without .git but with other markers (local dev)"""
@@ -172,8 +185,8 @@ class TestProjectRootDetection:
                 runtime_directory=str(subdir)
             )
             
-            # For local dev, should use CDK default (None)
-            assert factory.outdir is None
+            # v0.9.7+: Always uses consistent /tmp/cdk-factory/cdk.out
+            assert factory.outdir == "/tmp/cdk-factory/cdk.out"
 
 
 if __name__ == '__main__':
