@@ -246,7 +246,13 @@ class PipelineFactoryStack(cdk.Stack):
 
     def _get_steps(self, key: str, stage_config: PipelineStageConfig):
         """
-        Gets the build steps from the config.json
+        Gets the build steps from the config.json.
+        
+        Commands can be:
+        - A list of strings (each string is a separate command)
+        - A single multi-line string (treated as a single script block)
+        
+        This allows support for complex shell constructs like if blocks, loops, etc.
         """
         shell_steps: List[pipelines.ShellStep] = []
 
@@ -257,6 +263,12 @@ class PipelineFactoryStack(cdk.Stack):
                 for step in steps:
                     step_id = step.get("id") or step.get("name")
                     commands = step.get("commands", [])
+                    
+                    # Normalize commands to a list
+                    # If commands is a single string, wrap it in a list
+                    if isinstance(commands, str):
+                        commands = [commands]
+                    
                     shell_step = pipelines.ShellStep(
                         id=step_id,
                         commands=commands,
