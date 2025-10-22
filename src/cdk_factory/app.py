@@ -41,7 +41,7 @@ class CdkAppFactory:
         self.add_env_context = add_env_context
         self._is_pipeline = is_pipeline
         
-        # Handle outdir - support both absolute paths (backward compat) and namespaces
+        # Handle outdir - backward compatible with smart defaults
         supplied_outdir = outdir or (self.args.outdir if hasattr(self.args, 'outdir') else None)
         
         if supplied_outdir:
@@ -49,14 +49,15 @@ class CdkAppFactory:
             if os.path.isabs(supplied_outdir):
                 self.outdir = supplied_outdir
             else:
-                # If relative/name: treat as namespace within /tmp/cdk-factory
+                # If relative path/name: treat as namespace within /tmp/cdk-factory
                 namespace = supplied_outdir.rstrip('/')
                 if not namespace or namespace in ('.', '..'):
                     namespace = "default"
                 self.outdir = f"/tmp/cdk-factory/{namespace}/cdk.out"
         else:
-            # Default: consistent location
-            self.outdir = "/tmp/cdk-factory/cdk.out"
+            # Default: cdk.out relative to runtime_directory (where app.py lives)
+            # This ensures CDK CLI can find it when running via cdk.json
+            self.outdir = str(Path(self.runtime_directory) / "cdk.out")
         
         # Clean and recreate directory for fresh synthesis
         if os.path.exists(self.outdir):
