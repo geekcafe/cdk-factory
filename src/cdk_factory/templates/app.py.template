@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""
+CDK Factory Application Entry Point
+
+This is the standard entry point for any cdk-factory based project.
+All configuration is driven by environment variables and CDK context.
+
+To use this template:
+1. Copy to your project's CDK directory (e.g., devops/cdk-iac/app.py)
+2. Update cdk.json to reference this file: "app": "python app.py"
+3. Create your config.json
+4. Run: cdk synth
+
+Note: cdk.out is automatically placed at project root for CodeBuild compatibility.
+"""
+
+import os
+from pathlib import Path
+from cdk_factory.app import CdkAppFactory
+
+
+if __name__ == "__main__":
+    # Runtime directory (where this file lives)
+    runtime_dir = str(Path(__file__).parent.resolve())
+    
+    # Configuration (Priority: ENV > CDK Context > default)
+    config_path = os.getenv('CDK_CONFIG_PATH', 'config.json')
+    
+    # Create and synth
+    # outdir is automatically set to project_root/cdk.out
+    factory = CdkAppFactory(
+        config_path=config_path,
+        runtime_directory=runtime_dir
+    )
+    
+    factory.synth(cdk_app_file=__file__)

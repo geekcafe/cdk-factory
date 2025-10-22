@@ -3,6 +3,7 @@ Geek Cafe Pipeline
 """
 
 import os
+from pathlib import Path
 from typing import List, Dict, Any
 
 import aws_cdk as cdk
@@ -359,9 +360,17 @@ class PipelineFactoryStack(cdk.Stack):
         build_commands = self._get_build_commands()
 
         cdk_out_directory = self.workload.output_directory
+        
+        # CdkAppFactory already provides the correct path:
+        # - For pipelines: relative path (e.g., "../../cdk.out" or "cdk.out")
+        # - For local: absolute path (but this code only runs for pipelines)
+        # If somehow we get an absolute path, convert it to just the basename
+        if cdk_out_directory and os.path.isabs(cdk_out_directory):
+            # Fallback: just use the last component
+            cdk_out_directory = os.path.basename(cdk_out_directory)
 
         build_commands.append(f"echo 👉 cdk_directory: {cdk_directory}")
-        build_commands.append(f"echo 👉 cdk_out_directory: {cdk_out_directory}")
+        build_commands.append(f"echo 👉 cdk_out_directory (relative): {cdk_out_directory}")
         build_commands.append("echo 👉 PWD from synth shell step: ${PWD}")
 
         shell = pipelines.ShellStep(

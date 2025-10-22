@@ -33,7 +33,7 @@ markers = [
 [project]
 
 name = "cdk_factory"
-version = "0.8.8"
+version = "0.9.3"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
@@ -55,3 +55,6 @@ dependencies = [
   "PyYAML",
   "cdk_nag"
 ]
+
+[project.scripts]
+cdk-factory = "cdk_factory.cli:main"
