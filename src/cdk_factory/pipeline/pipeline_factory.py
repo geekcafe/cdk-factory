@@ -399,7 +399,7 @@ class PipelineFactoryStack(cdk.Stack):
 
         build_commands.append(f"echo 👉 cdk_directory: {cdk_directory}")
         build_commands.append(f"echo 👉 cdk_out_directory: {cdk_out_directory}")
-        build_commands.append("echo 👉 PWD from synth shell step: ${{PWD}}")
+        build_commands.append("echo 👉 PWD from synth shell step: ${PWD}")
 
         shell = pipelines.ShellStep(
             "CDK Synth",
