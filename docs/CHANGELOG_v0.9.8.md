@@ -1,4 +1,4 @@
-# CDK Factory v0.9.7 - Consistent Output Directory
+# CDK Factory v0.9.8 - Consistent Output Directory
 
 ## 🚀 Major Improvement: Always Use `/tmp/cdk-factory/cdk.out`
 

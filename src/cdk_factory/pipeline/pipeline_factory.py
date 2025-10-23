@@ -359,13 +359,17 @@ class PipelineFactoryStack(IStack):
 
         build_commands = self._get_build_commands()
 
-        # Use consistent /tmp/cdk-factory/cdk.out location
-        # This matches the output directory configured in CdkAppFactory
-        cdk_out_directory = "/tmp/cdk-factory/cdk.out"
+        # Convert absolute output directory to relative path for BuildSpec
+        # This prevents baking in local absolute paths
+        cdk_out_directory = self._get_relative_output_directory()
+
+        if cdk_out_directory.startswith("/"):
+            raise ValueError("CDK output directory must be a relative path")
 
         # Debug logging - will be baked into buildspec
-        build_commands.append(f"echo '👉 CDK output directory: {cdk_out_directory}'")
-        build_commands.append("echo '👉 Consistent location in all environments'")
+        build_commands.append(
+            f"echo '👉 CDK output directory (relative): {cdk_out_directory}'"
+        )
 
         shell = pipelines.ShellStep(
             "CDK Synth",
@@ -375,6 +379,34 @@ class PipelineFactoryStack(IStack):
         )
 
         return shell
+
+    def _get_relative_output_directory(self) -> str:
+        """
+        Convert absolute output directory to relative path from repository root.
+        This prevents baking local absolute paths into the BuildSpec.
+
+        Example:
+            Absolute: /Users/eric/project/devops/cdk-iac/cdk.out
+            Relative: devops/cdk-iac/cdk.out
+        """
+        output_dir = self.workload.output_directory
+
+        # Get the current working directory (repository root during synthesis)
+        cwd = os.getcwd()
+
+        # Convert to absolute paths for reliable comparison
+        abs_output = os.path.abspath(output_dir)
+        abs_cwd = os.path.abspath(cwd)
+
+        # Compute relative path from repo root to output directory
+        try:
+            relative_path = os.path.relpath(abs_output, abs_cwd)
+            return relative_path
+        except ValueError:
+            print(f"Failed to compute relative path from {abs_output} to {abs_cwd}")
+            # Different drives on Windows or other edge case
+            # Fall back to basename approach (just the directory name)
+            return "cdk.out"
 
     def _get_build_commands(self) -> List[str]:
         # print("generating building commands")

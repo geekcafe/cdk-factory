@@ -18,6 +18,7 @@ from aws_lambda_powertools import Logger
 from cdk_factory.utilities.commandline_args import CommandlineArgs
 from cdk_factory.workload.workload_factory import WorkloadFactory
 from cdk_factory.utilities.configuration_loader import ConfigurationLoader
+from cdk_factory.utilities.file_operations import FileOperations
 from cdk_factory.version import __version__
 
 
@@ -31,39 +32,47 @@ class CdkAppFactory:
         config_path: str | None = None,
         outdir: str | None = None,
         add_env_context: bool = True,
-        auto_detect_project_root: bool = True,
-        is_pipeline: bool = False,
     ) -> None:
 
         self.args = args or CommandlineArgs()
-        self.runtime_directory = runtime_directory or str(Path(__file__).parent)
+        self.runtime_directory = runtime_directory
         self.config_path: str | None = config_path
         self.add_env_context = add_env_context
-        self._is_pipeline = is_pipeline
-        
-        # Handle outdir - backward compatible with smart defaults
-        supplied_outdir = outdir or (self.args.outdir if hasattr(self.args, 'outdir') else None)
-        
+
+        # Auto-detect runtime_directory if not provided
+        if not self.runtime_directory:
+            self.runtime_directory = FileOperations.caller_app_dir()
+
+        # Determine output directory with clear priority order:
+        # 1. Explicit outdir parameter (highest priority)
+        # 2. CDK_OUTDIR environment variable
+        # 3. Default: {runtime_directory}/cdk.out
+
+        supplied_outdir = outdir or (
+            self.args.outdir if hasattr(self.args, "outdir") else None
+        )
+
         if supplied_outdir:
-            # If absolute path: use as-is (backward compatible)
+            # Explicit outdir: if relative, resolve against runtime_directory
+            # If absolute, use as-is
             if os.path.isabs(supplied_outdir):
                 self.outdir = supplied_outdir
             else:
-                # If relative path/name: treat as namespace within /tmp/cdk-factory
-                namespace = supplied_outdir.rstrip('/')
-                if not namespace or namespace in ('.', '..'):
-                    namespace = "default"
-                self.outdir = f"/tmp/cdk-factory/{namespace}/cdk.out"
+                # Relative path: resolve against runtime_directory, not cwd
+                self.outdir = os.path.join(self.runtime_directory, supplied_outdir)
+        elif os.getenv("CDK_OUTDIR"):
+            # Environment variable override
+            self.outdir = os.path.abspath(os.getenv("CDK_OUTDIR"))
         else:
-            # Default: cdk.out relative to runtime_directory (where app.py lives)
-            # This ensures CDK CLI can find it when running via cdk.json
-            self.outdir = str(Path(self.runtime_directory) / "cdk.out")
-        
+            # Default: cdk.out in runtime_directory
+            # This resolves correctly in both local and CodeBuild environments
+            self.outdir = os.path.join(self.runtime_directory, "cdk.out")
+
         # Clean and recreate directory for fresh synthesis
         if os.path.exists(self.outdir):
             shutil.rmtree(self.outdir)
         os.makedirs(self.outdir, exist_ok=True)
-        
+
         self.app: aws_cdk.App = aws_cdk.App(outdir=self.outdir)
 
     def synth(
@@ -78,11 +87,9 @@ class CdkAppFactory:
             CloudAssembly: CDK CloudAssembly
         """
 
-        print(f"👋 Synthesizing CDK App from the cdk-factory version: {__version__}")
-        
-        # Log consistent output directory
-        print(f"📂 CDK output directory: {self.outdir}")
-        print(f"   └─ Consistent location works in both local and CodeBuild environments")
+        print(f"👋 Synthesizing CDK App from cdk-factory v{__version__}")
+        print(f"📂 Runtime directory: {self.runtime_directory}")
+        print(f"📂 Output directory: {self.outdir}")
 
         if not paths:
             paths = []
@@ -117,24 +124,26 @@ class CdkAppFactory:
         assembly: CloudAssembly = workload.synth()
 
         print("☁️ cloud assembly dir", assembly.directory)
-        
+
         # Validate that the assembly directory exists and has files
         self._validate_synth_output(assembly)
 
+        self._copy_cdk_out_to_project_root()
+
         return assembly
-    
+
     def _validate_synth_output(self, assembly: CloudAssembly) -> None:
         """
         Validate that CDK synthesis actually created the expected files.
-        
+
         Args:
             assembly: The CloudAssembly returned from synth
-            
+
         Raises:
             RuntimeError: If the output directory doesn't exist or is empty
         """
         assembly_dir = Path(assembly.directory)
-        
+
         # Check if directory exists
         if not assembly_dir.exists():
             raise RuntimeError(
@@ -143,7 +152,7 @@ class CdkAppFactory:
                 f"   Configured outdir: {self.outdir}\n"
                 f"   Current directory: {os.getcwd()}"
             )
-        
+
         # Check if directory has files
         files = list(assembly_dir.iterdir())
         if not files:
@@ -152,7 +161,7 @@ class CdkAppFactory:
                 f"   Directory: {assembly_dir}\n"
                 f"   This usually means CDK failed to write files."
             )
-        
+
         # Check for manifest.json (key CDK file)
         manifest = assembly_dir / "manifest.json"
         if not manifest.exists():
@@ -162,13 +171,13 @@ class CdkAppFactory:
                 f"   Files found: {[f.name for f in files]}\n"
                 f"   CDK may have failed during synthesis."
             )
-        
+
         # Success - log details
         print(f"✅ CDK synthesis successful!")
         print(f"   └─ Output directory: {assembly_dir}")
         print(f"   └─ Files created: {len(files)}")
         print(f"   └─ Stacks: {len(assembly.stacks)}")
-        
+
         # Log stack names
         if assembly.stacks:
             stack_names = [stack.stack_name for stack in assembly.stacks]
@@ -238,6 +247,33 @@ class CdkAppFactory:
 
         # Priority 4: Fallback to runtime_directory
         return str(current)
+
+    def _copy_cdk_out_to_project_root(self):
+        # Copy the cdk.out directory to the project root so it can be picked up by CodeBuild
+        # Source: the actual CDK output directory from the synthesis (e.g., /tmp/cdk-factory/cdk.out)
+        cdk_out_source = self.outdir
+
+        # raise Exception(f"cdk_out_source: {cdk_out_source}")
+
+        # Destination: project root (two directories up from devops/cdk-iac where this file lives)
+        project_root = os.getenv("CODEBUILD_SRC_DIR")
+        if not project_root:
+            return
+
+        cdk_out_dest = os.path.join(project_root, "cdk.out")
+
+        print(f"👉 Project root: {project_root}")
+        print(f"👉 CDK output source: {cdk_out_source}")
+        print(f"👉 CDK output destination: {cdk_out_dest}")
+
+        if os.path.exists(cdk_out_dest):
+            print("❌ CDK output directory already exists, skipping copy")
+            return
+        else:
+            print("✅ CDK output directory does not exist, copying")
+
+        shutil.copytree(cdk_out_source, cdk_out_dest)
+        print(f"✅  Copied CDK output to {cdk_out_dest}")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ MIT License.  See Project Root for the license information.
 
 import os
 import shutil
+import inspect
 import zipfile
 from typing import List
 from pathlib import Path
@@ -277,3 +278,13 @@ class FileOperations:
                 return sub_dir
 
         return None
+
+    @staticmethod
+    def caller_app_dir(default: str = ".") -> str:
+        # frame[0] is this function; frame[1] is the factory; frame[2] should be app.py
+        for frame_info in inspect.stack():
+            # first non-package frame likely belongs to app.py
+            candidate = os.path.abspath(os.path.dirname(frame_info.filename))
+            if "site-packages" not in candidate and "dist-packages" not in candidate:
+                return candidate
+        return os.path.abspath(default)
