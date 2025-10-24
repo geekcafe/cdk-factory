@@ -193,6 +193,41 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
                 iam.ManagedPolicy.from_aws_managed_policy_name(policy_name)
             )
 
+        # Add inline policies (for custom permissions like S3 bucket access)
+        for policy_config in self.asg_config.iam_inline_policies:
+            policy_name = policy_config.get("name", "CustomPolicy")
+            statements = policy_config.get("statements", [])
+            
+            if not statements:
+                logger.warning(f"No statements found for inline policy {policy_name}, skipping")
+                continue
+            
+            # Build policy statements
+            policy_statements = []
+            for stmt in statements:
+                effect = iam.Effect.ALLOW if stmt.get("effect", "Allow") == "Allow" else iam.Effect.DENY
+                actions = stmt.get("actions", [])
+                resources = stmt.get("resources", [])
+                
+                if not actions or not resources:
+                    logger.warning(f"Incomplete statement in policy {policy_name}, skipping")
+                    continue
+                
+                policy_statements.append(
+                    iam.PolicyStatement(
+                        effect=effect,
+                        actions=actions,
+                        resources=resources
+                    )
+                )
+            
+            if policy_statements:
+                role.add_to_principal_policy(policy_statements[0])
+                for stmt in policy_statements[1:]:
+                    role.add_to_principal_policy(stmt)
+                
+                logger.info(f"Added inline policy {policy_name} with {len(policy_statements)} statements")
+
         return role
 
     def _create_user_data(self) -> ec2.UserData:
@@ -206,12 +241,76 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         for command in self.asg_config.user_data_commands:
             user_data.add_commands(command)
 
+        # Add user data scripts from files (with variable substitution)
+        if self.asg_config.user_data_scripts:
+            self._add_user_data_scripts_from_files(user_data)
+
         # Add container configuration if specified
         container_config = self.asg_config.container_config
         if container_config:
             self._add_container_user_data(user_data, container_config)
 
         return user_data
+
+    def _add_user_data_scripts_from_files(self, user_data: ec2.UserData) -> None:
+        """
+        Add user data scripts from external files with variable substitution.
+        Supports loading shell scripts and injecting them into user data with
+        placeholder replacement.
+        """
+        from pathlib import Path
+        
+        for script_config in self.asg_config.user_data_scripts:
+            script_type = script_config.get("type", "file")
+            
+            if script_type == "file":
+                # Load script from file
+                script_path = script_config.get("path")
+                if not script_path:
+                    logger.warning("Script path not specified, skipping")
+                    continue
+                
+                # Resolve path (relative to project root or absolute)
+                path = Path(script_path)
+                if not path.is_absolute():
+                    # Try relative to current working directory
+                    path = Path.cwd() / script_path
+                
+                if not path.exists():
+                    logger.warning(f"Script file not found: {path}, skipping")
+                    continue
+                
+                # Read script content
+                try:
+                    with open(path, 'r') as f:
+                        script_content = f.read()
+                except Exception as e:
+                    logger.error(f"Failed to read script file {path}: {e}")
+                    continue
+                    
+            elif script_type == "inline":
+                # Use inline script content
+                script_content = script_config.get("content", "")
+                if not script_content:
+                    logger.warning("Inline script content is empty, skipping")
+                    continue
+            else:
+                logger.warning(f"Unknown script type: {script_type}, skipping")
+                continue
+            
+            # Perform variable substitution
+            variables = script_config.get("variables", {})
+            for var_name, var_value in variables.items():
+                placeholder = f"{{{{{var_name}}}}}"  # {{VAR_NAME}}
+                script_content = script_content.replace(placeholder, str(var_value))
+            
+            # Add script to user data
+            # Split by lines and add each line as a command
+            for line in script_content.split('\n'):
+                if line.strip():  # Skip empty lines
+                    user_data.add_commands(line)
+            
+            logger.info(f"Added user data script from {script_type}: {script_config.get('path', 'inline')}")
 
     def _add_container_user_data(
         self, user_data: ec2.UserData, container_config: Dict[str, Any]
