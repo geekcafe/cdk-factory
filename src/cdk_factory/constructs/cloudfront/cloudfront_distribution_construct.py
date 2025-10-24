@@ -1,10 +1,11 @@
-from typing import Any, List, Mapping
+from typing import Any, List, Mapping, Optional
 
 from aws_cdk import Duration
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 from cdk_factory.configurations.stack import StackConfig
@@ -123,6 +124,7 @@ class CloudFrontDistributionConstruct(Construct):
                 origin=origin,
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 function_associations=self.__get_function_associations(),
+                edge_lambdas=self.__get_lambda_edge_associations(),
             ),
             default_root_object="index.html",
             error_responses=self._error_responses(),
@@ -217,6 +219,54 @@ class CloudFrontDistributionConstruct(Construct):
             )
 
         return function_associations
+
+    def __get_lambda_edge_associations(self) -> Optional[List[cloudfront.EdgeLambda]]:
+        """
+        Get the Lambda@Edge associations for the distribution from config.
+        
+        Returns:
+            List[cloudfront.EdgeLambda] or None: list of Lambda@Edge associations
+        """
+        edge_lambdas = []
+        
+        if self.stack_config and isinstance(self.stack_config, StackConfig):
+            cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+            lambda_edge_associations = cloudfront_config.get("lambda_edge_associations", [])
+            
+            for association in lambda_edge_associations:
+                event_type_str = association.get("event_type", "origin-request")
+                lambda_arn = association.get("lambda_arn")
+                include_body = association.get("include_body", False)
+                
+                if not lambda_arn:
+                    continue  # Skip if no ARN provided
+                
+                # Map event type string to CloudFront enum
+                event_type_map = {
+                    "viewer-request": cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
+                    "origin-request": cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST,
+                    "origin-response": cloudfront.LambdaEdgeEventType.ORIGIN_RESPONSE,
+                    "viewer-response": cloudfront.LambdaEdgeEventType.VIEWER_RESPONSE,
+                }
+                
+                event_type = event_type_map.get(event_type_str, cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST)
+                
+                # Import the Lambda function version by ARN
+                lambda_version = _lambda.Version.from_version_arn(
+                    self,
+                    f"LambdaEdge-{event_type_str}",
+                    version_arn=lambda_arn
+                )
+                
+                edge_lambdas.append(
+                    cloudfront.EdgeLambda(
+                        function_version=lambda_version,
+                        event_type=event_type,
+                        include_body=include_body
+                    )
+                )
+        
+        return edge_lambdas if edge_lambdas else None
 
     def __get_combined_function(self, hosts: List[str]) -> cloudfront.Function:
         """
