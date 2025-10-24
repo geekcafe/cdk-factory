@@ -142,3 +142,15 @@ class EcsServiceConfig:
     def is_maintenance_mode(self) -> bool:
         """Whether this is a maintenance mode deployment"""
         return self.deployment_type == "maintenance"
+
+    @property
+    def volumes(self) -> List[Dict[str, Any]]:
+        """
+        Volume definitions for the task.
+        Supports host volumes for EC2 launch type and EFS volumes.
+        Each volume should have:
+        - name: volume name
+        - host: {source_path: "/path/on/host"} for bind mounts
+        - efs: {...} for EFS volumes
+        """
+        return self.task_definition.get("volumes", [])

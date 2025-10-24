@@ -42,6 +42,8 @@ class WorkloadFactory:
             runtime_directory=runtime_directory,
             paths=paths,
         )
+        # TODO: do we need to get other settings like configs, environment vars, etc?
+        outdir = outdir or "./cdk.out"
         self.workload: WorkloadConfig = WorkloadConfig(config=self.cdk_config.config)
         self.workload.paths = paths or []
         self.workload.cdk_app_file = cdk_app_file or __file__

@@ -148,3 +148,30 @@ class AutoScalingConfig(EnhancedBaseConfig):
     def target_group_arns(self) -> List[str]:
         """Target group ARNs for the Auto Scaling Group"""
         return self.__config.get("target_group_arns", [])
+
+    @property
+    def user_data_scripts(self) -> List[Dict[str, Any]]:
+        """
+        User data scripts to inject from files.
+        Each script should have:
+        - type: 'file' or 'inline'
+        - path: path to script file (if type is 'file')
+        - content: script content (if type is 'inline')
+        - variables: dict of variables for substitution
+        """
+        return self.__config.get("user_data_scripts", [])
+
+    @property
+    def iam_inline_policies(self) -> List[Dict[str, Any]]:
+        """
+        IAM inline policies to attach to the instance role.
+        Each policy should have:
+        - name: policy name
+        - statements: list of IAM policy statements
+        """
+        return self.__config.get("iam_inline_policies", [])
+
+    @property
+    def key_name(self) -> Optional[str]:
+        """EC2 key pair name for SSH access"""
+        return self.__config.get("key_name")
