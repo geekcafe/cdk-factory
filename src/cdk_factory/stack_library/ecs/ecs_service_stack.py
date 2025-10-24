@@ -198,8 +198,77 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                 task_role=task_role,
             )
         
+        # Add volumes to task definition
+        self._add_volumes_to_task()
+        
         # Add containers
         self._add_containers_to_task()
+
+    def _add_volumes_to_task(self) -> None:
+        """
+        Add volumes to the task definition.
+        Supports host volumes for EC2 launch type and EFS volumes for both.
+        """
+        volumes = self.ecs_config.volumes
+        
+        if not volumes:
+            return  # No volumes to add
+        
+        for volume_config in volumes:
+            volume_name = volume_config.get("name")
+            if not volume_name:
+                logger.warning("Volume name is required, skipping")
+                continue
+            
+            # Check volume type
+            if "host" in volume_config:
+                # Host volume (bind mount for EC2)
+                if self.ecs_config.launch_type != "EC2":
+                    logger.warning(f"Host volumes are only supported for EC2 launch type, skipping volume {volume_name}")
+                    continue
+                
+                host_config = volume_config["host"]
+                source_path = host_config.get("source_path")
+                
+                if not source_path:
+                    logger.warning(f"Host source_path is required for volume {volume_name}, skipping")
+                    continue
+                
+                # Add host volume to task definition
+                self.task_definition.add_volume(
+                    name=volume_name,
+                    host=ecs.Host(source_path=source_path)
+                )
+                
+                logger.info(f"Added host volume: {volume_name} -> {source_path}")
+                
+            elif "efs" in volume_config:
+                # EFS volume (supported for both EC2 and Fargate)
+                efs_config = volume_config["efs"]
+                file_system_id = efs_config.get("file_system_id")
+                
+                if not file_system_id:
+                    logger.warning(f"EFS file_system_id is required for volume {volume_name}, skipping")
+                    continue
+                
+                # Build EFS volume configuration
+                efs_volume_config = ecs.EfsVolumeConfiguration(
+                    file_system_id=file_system_id,
+                    root_directory=efs_config.get("root_directory", "/"),
+                    transit_encryption="ENABLED" if efs_config.get("transit_encryption", True) else "DISABLED",
+                    authorization_config=ecs.AuthorizationConfig(
+                        access_point_id=efs_config.get("access_point_id")
+                    ) if efs_config.get("access_point_id") else None
+                )
+                
+                self.task_definition.add_volume(
+                    name=volume_name,
+                    efs_volume_configuration=efs_volume_config
+                )
+                
+                logger.info(f"Added EFS volume: {volume_name} -> {file_system_id}")
+            else:
+                logger.warning(f"Volume {volume_name} must specify either 'host' or 'efs' configuration")
 
     def _add_containers_to_task(self) -> None:
         """Add container definitions to the task"""
@@ -262,6 +331,27 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                         protocol=ecs.Protocol.TCP,
                     )
                 )
+            
+            # Add mount points (bind volumes to container)
+            mount_points = container_config.get("mount_points", [])
+            for mount_point in mount_points:
+                source_volume = mount_point.get("source_volume")
+                container_path = mount_point.get("container_path")
+                read_only = mount_point.get("read_only", False)
+                
+                if not source_volume or not container_path:
+                    logger.warning(f"Mount point requires source_volume and container_path, skipping")
+                    continue
+                
+                container.add_mount_points(
+                    ecs.MountPoint(
+                        source_volume=source_volume,
+                        container_path=container_path,
+                        read_only=read_only
+                    )
+                )
+                
+                logger.info(f"Added mount point: {source_volume} -> {container_path} (read_only={read_only})")
 
     def _load_secrets(self, secrets_config: Dict[str, str]) -> Dict[str, ecs.Secret]:
         """Load secrets from Secrets Manager or SSM Parameter Store"""
