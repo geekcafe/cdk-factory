@@ -24,15 +24,19 @@ echo "=================================="
 if [ ! -d ".venv" ]; then
     echo -e "${YELLOW}Creating virtual environment...${NC}"
     python3 -m venv .venv
+    # Install dependencies
+    echo -e "${YELLOW}Installing dependencies...${NC}"
+    pip install -q -r requirements.dev.txt
+    pip install -q -r requirements.tests.txt
 fi
 
-echo -e "${YELLOW}Activating virtual environment...${NC}"
-source ./.venv/bin/activate
+# see if it's activated
+if [ ! -f ".venv/bin/activate" ]; then
+    echo -e "${YELLOW}Activating virtual environment...${NC}"
+    source ./.venv/bin/activate
+fi
 
-# Install dependencies
-echo -e "${YELLOW}Installing dependencies...${NC}"
-pip install -q -r requirements.dev.txt
-pip install -q -r requirements.tests.txt
+
 
 # Check if pytest is installed in the virtual environment
 if ! command -v pytest &> /dev/null; then

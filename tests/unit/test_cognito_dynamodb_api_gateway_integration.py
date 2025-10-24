@@ -102,26 +102,38 @@ def lambda_handler(event, context):
             # Get the pipeline stack template
             pipeline_stack_name = "my-cool-app-dev-infra-pipeline"
             pipeline_stack = None
-            
+
             # Find the pipeline stack
             for stack in self.app.node.children:
                 if stack.node.id == pipeline_stack_name:
                     pipeline_stack = stack
                     break
-            
-            self.assertIsNotNone(pipeline_stack, f"Pipeline stack {pipeline_stack_name} should be created")
-            
+
+            self.assertIsNotNone(
+                pipeline_stack,
+                f"Pipeline stack {pipeline_stack_name} should be created",
+            )
+
             # Get template and verify pipeline was created
             pipeline_template = Template.from_stack(pipeline_stack)
             pipeline_template.has_resource_properties(
-                "AWS::CodePipeline::Pipeline", {"Name": "my-cool-app-dev-infra-pipeline"}
+                "AWS::CodePipeline::Pipeline",
+                {"Name": "my-cool-app-dev-infra-pipeline"},
             )
         except Exception as e:
             # If there's a CDK resolution error, we can still verify the factory was created
             self.assertIsNotNone(factory)
+            # get the stack trace
+            import traceback
+
+            print(traceback.format_exc())
             # Skip the template validation if synthesis fails due to resolution errors
-            print(f"Synthesis failed with resolution error (expected in test environment): {e}")
-            self.skipTest("Skipping template validation due to CDK resolution errors in test environment")
+            print(
+                f"Synthesis failed with resolution error (expected in test environment): {e}"
+            )
+            self.skipTest(
+                "Skipping template validation due to CDK resolution errors in test environment"
+            )
 
     def test_cognito_ssm_parameters_format(self):
         """Test that Cognito stack creates SSM parameters in correct format"""
@@ -179,8 +191,12 @@ def lambda_handler(event, context):
         except Exception as e:
             # Handle CDK resolution errors gracefully
             self.assertIsNotNone(factory)
-            print(f"Synthesis failed with resolution error (expected in test environment): {e}")
-            self.skipTest("Skipping template validation due to CDK resolution errors in test environment")
+            print(
+                f"Synthesis failed with resolution error (expected in test environment): {e}"
+            )
+            self.skipTest(
+                "Skipping template validation due to CDK resolution errors in test environment"
+            )
 
     def test_dynamodb_ssm_parameters_format(self):
         """Test that DynamoDB stack creates SSM parameters in correct format"""
@@ -244,8 +260,12 @@ def lambda_handler(event, context):
         except Exception as e:
             # Handle CDK resolution errors gracefully
             self.assertIsNotNone(factory)
-            print(f"Synthesis failed with resolution error (expected in test environment): {e}")
-            self.skipTest("Skipping template validation due to CDK resolution errors in test environment")
+            print(
+                f"Synthesis failed with resolution error (expected in test environment): {e}"
+            )
+            self.skipTest(
+                "Skipping template validation due to CDK resolution errors in test environment"
+            )
 
     def test_api_gateway_ssm_parameters_format(self):
         """Test that API Gateway stack creates SSM parameters in correct format"""
@@ -289,7 +309,9 @@ def lambda_handler(event, context):
                 if api_gateway_stack:
                     break
 
-            self.assertIsNotNone(api_gateway_stack, "API Gateway stack should be created")
+            self.assertIsNotNone(
+                api_gateway_stack, "API Gateway stack should be created"
+            )
 
             # Get the API Gateway stack template
             api_gateway_template = Template.from_stack(api_gateway_stack)
@@ -319,8 +341,12 @@ def lambda_handler(event, context):
         except Exception as e:
             # Handle CDK resolution errors gracefully
             self.assertIsNotNone(factory)
-            print(f"Synthesis failed with resolution error (expected in test environment): {e}")
-            self.skipTest("Skipping template validation due to CDK resolution errors in test environment")
+            print(
+                f"Synthesis failed with resolution error (expected in test environment): {e}"
+            )
+            self.skipTest(
+                "Skipping template validation due to CDK resolution errors in test environment"
+            )
 
     def test_ssm_parameter_cross_reference(self):
         """Test that API Gateway correctly references Cognito SSM parameters"""
@@ -368,7 +394,9 @@ def lambda_handler(event, context):
             cognito_template = Template.from_stack(cognito_stack)
 
             # Verify that Cognito exports the user pool ARN parameter using new enhanced pattern
-            cognito_user_pool_arn_path = "/my-cool-app/dev/cognito/user-pool/user-pool-arn"
+            cognito_user_pool_arn_path = (
+                "/my-cool-app/dev/cognito/user-pool/user-pool-arn"
+            )
 
             # Check that Cognito stack exports the SSM parameter that API Gateway imports
             cognito_template.has_resource_properties(
@@ -377,8 +405,12 @@ def lambda_handler(event, context):
         except Exception as e:
             # Handle CDK resolution errors gracefully
             self.assertIsNotNone(factory)
-            print(f"Synthesis failed with resolution error (expected in test environment): {e}")
-            self.skipTest("Skipping template validation due to CDK resolution errors in test environment")
+            print(
+                f"Synthesis failed with resolution error (expected in test environment): {e}"
+            )
+            self.skipTest(
+                "Skipping template validation due to CDK resolution errors in test environment"
+            )
 
     def tearDown(self):
         """Clean up test resources"""
