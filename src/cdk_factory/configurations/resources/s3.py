@@ -123,6 +123,9 @@ class S3BucketConfig(EnhancedBaseConfig):
     def removal_policy(self) -> cdk.RemovalPolicy:
         """The Removal policy"""
         value = self.config.get("removal_policy", "retain")
+        if isinstance(value, str):
+            value = value.lower()
+        
         if value == "destroy":
             return cdk.RemovalPolicy.DESTROY
         elif value == "snapshot":

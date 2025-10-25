@@ -90,3 +90,8 @@ class LambdaEdgeConfig(EnhancedBaseConfig):
     def include_body(self) -> bool:
         """Whether to include request body in origin-request events"""
         return self._config.get("include_body", False)
+
+    @property
+    def tags(self) -> Dict[str, str]:
+        """Tags to apply to the Lambda function"""
+        return self._config.get("tags", {})

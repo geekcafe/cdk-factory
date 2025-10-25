@@ -6,13 +6,14 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
-from typing import Optional
+from typing import Optional, Dict
 from pathlib import Path
 
 import aws_cdk as cdk
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
+from aws_cdk import aws_ssm as ssm
 from aws_lambda_powertools import Logger
 from constructs import Construct
 
@@ -93,6 +94,34 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
         # Add outputs
         self._add_outputs(function_name)
 
+    def _resolve_environment_variables(self) -> Dict[str, str]:
+        """
+        Resolve environment variables, including SSM parameter references.
+        Supports {{ssm:parameter-path}} syntax for dynamic SSM lookups.
+        Uses CDK tokens that resolve at deployment time, not synthesis time.
+        """
+        resolved_env = {}
+        
+        for key, value in self.edge_config.environment.items():
+            # Check if value is an SSM parameter reference
+            if isinstance(value, str) and value.startswith("{{ssm:") and value.endswith("}}"):
+                # Extract SSM parameter path
+                ssm_param_path = value[6:-2]  # Remove {{ssm: and }}
+                
+                # Import SSM parameter - this creates a token that resolves at deployment time
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self,
+                    f"env-{key}-{hash(ssm_param_path) % 10000}",
+                    ssm_param_path
+                )
+                resolved_value = param.string_value
+                logger.info(f"Resolved environment variable {key} from SSM {ssm_param_path}")
+                resolved_env[key] = resolved_value
+            else:
+                resolved_env[key] = value
+        
+        return resolved_env
+
     def _create_lambda_function(self, function_name: str) -> None:
         """Create the Lambda function"""
         
@@ -125,6 +154,9 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             _lambda.Runtime.PYTHON_3_11
         )
         
+        # Resolve environment variables (handles SSM parameter references)
+        resolved_environment = self._resolve_environment_variables()
+        
         # Create execution role with CloudWatch Logs permissions
         execution_role = iam.Role(
             self,
@@ -153,7 +185,7 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             timeout=cdk.Duration.seconds(self.edge_config.timeout),
             description=self.edge_config.description,
             role=execution_role,
-            environment=self.edge_config.environment,
+            environment=resolved_environment,
             log_retention=logs.RetentionDays.ONE_WEEK,
         )
         
@@ -214,4 +246,13 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
                 "function_version": self.function_version.version,
             }
             
-            self.store_ssm_parameters(self.edge_config, export_values)
+            # Export each value to SSM using the enhanced parameter mixin
+            for key, param_path in ssm_exports.items():
+                if key in export_values:
+                    self.export_ssm_parameter(
+                        self,
+                        f"{key}-param",
+                        export_values[key],
+                        param_path,
+                        description=f"{key} for Lambda@Edge function {function_name}"
+                    )

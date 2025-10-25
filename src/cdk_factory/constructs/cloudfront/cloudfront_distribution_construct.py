@@ -7,8 +7,12 @@ from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_ssm as ssm
+from aws_lambda_powertools import Logger
 from constructs import Construct
 from cdk_factory.configurations.stack import StackConfig
+
+logger = Logger(__name__)
 
 
 class CloudFrontDistributionConstruct(Construct):
@@ -240,6 +244,20 @@ class CloudFrontDistributionConstruct(Construct):
                 
                 if not lambda_arn:
                     continue  # Skip if no ARN provided
+                
+                # Check if ARN is an SSM parameter reference
+                if lambda_arn.startswith("{{ssm:") and lambda_arn.endswith("}}"):
+                    ssm_param_path = lambda_arn[6:-2]  # Extract parameter path
+                    logger.info(f"Importing Lambda ARN from SSM parameter: {ssm_param_path}")
+                    
+                    # Import SSM parameter - this creates a reference that resolves at deployment time
+                    param = ssm.StringParameter.from_string_parameter_name(
+                        self,
+                        f"lambda-edge-arn-{hash(ssm_param_path) % 10000}",
+                        ssm_param_path
+                    )
+                    lambda_arn = param.string_value
+                    logger.info(f"Lambda ARN will be resolved from SSM: {ssm_param_path}")
                 
                 # Map event type string to CloudFront enum
                 event_type_map = {
