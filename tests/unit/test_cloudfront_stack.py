@@ -305,7 +305,13 @@ class TestCloudFrontStack:
         )
 
     def test_cloudfront_with_lambda_edge(self, app, deployment_config, workload_config):
-        """Test CloudFront with Lambda@Edge associations"""
+        """
+        Test CloudFront with Lambda@Edge associations
+        
+        This test validates that Lambda@Edge functions can be attached to CloudFront distributions.
+        This is the underlying functionality used by the `enable_ip_gating` convenience flag in
+        CloudFrontDistributionConstruct (used by StaticWebsiteStack).
+        """
         stack_config = StackConfig(
             {
                 "cloudfront": {

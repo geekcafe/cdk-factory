@@ -118,11 +118,17 @@ class CloudFrontDistributionConstruct(Construct):
                 origin_access_identity=self.oai,
             )
 
+        # Get comment from config, or use default
+        comment = "CloudFront Distribution generated via the CDK Factory"
+        if self.stack_config and isinstance(self.stack_config, StackConfig):
+            cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+            comment = cloudfront_config.get("comment", comment)
+        
         distribution = cloudfront.Distribution(
             self,
             "cloudfront-dist",
             domain_names=self.aliases,
-            comment="CloudFront Distribution generated via the CDK Factory",
+            comment=comment,
             certificate=self.certificate,
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origin,
@@ -228,6 +234,15 @@ class CloudFrontDistributionConstruct(Construct):
         """
         Get the Lambda@Edge associations for the distribution from config.
         
+        Supports two configuration methods:
+        1. Convenience flag: "enable_ip_gating": true
+           - Automatically adds Lambda@Edge IP gating function
+           - Uses auto-derived SSM parameter path: /{env}/{workload}/lambda-edge/version-arn
+        
+        2. Manual configuration: "lambda_edge_associations": [...]
+           - Full control over Lambda@Edge associations
+           - Can specify custom ARNs, event types, etc.
+        
         Returns:
             List[cloudfront.EdgeLambda] or None: list of Lambda@Edge associations
         """
@@ -235,7 +250,33 @@ class CloudFrontDistributionConstruct(Construct):
         
         if self.stack_config and isinstance(self.stack_config, StackConfig):
             cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
-            lambda_edge_associations = cloudfront_config.get("lambda_edge_associations", [])
+            
+            # Check for convenience IP gating flag
+            enable_ip_gating = cloudfront_config.get("enable_ip_gating", False)
+            if enable_ip_gating:
+                logger.info("IP gating enabled via convenience flag - adding Lambda@Edge association")
+                
+                # Extract environment and workload name from config
+                # These come from the workload/deployment configuration
+                workload_dict = self.stack_config.workload
+                environment = workload_dict.get("deployment", {}).get("environment", "dev")
+                workload_name = workload_dict.get("name", "workload")
+                
+                # Auto-derive SSM parameter path or use override
+                default_ssm_path = f"/{environment}/{workload_name}/lambda-edge/version-arn"
+                ip_gate_ssm_path = cloudfront_config.get("ip_gate_function_ssm_path", default_ssm_path)
+                
+                logger.info(f"Using IP gate Lambda ARN from SSM: {ip_gate_ssm_path}")
+                
+                # Add the IP gating Lambda@Edge association
+                lambda_edge_associations = [{
+                    "event_type": "origin-request",
+                    "lambda_arn": f"{{{{ssm:{ip_gate_ssm_path}}}}}",
+                    "include_body": False
+                }]
+            else:
+                # Use manual configuration
+                lambda_edge_associations = cloudfront_config.get("lambda_edge_associations", [])
             
             for association in lambda_edge_associations:
                 event_type_str = association.get("event_type", "origin-request")
