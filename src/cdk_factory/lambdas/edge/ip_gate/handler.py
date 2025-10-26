@@ -69,16 +69,22 @@ def is_ip_allowed(client_ip: str, allowed_cidrs: list) -> bool:
     
     try:
         client_ip_obj = ipaddress.ip_address(client_ip)
-        
-        for cidr in allowed_cidrs:
+    except ValueError as e:
+        print(f"Invalid client IP address: {e}")
+        return False
+    
+    # Check each CIDR individually, skipping invalid ones
+    for cidr in allowed_cidrs:
+        try:
             network = ipaddress.ip_network(cidr.strip(), strict=False)
             if client_ip_obj in network:
                 return True
-        
-        return False
-    except ValueError as e:
-        print(f"Invalid IP address or CIDR: {e}")
-        return False
+        except ValueError as e:
+            # Invalid CIDR, log and continue checking others
+            print(f"Invalid CIDR '{cidr}': {e}")
+            continue
+    
+    return False
 
 
 def lambda_handler(event, context):

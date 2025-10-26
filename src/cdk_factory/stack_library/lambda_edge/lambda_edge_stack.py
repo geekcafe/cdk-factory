@@ -9,6 +9,8 @@ MIT License. See Project Root for the license information.
 from typing import Optional, Dict
 from pathlib import Path
 import json
+import tempfile
+import shutil
 
 import aws_cdk as cdk
 from aws_cdk import aws_lambda as _lambda
@@ -140,6 +142,15 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
         
         logger.info(f"Loading Lambda code from: {code_path}")
         
+        # Create isolated temp directory for this function instance
+        # This prevents conflicts when multiple functions use the same handler code
+        temp_code_dir = Path(tempfile.mkdtemp(prefix=f"{function_name.replace('/', '-')}-"))
+        logger.info(f"Creating isolated code directory at: {temp_code_dir}")
+        
+        # Copy source code to temp directory
+        shutil.copytree(code_path, temp_code_dir, dirs_exist_ok=True)
+        logger.info(f"Copied code from {code_path} to {temp_code_dir}")
+        
         # Create runtime configuration file for Lambda@Edge
         # Since Lambda@Edge doesn't support environment variables, we bundle a config file
         runtime_config = {
@@ -148,13 +159,16 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             'region': self.deployment.region
         }
         
-        runtime_config_path = code_path / 'runtime_config.json'
+        runtime_config_path = temp_code_dir / 'runtime_config.json'
         logger.info(f"Creating runtime config at: {runtime_config_path}")
         
         with open(runtime_config_path, 'w') as f:
             json.dump(runtime_config, f, indent=2)
         
         logger.info(f"Runtime config: {runtime_config}")
+        
+        # Use the temp directory for the Lambda code asset
+        code_path = temp_code_dir
         
         # Map runtime string to CDK Runtime
         runtime_map = {
