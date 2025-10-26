@@ -87,7 +87,10 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             deployment
         )
         
-        function_name = deployment.build_resource_name(self.edge_config.name)
+        # Use the Lambda function name from config (supports template variables)
+        # e.g., "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ip-gate" becomes "tech-talk-dev-ip-gate"
+        function_name = self.edge_config.name
+        logger.info(f"Lambda function name: '{function_name}'")
         
         # Create Lambda function
         self._create_lambda_function(function_name)
@@ -181,9 +184,10 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
         
         # Create runtime configuration file for Lambda@Edge
         # Since Lambda@Edge doesn't support environment variables, we bundle a config file
+        # Use the full function_name (e.g., "tech-talk-dev-ip-gate") not just the base name
         runtime_config = {
             'environment': self.deployment.environment,
-            'function_name': self.edge_config.name,
+            'function_name': function_name,
             'region': self.deployment.region
         }
         
