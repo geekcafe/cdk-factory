@@ -95,9 +95,8 @@ class StaticWebSiteStack(IStack):
             hosted_zone=hosted_zone,
         )
 
-        if stack_config.dependencies:
-            for dependency in stack_config.dependencies:
-                self.add_dependency(deployment.build_resource_name(dependency))
+        # Note: Stack dependencies are handled by pipeline_factory, not here
+        # Dependencies are resolved after all stacks are created so we have stack objects
 
     def __get_s3_website_bucket(
         self, stack_config: StackConfig, deployment: DeploymentConfig
