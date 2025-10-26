@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 import tempfile
 import shutil
+import importlib.resources
 
 import aws_cdk as cdk
 from aws_cdk import aws_lambda as _lambda
@@ -128,11 +129,38 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
     def _create_lambda_function(self, function_name: str) -> None:
         """Create the Lambda function"""
         
-        # Resolve code path (relative to runtime directory or absolute)
-        code_path = Path(self.edge_config.code_path)
-        if not code_path.is_absolute():
-            # Assume relative to the project root
-            code_path = Path.cwd() / code_path
+        # Resolve code path - support package references (e.g., "cdk_factory:lambdas/edge/ip_gate")
+        code_path_str = self.edge_config.code_path
+        
+        if ':' in code_path_str:
+            # Package reference format: "package_name:path/within/package"
+            package_name, package_path = code_path_str.split(':', 1)
+            logger.info(f"Resolving package reference: {package_name}:{package_path}")
+            
+            try:
+                # Get the package's installed location
+                if hasattr(importlib.resources, 'files'):
+                    # Python 3.9+
+                    package_root = importlib.resources.files(package_name)
+                    code_path = Path(str(package_root / package_path))
+                else:
+                    # Fallback for older Python
+                    import pkg_resources
+                    package_root = pkg_resources.resource_filename(package_name, '')
+                    code_path = Path(package_root) / package_path
+                
+                logger.info(f"Resolved package path to: {code_path}")
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"Could not resolve package reference '{code_path_str}': {e}\n"
+                    f"Make sure package '{package_name}' is installed."
+                )
+        else:
+            # Regular file path
+            code_path = Path(code_path_str)
+            if not code_path.is_absolute():
+                # Assume relative to the project root
+                code_path = Path.cwd() / code_path
         
         if not code_path.exists():
             raise FileNotFoundError(
