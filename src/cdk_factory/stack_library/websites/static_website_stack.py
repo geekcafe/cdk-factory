@@ -169,6 +169,13 @@ class StaticWebSiteStack(IStack):
                 aliases=aliases,
                 distribution=cloudfront_distribution.distribution,
             )
+        
+        # Export SSM parameters if configured
+        self.__export_ssm_parameters(
+            stack_config=stack_config,
+            bucket=bucket,
+            cloudfront_distribution=cloudfront_distribution,
+        )
 
     def __setup_route53_records(
         self,
@@ -199,6 +206,58 @@ class StaticWebSiteStack(IStack):
             hosted_zone_id=hosted_zone_id,
             zone_name=hosted_zone_name,
         )
+
+    def __export_ssm_parameters(
+        self,
+        stack_config: StackConfig,
+        bucket: s3.IBucket,
+        cloudfront_distribution: CloudFrontDistributionConstruct,
+    ) -> None:
+        """
+        Export stack outputs to SSM Parameter Store if ssm_exports is configured.
+        
+        Args:
+            stack_config: Stack configuration containing ssm_exports
+            bucket: The S3 bucket
+            cloudfront_distribution: The CloudFront distribution construct
+        """
+        ssm_exports = stack_config.dictionary.get("ssm_exports", {})
+        
+        if not ssm_exports:
+            logger.debug("No SSM exports configured for this stack")
+            return
+        
+        # Export bucket name if configured
+        if "bucket_name" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportBucketName",
+                value=bucket.bucket_name,
+                parameter_name=ssm_exports["bucket_name"],
+                description=f"S3 bucket name for {stack_config.name}",
+            )
+        
+        # Export CloudFront domain if configured
+        if "cloudfront_domain" in ssm_exports and cloudfront_distribution.distribution:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportCloudFrontDomain",
+                value=cloudfront_distribution.dns_name,
+                parameter_name=ssm_exports["cloudfront_domain"],
+                description=f"CloudFront domain name for {stack_config.name}",
+            )
+        
+        # Export CloudFront distribution ID if configured
+        if "cloudfront_distribution_id" in ssm_exports and cloudfront_distribution.distribution:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportCloudFrontDistributionId",
+                value=cloudfront_distribution.distribution_id,
+                parameter_name=ssm_exports["cloudfront_distribution_id"],
+                description=f"CloudFront distribution ID for {stack_config.name}",
+            )
+        
+        logger.info(f"Exported {len(ssm_exports)} SSM parameters for stack {stack_config.name}")
 
     def __get_version_number(self, assets_path: str) -> str:
         version = "0.0.1.ckd.factory"
