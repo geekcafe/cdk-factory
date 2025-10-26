@@ -178,7 +178,58 @@ def lambda_handler(event, context):
             print(f"IP {client_ip} is allowed")
             return request
         
-        # IP not allowed - redirect to maintenance page
+        # IP not allowed - either redirect or proxy maintenance page
+        # Check response mode from SSM (default: redirect for backward compatibility)
+        response_mode_param = f"/{function_name}/response-mode"
+        response_mode = get_ssm_parameter(response_mode_param, default='redirect')
+        
+        if response_mode == 'proxy':
+            # Proxy mode: Fetch and return maintenance content (keeps URL the same)
+            print(f"IP {client_ip} is NOT allowed, proxying content from {maint_cf_host}")
+            
+            try:
+                import urllib3
+                http = urllib3.PoolManager()
+                
+                # Fetch the maintenance page
+                maint_response = http.request(
+                    'GET', 
+                    f'https://{maint_cf_host}',
+                    headers={'User-Agent': 'CloudFront-IP-Gate-Proxy'},
+                    timeout=3.0
+                )
+                
+                # Return the maintenance content
+                response = {
+                    'status': str(maint_response.status),
+                    'statusDescription': 'OK' if maint_response.status == 200 else 'Service Unavailable',
+                    'headers': {
+                        'content-type': [{
+                            'key': 'Content-Type',
+                            'value': maint_response.headers.get('Content-Type', 'text/html')
+                        }],
+                        'cache-control': [{
+                            'key': 'Cache-Control',
+                            'value': 'no-cache, no-store, must-revalidate, max-age=0'
+                        }],
+                        'x-ip-gate-mode': [{
+                            'key': 'X-IP-Gate-Mode',
+                            'value': 'proxy'
+                        }]
+                    },
+                    'body': maint_response.data.decode('utf-8')
+                }
+                
+                print(f"Successfully proxied maintenance page (status {maint_response.status})")
+                return response
+                
+            except Exception as proxy_error:
+                print(f"Error proxying maintenance content: {str(proxy_error)}")
+                # Fall back to redirect if proxy fails
+                print(f"Falling back to redirect mode")
+                response_mode = 'redirect'
+        
+        # Redirect mode (default): HTTP 302 redirect to maintenance site
         print(f"IP {client_ip} is NOT allowed, redirecting to {maint_cf_host}")
         
         response = {
@@ -192,6 +243,10 @@ def lambda_handler(event, context):
                 'cache-control': [{
                     'key': 'Cache-Control',
                     'value': 'no-cache, no-store, must-revalidate'
+                }],
+                'x-ip-gate-mode': [{
+                    'key': 'X-IP-Gate-Mode',
+                    'value': 'redirect'
                 }]
             }
         }

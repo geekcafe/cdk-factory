@@ -49,12 +49,13 @@ def create_runtime_config(env: str = "dev", function_name: str = "ip-gate"):
     }
 
 
-def create_ssm_params(gate_enabled='true', allow_cidrs='', maint_host='maintenance.cloudfront.net'):
+def create_ssm_params(gate_enabled='true', allow_cidrs='', maint_host='maintenance.cloudfront.net', response_mode='redirect'):
     """Helper to create SSM parameter dict"""
     return {
         '/dev/tech-talk-dev-ip-gate/gate-enabled': gate_enabled,
         '/dev/tech-talk-dev-ip-gate/allow-cidrs': allow_cidrs,
-        '/dev/tech-talk-dev-ip-gate/maint-cf-host': maint_host
+        '/dev/tech-talk-dev-ip-gate/maint-cf-host': maint_host,
+        '/dev/tech-talk-dev-ip-gate/response-mode': response_mode
     }
 
 
@@ -70,7 +71,7 @@ class TestIPGateAllowlist:
         
         # Mock SSM parameters
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("203.0.113.10")
         context = create_mock_context()
@@ -85,7 +86,7 @@ class TestIPGateAllowlist:
         """IP in CIDR range should pass through"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='198.51.100.0/24')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("198.51.100.50")
         context = create_mock_context()
@@ -99,7 +100,7 @@ class TestIPGateAllowlist:
         """IP not in allowlist should redirect to maintenance"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("192.0.2.1")
         context = create_mock_context()
@@ -115,7 +116,7 @@ class TestIPGateAllowlist:
         """Multiple CIDR ranges in allowlist"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32,198.51.100.0/24,192.0.2.0/24')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         context = create_mock_context()
         
@@ -139,7 +140,7 @@ class TestGateToggle:
         """When gate is disabled, all IPs should pass through"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(gate_enabled='false', allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         # Test with non-whitelisted IP
         event = create_cloudfront_event("192.0.2.1")
@@ -155,7 +156,7 @@ class TestGateToggle:
         """When gate is enabled, allowlist is enforced"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("192.0.2.1")
         context = create_mock_context()
@@ -174,7 +175,7 @@ class TestURINormalization:
         """URI should remain unchanged - we redirect, not rewrite"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("192.0.2.1", uri="/about/")
         context = create_mock_context()
@@ -189,7 +190,7 @@ class TestURINormalization:
         """Path without extension gets redirected"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("192.0.2.1", uri="/about")
         context = create_mock_context()
@@ -203,7 +204,7 @@ class TestURINormalization:
         """File requests also get redirected if IP blocked"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("192.0.2.1", uri="/styles.css")
         context = create_mock_context()
@@ -221,7 +222,7 @@ class TestXViewerIPHeader:
         """Allowed IPs pass through"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("203.0.113.10")
         context = create_mock_context()
@@ -236,7 +237,7 @@ class TestXViewerIPHeader:
         """Blocked IPs get redirected"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("192.0.2.1")
         context = create_mock_context()
@@ -255,7 +256,7 @@ class TestEdgeCases:
         """Invalid CIDR in list should be ignored, not crash"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='203.0.113.10/32,invalid-cidr,198.51.100.0/24')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         # IP in valid CIDR should still work (198.51.100.0/24)
         event = create_cloudfront_event("198.51.100.50")
@@ -286,7 +287,7 @@ class TestEdgeCases:
         """Empty allowlist should block all traffic when gate enabled"""
         mock_file.return_value.read.return_value = json.dumps(create_runtime_config())
         ssm_params = create_ssm_params(allow_cidrs='')
-        mock_ssm.side_effect = lambda param_name, region: ssm_params.get(param_name, '')
+        mock_ssm.side_effect = lambda param_name, region=None, default=None: ssm_params.get(param_name, default or '')
         
         event = create_cloudfront_event("203.0.113.10")
         context = create_mock_context()

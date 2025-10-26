@@ -292,8 +292,9 @@ class CloudFrontDistributionConstruct(Construct):
                 logger.info(f"Using IP gate Lambda ARN from SSM: {ip_gate_ssm_path}")
                 
                 # Add the IP gating Lambda@Edge association
+                # MUST use viewer-request to run BEFORE cache check!
                 lambda_edge_associations = [{
-                    "event_type": "origin-request",
+                    "event_type": "viewer-request",
                     "lambda_arn": f"{{{{ssm:{ip_gate_ssm_path}}}}}",
                     "include_body": False
                 }]
