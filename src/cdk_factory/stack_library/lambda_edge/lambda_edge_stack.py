@@ -8,6 +8,7 @@ MIT License. See Project Root for the license information.
 
 from typing import Optional, Dict
 from pathlib import Path
+import json
 
 import aws_cdk as cdk
 from aws_cdk import aws_lambda as _lambda
@@ -139,6 +140,22 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
         
         logger.info(f"Loading Lambda code from: {code_path}")
         
+        # Create runtime configuration file for Lambda@Edge
+        # Since Lambda@Edge doesn't support environment variables, we bundle a config file
+        runtime_config = {
+            'environment': self.deployment.environment,
+            'function_name': self.edge_config.name,
+            'region': self.deployment.region
+        }
+        
+        runtime_config_path = code_path / 'runtime_config.json'
+        logger.info(f"Creating runtime config at: {runtime_config_path}")
+        
+        with open(runtime_config_path, 'w') as f:
+            json.dump(runtime_config, f, indent=2)
+        
+        logger.info(f"Runtime config: {runtime_config}")
+        
         # Map runtime string to CDK Runtime
         runtime_map = {
             "python3.11": _lambda.Runtime.PYTHON_3_11,
@@ -154,10 +171,23 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             _lambda.Runtime.PYTHON_3_11
         )
         
-        # Resolve environment variables (handles SSM parameter references)
-        resolved_environment = self._resolve_environment_variables()
+        # Lambda@Edge does NOT support environment variables
+        # Configuration must be handled via:
+        # 1. Hardcoded in the function code
+        # 2. Fetched from SSM Parameter Store at runtime
+        # 3. Other configuration mechanisms
         
-        # Create execution role with CloudWatch Logs permissions
+        # Log warning if environment variables are configured
+        if self.edge_config.environment:
+            logger.warning(
+                f"Lambda@Edge function '{function_name}' has environment variables configured, "
+                "but Lambda@Edge does not support environment variables. "
+                "The function must fetch these values from SSM Parameter Store at runtime."
+            )
+            for key, value in self.edge_config.environment.items():
+                logger.warning(f"  - {key}: {value}")
+        
+        # Create execution role with CloudWatch Logs and SSM permissions
         execution_role = iam.Role(
             self,
             f"{function_name}-Role",
@@ -173,7 +203,23 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             ]
         )
         
-        # Create the Lambda function
+        # Add SSM read permissions if environment variables reference SSM parameters
+        if self.edge_config.environment:
+            execution_role.add_to_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "ssm:GetParameter",
+                        "ssm:GetParameters",
+                        "ssm:GetParametersByPath"
+                    ],
+                    resources=[
+                        f"arn:aws:ssm:*:{cdk.Aws.ACCOUNT_ID}:parameter/*"
+                    ]
+                )
+            )
+        
+        # Create the Lambda function WITHOUT environment variables
         self.function = _lambda.Function(
             self,
             function_name,
@@ -185,7 +231,7 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             timeout=cdk.Duration.seconds(self.edge_config.timeout),
             description=self.edge_config.description,
             role=execution_role,
-            environment=resolved_environment,
+            # Lambda@Edge does NOT support environment variables
             log_retention=logs.RetentionDays.ONE_WEEK,
         )
         
@@ -255,4 +301,31 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
                         export_values[key],
                         param_path,
                         description=f"{key} for Lambda@Edge function {function_name}"
+                    )
+        
+        # Export environment variables as SSM parameters
+        # Since Lambda@Edge doesn't support environment variables, we export them
+        # to SSM so the Lambda function can fetch them at runtime
+        if self.edge_config.environment:
+            logger.info("Exporting Lambda@Edge environment variables as SSM parameters")
+            env_ssm_exports = self.edge_config.dictionary.get("environment_ssm_exports", {})
+            
+            # If no explicit environment_ssm_exports, create default SSM paths
+            if not env_ssm_exports:
+                # Auto-generate SSM parameter names based on environment variable names
+                for env_key in self.edge_config.environment.keys():
+                    # Use snake_case version of the key for SSM path
+                    ssm_key = env_key.lower().replace('_', '-')
+                    env_ssm_exports[env_key] = f"/{self.deployment.environment}/{function_name}/{ssm_key}"
+            
+            # Resolve and export environment variables to SSM
+            resolved_env = self._resolve_environment_variables()
+            for env_key, ssm_path in env_ssm_exports.items():
+                if env_key in resolved_env:
+                    self.export_ssm_parameter(
+                        self,
+                        f"env-{env_key}-param",
+                        resolved_env[env_key],
+                        ssm_path,
+                        description=f"Configuration for Lambda@Edge: {env_key}"
                     )
