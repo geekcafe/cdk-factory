@@ -40,7 +40,7 @@ def test_rds_stack_minimal():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
 
     # Create and build the stack
@@ -127,7 +127,7 @@ def test_rds_stack_full_config():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
 
     # Create and build the stack
@@ -223,7 +223,7 @@ def test_rds_import_existing():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
 
     # Create and build the stack

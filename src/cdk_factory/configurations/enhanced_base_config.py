@@ -66,9 +66,9 @@ class EnhancedBaseConfig(BaseConfig):
         return self.ssm_workload
     
     @property
-    def ssm_environment(self) -> str:
+    def ssm_environment(self) -> str | None:
         """Get the environment name for SSM parameter paths"""
-        return self._enhanced_ssm.environment if self._enhanced_ssm else "dev"
+        return self._enhanced_ssm.environment if self._enhanced_ssm else None
     
     @property
     def ssm_pattern(self) -> str:

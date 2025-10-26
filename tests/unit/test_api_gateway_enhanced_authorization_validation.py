@@ -99,7 +99,7 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
 
         deployment = DeploymentConfig(
             workload=self.base_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack - should raise ValueError
@@ -152,7 +152,7 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
 
             deployment = DeploymentConfig(
                 workload=self.base_workload.dictionary,
-                deployment={"name": "test-deployment"},
+                deployment={"name": "test-deployment", "environment": "test"},
             )
 
             # Create and build the stack - should succeed with warnings
@@ -202,7 +202,7 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
 
         deployment = DeploymentConfig(
             workload=self.base_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack - should raise ValueError
@@ -249,7 +249,7 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
 
         deployment = DeploymentConfig(
             workload=self.base_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack - should succeed
@@ -295,7 +295,7 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
 
         deployment = DeploymentConfig(
             workload=self.base_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack - should succeed with secure defaults
@@ -370,7 +370,7 @@ class TestApiGatewayEnhancedAuthorizationValidation(unittest.TestCase):
 
             deployment = DeploymentConfig(
                 workload=self.base_workload.dictionary,
-                deployment={"name": "test-deployment"},
+                deployment={"name": "test-deployment", "environment": "test"},
             )
 
             # Create and build the stack - should succeed with warnings for public endpoint

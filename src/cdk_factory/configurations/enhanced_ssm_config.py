@@ -32,10 +32,14 @@ class EnhancedSsmConfig:
         config: Dict,
         resource_type: str,
         resource_name: str,
+        workload_config: Optional[Dict] = None,
+        deployment_config: Optional[Dict] = None,
     ):
         self.config = config.get("ssm", {})
         self.resource_type = resource_type
         self.resource_name = resource_name
+        self._workload_config = workload_config or {}
+        self._deployment_config = deployment_config or {}  # Deprecated, for backward compatibility
 
     @property
     def enabled(self) -> bool:
@@ -49,11 +53,65 @@ class EnhancedSsmConfig:
 
     @property
     def environment(self) -> str:
-        env = self.config.get("environment", "${ENVIRONMENT}")
-        # Replace environment variables
-        if env.startswith("${") and env.endswith("}"):
+        """
+        Get environment - MUST be at workload level.
+        
+        Architecture: One workload deployment = One environment
+        
+        Priority:
+        1. workload_config["environment"] - **STANDARD LOCATION** (required)
+        2. workload_config["deployment"]["environment"] - Legacy (backward compatibility)
+        3. deployment_config["environment"] - Legacy (backward compatibility)
+        4. config["ssm"]["environment"] - Legacy (backward compatibility)
+        5. ${ENVIRONMENT} - Environment variable (with validation)
+        
+        NO DEFAULT to 'dev' - fails explicitly to prevent cross-environment contamination
+        
+        Best Practice:
+            {
+              "workload": {
+                "name": "my-app",
+                "environment": "dev"  ← Single source of truth
+              }
+            }
+        """
+        # 1. Try workload config first (STANDARD LOCATION)
+        env = self._workload_config.get("environment")
+        
+        # 2. Try workload["deployment"]["environment"] (backward compatibility)
+        if not env:
+            env = self._workload_config.get("deployment", {}).get("environment")
+        
+        # 3. Try deployment config (backward compatibility)
+        if not env:
+            env = self._deployment_config.get("environment")
+        
+        # 4. Fall back to SSM config (backward compatibility)
+        if not env:
+            env = self.config.get("environment", "${ENVIRONMENT}")
+        
+        # 5. Resolve environment variables
+        if isinstance(env, str) and env.startswith("${") and env.endswith("}"):
             env_var = env[2:-1]
-            return os.getenv(env_var, "dev")
+            env_value = os.getenv(env_var)
+            if not env_value:
+                raise ValueError(
+                    f"Environment variable '{env_var}' is not set. "
+                    f"Cannot default to 'dev' as this may cause cross-environment contamination. "
+                    f"Best practice: Set 'environment' at workload level in your config. "
+                    f"Alternatively, set the {env_var} environment variable."
+                )
+            return env_value
+        
+        # If still no environment, fail explicitly
+        if not env:
+            raise ValueError(
+                "Environment must be explicitly specified at workload level. "
+                "Cannot default to 'dev' as this may cause cross-environment resource contamination. "
+                "Best practice: Add 'environment' to your workload config:\n"
+                '  {"workload": {"name": "...", "environment": "dev|prod"}}'
+            )
+        
         return env
 
     @property

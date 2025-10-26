@@ -1,4 +1,5 @@
 import pytest
+import os
 from aws_cdk import App
 from aws_cdk import aws_cognito as cognito
 from cdk_factory.stack_library.cognito.cognito_stack import CognitoStack
@@ -9,11 +10,25 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 from unittest.mock import patch, MagicMock
 
 
+# Set ENVIRONMENT variable for all tests in this module
+@pytest.fixture(autouse=True)
+def set_environment():
+    """Set ENVIRONMENT variable for tests"""
+    os.environ['ENVIRONMENT'] = 'test'
+    yield
+    if 'ENVIRONMENT' in os.environ:
+        del os.environ['ENVIRONMENT']
+
+
 def test_cognito_stack_minimal():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "test",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(
@@ -30,7 +45,7 @@ def test_cognito_stack_minimal():
 
     dc = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
 
     stack = CognitoStack(app, "TestCognitoStack")
@@ -49,7 +64,11 @@ def test_cognito_stack_full_config():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "test",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(
@@ -87,7 +106,7 @@ def test_cognito_stack_full_config():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     workload = dummy_workload
 
@@ -116,7 +135,11 @@ def test_cognito_stack_custom_attributes():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "test",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
 
@@ -146,7 +169,7 @@ def test_cognito_stack_custom_attributes():
 
     dc = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
 
     # Create the stack and build it
@@ -185,7 +208,11 @@ def test_cognito_stack_custom_attributes_validation():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "test",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
 
@@ -204,7 +231,7 @@ def test_cognito_stack_custom_attributes_validation():
 
     dc = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
 
     # Create the stack

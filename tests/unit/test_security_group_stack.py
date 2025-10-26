@@ -127,7 +127,7 @@ def test_security_group_stack_synth(dummy_workload):
     # Create the deployment config
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "test-deployment"},
+        deployment={"name": "test-deployment", "environment": "test"},
     )
 
     # Create and build the stack using our testable subclass
@@ -224,7 +224,7 @@ def test_security_group_with_peer_rules(dummy_workload):
     # Create the deployment config
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "test-deployment"},
+        deployment={"name": "test-deployment", "environment": "test"},
     )
 
     # Create and build the stack using our testable subclass

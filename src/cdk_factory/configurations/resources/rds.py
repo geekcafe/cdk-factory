@@ -55,7 +55,9 @@ class RdsConfig(EnhancedBaseConfig):
     @property
     def secret_name(self) -> str:
         """Name of the secret to store credentials"""
-        env_name = self.__deployment.environment if self.__deployment else "dev"
+        env_name = self.__deployment.environment if self.__deployment else None
+        if not env_name:
+            raise ValueError("No environment found for RDS secret name.  Please add an environment to the deployment.")
         return self.__config.get("secret_name", f"/{env_name}/db/creds")
 
     @property

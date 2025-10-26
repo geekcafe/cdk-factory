@@ -1,5 +1,6 @@
 from typing import Any, List, Mapping, Optional
 
+import aws_cdk as cdk
 from aws_cdk import Duration
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cloudfront as cloudfront
@@ -257,10 +258,32 @@ class CloudFrontDistributionConstruct(Construct):
                 logger.info("IP gating enabled via convenience flag - adding Lambda@Edge association")
                 
                 # Extract environment and workload name from config
-                # These come from the workload/deployment configuration
+                # Architecture: One workload deployment = One environment
                 workload_dict = self.stack_config.workload
-                environment = workload_dict.get("deployment", {}).get("environment", "dev")
-                workload_name = workload_dict.get("name", "workload")
+                
+                # CRITICAL: Environment must be at workload level - no defaults!
+                # Defaulting to "dev" is dangerous and can cause cross-environment contamination
+                # Try workload["environment"] first (STANDARD), then workload["deployment"]["environment"] (legacy)
+                environment = workload_dict.get("environment")
+                if not environment:
+                    # Backward compatibility: try deployment.environment
+                    environment = workload_dict.get("deployment", {}).get("environment")
+                
+                if not environment:
+                    raise ValueError(
+                        "Environment must be explicitly specified at workload level. "
+                        "Cannot default to 'dev' as this may cause cross-environment resource contamination. "
+                        "Best practice: Add 'environment' to your workload config:\n"
+                        '  {\"workload\": {\"name\": \"...\", \"environment\": \"dev|prod\"}}\n'
+                        "Legacy: 'deployment.environment' is also supported for backward compatibility."
+                    )
+                
+                workload_name = workload_dict.get("name")
+                if not workload_name:
+                    raise ValueError(
+                        "Workload name must be specified in configuration. "
+                        "Please set 'name' in your workload config."
+                    )
                 
                 # Auto-derive SSM parameter path or use override
                 default_ssm_path = f"/{environment}/{workload_name}/lambda-edge/version-arn"
@@ -291,14 +314,21 @@ class CloudFrontDistributionConstruct(Construct):
                     ssm_param_path = lambda_arn[6:-2]  # Extract parameter path
                     logger.info(f"Importing Lambda ARN from SSM parameter: {ssm_param_path}")
                     
-                    # Import SSM parameter - this creates a reference that resolves at deployment time
-                    param = ssm.StringParameter.from_string_parameter_name(
+                    # CRITICAL: Import SSM parameter using CloudFormation parameter type
+                    # This ensures CloudFormation validates the parameter EXISTS at deployment time
+                    # If the parameter is missing, CloudFormation will FAIL the deployment
+                    # This prevents accidentally using wrong/missing Lambda@Edge functions
+                    
+                    # Create CloudFormation parameter that resolves SSM value
+                    cfn_param = cdk.CfnParameter(
                         self,
-                        f"lambda-edge-arn-{hash(ssm_param_path) % 10000}",
-                        ssm_param_path
+                        f"lambda-edge-arn-{hash(ssm_param_path) % 10000}-param",
+                        type="AWS::SSM::Parameter::Value<String>",
+                        default=ssm_param_path,
+                        description=f"Lambda@Edge function ARN from SSM: {ssm_param_path}"
                     )
-                    lambda_arn = param.string_value
-                    logger.info(f"Lambda ARN will be resolved from SSM: {ssm_param_path}")
+                    lambda_arn = cfn_param.value_as_string
+                    logger.info(f"Lambda ARN will be resolved from SSM (validated at deploy): {ssm_param_path}")
                 
                 # Map event type string to CloudFront enum
                 event_type_map = {

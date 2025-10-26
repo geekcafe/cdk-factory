@@ -31,21 +31,39 @@ class EnhancedSsmParameterMixin:
     - Enhanced error handling and logging
     """
     
-    def setup_enhanced_ssm_integration(self, scope: Construct, config, resource_type: str = None, resource_name: str = None):
+    def setup_enhanced_ssm_integration(
+        self, 
+        scope: Construct, 
+        config, 
+        resource_type: str = None, 
+        resource_name: str = None,
+        workload_config = None,
+        deployment_config = None  # Deprecated, for backward compatibility
+    ):
         """
         Setup enhanced SSM integration for a resource.
+        
+        Architecture: One workload deployment = One environment
+        Environment should be defined at workload level.
         
         Args:
             scope: The CDK construct scope
             config: Configuration object with SSM settings
             resource_type: Type of resource (e.g., 'api_gateway', 'cognito', 'dynamodb')
             resource_name: Name of the resource instance
+            workload_config: Workload configuration (PRIMARY - contains environment)
+            deployment_config: Deployment configuration (DEPRECATED - for backward compatibility)
         """
         config_dict = config if isinstance(config, dict) else config.dictionary
+        workload_dict = workload_config.dictionary if hasattr(workload_config, 'dictionary') else (workload_config or {})
+        deployment_dict = deployment_config.dictionary if hasattr(deployment_config, 'dictionary') else (deployment_config or {})
+        
         self.enhanced_ssm_config = EnhancedSsmConfig(
             config=config_dict,
             resource_type=resource_type or "unknown",
-            resource_name=resource_name or "default"
+            resource_name=resource_name or "default",
+            workload_config=workload_dict,
+            deployment_config=deployment_dict  # For backward compatibility
         )
         self.scope = scope
         

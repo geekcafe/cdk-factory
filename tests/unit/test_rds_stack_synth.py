@@ -180,7 +180,7 @@ def test_rds_stack_synth(dummy_workload):
     # Create the deployment config
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "test-deployment"},
+        deployment={"name": "test-deployment", "environment": "test"},
     )
 
     # Create and build the stack
@@ -270,7 +270,7 @@ def test_rds_stack_full_config(dummy_workload):
     # Create the deployment config
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "test-deployment"},
+        deployment={"name": "test-deployment", "environment": "test"},
     )
 
     # Create and build the stack

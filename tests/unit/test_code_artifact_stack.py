@@ -33,7 +33,7 @@ def test_code_artifact_stack_minimal():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     
     # Create the stack
@@ -80,7 +80,7 @@ def test_code_artifact_stack_full_config():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     
     # Create the stack

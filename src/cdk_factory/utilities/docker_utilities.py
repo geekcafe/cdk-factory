@@ -206,15 +206,16 @@ class DockerUtilities:
 def main():
     print("Starting docker build utilities")
     ecr_uri: str | None = os.getenv("ECR_URI")
-    environment: str = os.getenv("ENVIRONMENT") or "dev"
+    environment: str = os.getenv("ENVIRONMENT")
     tag: str = os.getenv("DOCKER_TAG") or environment
-    branch: str = os.getenv("GIT_BRANCH") or "dev"
     version: str = os.getenv("VERSION") or "0.0.0"
     aws_profile: str | None = os.getenv("AWS_PROFILE")
     aws_region: str | None = os.getenv("DEPLOYMENT_AWS_REGION") or os.getenv(
         "AWS_REGION"
     )
     docker_file: str | None = os.getenv("DOCKER_FILE")
+
+    
 
     # print all environment vars
     print("Printing all environment vars")
@@ -223,6 +224,10 @@ def main():
         print(f"{key}: {value}")
     print("-----------------------------")
 
+    if not environment:
+        raise RuntimeError("Missing environment. To fix add an environment var of ENVIRONMENT")
+    if not tag:
+        raise RuntimeError("Missing tag. To fix add an environment var of DOCKER_TAG")
     if not ecr_uri:
         raise RuntimeError("Missing ECR URI. To fix add an environment var of ECR_URI")
     if not docker_file:

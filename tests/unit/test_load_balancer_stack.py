@@ -62,7 +62,7 @@ class TestLoadBalancerStack(unittest.TestCase):
         )
         deployment = DeploymentConfig(
             workload=dummy_workload.dictionary,
-            deployment={"name": "dummy-deployment"},
+            deployment={"name": "dummy-deployment", "environment": "test"},
         )
 
         # Create and build the stack
@@ -158,7 +158,7 @@ class TestLoadBalancerStack(unittest.TestCase):
         )
         deployment = DeploymentConfig(
             workload=dummy_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack
@@ -253,7 +253,7 @@ class TestLoadBalancerStack(unittest.TestCase):
         )
         deployment = DeploymentConfig(
             workload=dummy_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack
@@ -325,7 +325,7 @@ class TestLoadBalancerStack(unittest.TestCase):
         )
         deployment = DeploymentConfig(
             workload=dummy_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack
@@ -360,7 +360,7 @@ class TestLoadBalancerStack(unittest.TestCase):
                         "devops": {"name": "test-devops"},
                     }
                 },
-                deployment={"name": "test-deployment"},
+                deployment={"name": "test-deployment", "environment": "test"},
             ),
         )
 
@@ -406,7 +406,7 @@ class TestLoadBalancerStack(unittest.TestCase):
                         "devops": {"name": "test-devops"},
                     }
                 },
-                deployment={"name": "test-deployment"},
+                deployment={"name": "test-deployment", "environment": "test"},
             ),
         )
 

@@ -34,7 +34,7 @@ def test_route53_stack_minimal():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     
     # Create and build the stack
@@ -107,7 +107,7 @@ def test_route53_stack_full_config():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     
     # Create and build the stack
@@ -180,7 +180,7 @@ def test_route53_stack_import_existing():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     
     # Create and build the stack

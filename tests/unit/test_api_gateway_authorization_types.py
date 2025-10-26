@@ -81,7 +81,7 @@ class TestApiGatewayAuthorizationTypes(unittest.TestCase):
 
         deployment = DeploymentConfig(
             workload=self.base_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack
@@ -172,7 +172,7 @@ class TestApiGatewayAuthorizationTypes(unittest.TestCase):
 
         deployment = DeploymentConfig(
             workload=self.base_workload.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
         # Create and build the stack

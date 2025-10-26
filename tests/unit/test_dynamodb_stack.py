@@ -1,4 +1,5 @@
 import pytest
+import os
 from aws_cdk import App, Environment
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import RemovalPolicy
@@ -10,12 +11,27 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 from cdk_factory.stack.stack_factory import StackFactory
 
 
+# Set ENVIRONMENT variable for all tests in this module
+@pytest.fixture(autouse=True)
+def set_environment():
+    """Set ENVIRONMENT variable for tests"""
+    os.environ['ENVIRONMENT'] = 'dev'
+    yield
+    # Cleanup not strictly necessary but good practice
+    if 'ENVIRONMENT' in os.environ:
+        del os.environ['ENVIRONMENT']
+
+
 def test_dynamodb_stack_minimal():
     """Test creating a DynamoDB stack with minimal configuration"""
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "dev",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(
@@ -53,7 +69,11 @@ def test_dynamodb_stack_full_config():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "dev",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(
@@ -99,7 +119,11 @@ def test_dynamodb_stack_factory():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "dev",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(
@@ -154,7 +178,11 @@ def test_dynamodb_stack_existing_table():
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "dev",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(
@@ -168,7 +196,7 @@ def test_dynamodb_stack_existing_table():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     stack = DynamoDBStack(app, "ExistingDynamoDBStack")
     stack.build(stack_config, deployment, dummy_workload)
@@ -183,12 +211,15 @@ def test_dynamodb_stack_existing_table():
 
 
 def test_dynamodb_stack_removal_policy():
-    """Test that removal policy is set correctly based on environment"""
-    # Test dev environment (should be DESTROY)
+    """Test that removal policy is set based on environment"""
     app = App()
     dummy_workload = WorkloadConfig(
         {
-            "workload": {"name": "dummy-workload", "devops": {"name": "dummy-devops"}},
+            "workload": {
+                "name": "dummy-workload",
+                "environment": "dev",  # Workload-level environment (best practice)
+                "devops": {"name": "dummy-devops"}
+            },
         }
     )
     stack_config = StackConfig(

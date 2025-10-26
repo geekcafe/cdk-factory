@@ -28,7 +28,7 @@ def test_api_gateway_stack_minimal():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     stack = ApiGatewayStack(app, "TestApiGatewayStack")
     stack.build(stack_config, deployment, dummy_workload)
@@ -92,7 +92,7 @@ def test_api_gateway_stack_full_config():
     )
     deployment = DeploymentConfig(
         workload=dummy_workload.dictionary,
-        deployment={"name": "dummy-deployment"},
+        deployment={"name": "dummy-deployment", "environment": "test"},
     )
     stack = ApiGatewayStack(app, "FullApiGatewayStack")
     stack.build(stack_config, deployment, dummy_workload)

@@ -54,7 +54,7 @@ class LambdaDockerConstruct(Construct):
         scope: Construct,
         deployment: Deployment,
         lambda_config: LambdaFunctionConfig,
-        tag_or_digest: str | None = "dev",
+        tag_or_digest: str | None = None,
         ecr_repo_name: str | None = None,
         ecr_arn: str | None = None,
         role: iam.Role | None = None,
@@ -70,7 +70,8 @@ class LambdaDockerConstruct(Construct):
         Returns:
             aws_lambda.DockerImageFunction: Docker Image Function Reference
         """
-        assert tag_or_digest
+        if not tag_or_digest:
+            raise ValueError("tag_or_digest is required for a docker image function")
 
         if not role:
             role = LambdaRoleConstruct.Role(

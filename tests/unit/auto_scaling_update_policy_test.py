@@ -42,7 +42,7 @@ class TestAutoScalingUpdatePolicy(unittest.TestCase):
         # Create a deployment config
         self.deployment_config = DeploymentConfig(
             workload=self.workload_config.dictionary,
-            deployment={"name": "test-deployment"},
+            deployment={"name": "test-deployment", "environment": "test"},
         )
 
     def test_update_policy_applied_correctly(self):
