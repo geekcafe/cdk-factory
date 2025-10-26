@@ -368,10 +368,21 @@ class LambdaEdgeStack(IStack, EnhancedSsmParameterMixin):
             resolved_env = self._resolve_environment_variables()
             for env_key, ssm_path in env_ssm_exports.items():
                 if env_key in resolved_env:
+                    env_value = resolved_env[env_key]
+                    
+                    # Handle empty values - SSM doesn't allow empty strings
+                    # Use sentinel value "NONE" to indicate explicitly unset
+                    if not env_value or (isinstance(env_value, str) and env_value.strip() == ""):
+                        env_value = "NONE"
+                        logger.info(
+                            f"Environment variable {env_key} is empty - setting SSM parameter to 'NONE'. "
+                            f"Lambda function should treat 'NONE' as unset/disabled."
+                        )
+                    
                     self.export_ssm_parameter(
                         self,
                         f"env-{env_key}-param",
-                        resolved_env[env_key],
+                        env_value,
                         ssm_path,
                         description=f"Configuration for Lambda@Edge: {env_key}"
                     )

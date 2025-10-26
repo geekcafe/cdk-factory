@@ -20,12 +20,14 @@ def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1') -> str:
     Fetch SSM parameter with caching.
     Lambda@Edge cannot use environment variables, so we fetch from SSM.
     
+    The sentinel value 'NONE' indicates an explicitly unset/disabled parameter.
+    
     Args:
         parameter_name: Name of the SSM parameter
         region: AWS region (default us-east-1)
     
     Returns:
-        Parameter value
+        Parameter value, or empty string if value is 'NONE'
     """
     global ssm
     if ssm is None:
@@ -33,7 +35,14 @@ def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1') -> str:
     
     try:
         response = ssm.get_parameter(Name=parameter_name, WithDecryption=False)
-        return response['Parameter']['Value']
+        value = response['Parameter']['Value']
+        
+        # Treat 'NONE' sentinel as empty/unset
+        if value == 'NONE':
+            print(f"SSM parameter {parameter_name} is set to 'NONE' (explicitly disabled)")
+            return ''
+        
+        return value
     except Exception as e:
         print(f"Error fetching SSM parameter {parameter_name}: {str(e)}")
         raise
@@ -140,15 +149,16 @@ def lambda_handler(event, context):
         gate_enabled = get_ssm_parameter(f'/{env}/{function_name}/gate-enabled', 'us-east-1')
         
         # If gating is disabled, allow all traffic
-        if gate_enabled.lower() not in ('true', '1', 'yes'):
-            print(f"IP gating is disabled (GATE_ENABLED={gate_enabled})")
+        # Empty string (from 'NONE' sentinel) is treated as disabled
+        if not gate_enabled or gate_enabled.lower() not in ('true', '1', 'yes'):
+            print(f"IP gating is disabled (GATE_ENABLED={gate_enabled or 'NONE'})")
             return request
         
         # Get allowed CIDRs and maintenance host
         allow_cidrs_str = get_ssm_parameter(f'/{env}/{function_name}/allow-cidrs', 'us-east-1')
         maint_cf_host = get_ssm_parameter(f'/{env}/{function_name}/maint-cf-host', 'us-east-1')
         
-        # Parse allowed CIDRs
+        # Parse allowed CIDRs (empty string results in empty list)
         allowed_cidrs = [cidr.strip() for cidr in allow_cidrs_str.split(',') if cidr.strip()]
         
         # Get client IP
