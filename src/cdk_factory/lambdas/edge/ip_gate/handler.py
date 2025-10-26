@@ -140,8 +140,16 @@ def lambda_handler(event, context):
         print(f"Fallback: environment={env}, function_name={function_base_name}")
     
     # Full function name for SSM paths
+    # Lambda@Edge replicas prepend region (e.g., "us-east-1.tech-talk-dev-ip-gate")
+    # Strip the region prefix to get the original function name
     function_name = context.function_name
+    if '.' in function_name and function_name.split('.')[0].startswith('us-'):
+        # Strip region prefix (e.g., "us-east-1." -> "tech-talk-dev-ip-gate")
+        function_name = '.'.join(function_name.split('.')[1:])
+        print(f"Stripped region prefix from function name: {function_name}")
+    
     print(f"Lambda function ARN: {context.invoked_function_arn}")
+    print(f"Using function name for SSM lookups: {function_name}")
     
     try:
         # Fetch configuration from SSM Parameter Store
