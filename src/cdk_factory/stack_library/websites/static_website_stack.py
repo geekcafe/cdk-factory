@@ -261,6 +261,18 @@ class StaticWebSiteStack(IStack):
                 description=f"CloudFront distribution ID for {stack_config.name}",
             )
         
+        # Export DNS alias (first alias) if configured
+        if "dns_alias" in ssm_exports and cloudfront_distribution.aliases:
+            # Export the first alias (primary domain)
+            primary_alias = cloudfront_distribution.aliases[0] if isinstance(cloudfront_distribution.aliases, list) else cloudfront_distribution.aliases
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportDnsAlias",
+                value=primary_alias,
+                parameter_name=ssm_exports["dns_alias"],
+                description=f"Primary DNS alias for {stack_config.name}",
+            )
+        
         logger.info(f"Exported {len(ssm_exports)} SSM parameters for stack {stack_config.name}")
 
     def __get_version_number(self, assets_path: str) -> str:

@@ -108,7 +108,7 @@ Add to your Lambda@Edge configuration:
     "environment": {
       "GATE_ENABLED": "true",
       "ALLOW_CIDRS": "203.0.113.0/24",
-      "MAINT_CF_HOST": "maintenance.example.com",
+      "DNS_ALIAS": "maintenance.example.com",
       "RESPONSE_MODE": "redirect"  // or "proxy"
     }
   }

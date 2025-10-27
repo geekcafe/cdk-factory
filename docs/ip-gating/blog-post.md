@@ -506,7 +506,7 @@ With CDK Factory, implementing IP gating is trivial:
         "environment_variables": {
           "GATE_ENABLED_PARAM": "/dev/my-app/gate-enabled",
           "ALLOWED_IPS_PARAM": "/dev/my-app/allow-cidrs",
-          "MAINT_CF_HOST": "${ssm:/dev/my-app/maint-site/cloudfront-domain}"
+          "DNS_ALIAS": "${ssm:/dev/my-app/maint-site/cloudfront-domain}"
         }
       }
     },

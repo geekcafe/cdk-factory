@@ -54,7 +54,7 @@ def create_ssm_params(gate_enabled='true', allow_cidrs='', maint_host='maintenan
     return {
         '/dev/tech-talk-dev-ip-gate/gate-enabled': gate_enabled,
         '/dev/tech-talk-dev-ip-gate/allow-cidrs': allow_cidrs,
-        '/dev/tech-talk-dev-ip-gate/maint-cf-host': maint_host,
+        '/dev/tech-talk-dev-ip-gate/dns-alias': maint_host,
         '/dev/tech-talk-dev-ip-gate/response-mode': response_mode
     }
 

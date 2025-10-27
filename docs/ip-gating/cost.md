@@ -41,7 +41,7 @@ IP gating doesn't add CloudFront costs beyond what you'd already pay:
 - **Parameter size**: Up to 4KB per parameter
 
 For IP gating, you typically have:
-- 1-3 parameters (gate-enabled, allow-cidrs, maint-cf-host)
+- 1-3 parameters (gate-enabled, allow-cidrs, dns-alias)
 - 1-10 API calls per deployment
 - **Effective cost**: $0.00/month
 
