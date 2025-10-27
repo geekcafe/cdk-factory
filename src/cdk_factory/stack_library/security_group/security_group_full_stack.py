@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 
 import aws_cdk as cdk
-from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ec2 as ec2, aws_ssm as ssm
 from aws_lambda_powertools import Logger
 from constructs import Construct
 
@@ -31,6 +31,8 @@ class SecurityGroupsStack(IStack):
         # Flag to determine if we're in test mode
         self._test_mode = False
         self._vpc = None
+        # SSM imported values
+        self.ssm_imported_values: Dict[str, str] = {}
 
     def build(
         self,
@@ -56,6 +58,9 @@ class SecurityGroupsStack(IStack):
             config=stack_config.dictionary.get("security_group", {}),
             deployment=deployment,
         )
+
+        # Process SSM imports first
+        self._process_ssm_imports()
 
         env_name = self.deployment.environment
 
@@ -220,17 +225,65 @@ class SecurityGroupsStack(IStack):
             export_name=f"{self.deployment.environment}-{self.workload.name}-WebMonitoringSecurityGroup",
         )
 
+    def _process_ssm_imports(self) -> None:
+        """
+        Process SSM imports from configuration.
+        Follows the same pattern as API Gateway and CloudFront stacks.
+        """
+        ssm_imports = self.sg_config.ssm_imports
+        
+        if not ssm_imports:
+            logger.debug("No SSM imports configured for Security Groups")
+            return
+        
+        logger.info(f"Processing {len(ssm_imports)} SSM imports for Security Groups")
+        
+        for param_key, param_path in ssm_imports.items():
+            try:
+                # Ensure parameter path starts with /
+                if not param_path.startswith('/'):
+                    param_path = f"/{param_path}"
+                
+                # Create unique construct ID from parameter path
+                construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                
+                # Import SSM parameter - this creates a CDK token that resolves at deployment time
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self, construct_id, param_path
+                )
+                
+                # Store the token value for use in configuration
+                self.ssm_imported_values[param_key] = param.string_value
+                logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to import SSM parameter {param_key} from {param_path}: {e}")
+                raise
+
     @property
     def vpc(self) -> ec2.IVpc:
         """Get the VPC for the Security Group"""
         if self._vpc:
             return self._vpc
-        if self.sg_config.vpc_id:
+        
+        # Check SSM imported values first (tokens from SSM parameters)
+        if "vpc_id" in self.ssm_imported_values:
+            vpc_id = self.ssm_imported_values["vpc_id"]
+            
+            # Build VPC attributes
+            vpc_attrs = {
+                "vpc_id": vpc_id,
+                "availability_zones": ["us-east-1a", "us-east-1b"]
+            }
+            
+            # Use from_vpc_attributes() instead of from_lookup() because SSM imports return tokens
+            # from_lookup() requires concrete values and queries AWS during synthesis
+            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
+        elif self.sg_config.vpc_id:
             self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
         elif self.workload.vpc_id:
             self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
-
         else:
-            raise ValueError("VPC ID is not defined in the configuration.")
+            raise ValueError("VPC ID is not defined in the configuration or SSM imports.")
 
         return self._vpc

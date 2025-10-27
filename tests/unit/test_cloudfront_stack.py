@@ -77,11 +77,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestMinimalCloudFront",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify CloudFront Distribution exists
@@ -156,11 +158,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestCustomOrigin",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify custom origin configuration
@@ -217,11 +221,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestAliases",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify aliases
@@ -281,11 +287,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestCachePolicy",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify cache policy is configured
@@ -341,11 +349,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestLambdaEdge",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify Lambda@Edge association
@@ -409,11 +419,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestErrorResponses",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify error responses
@@ -466,11 +478,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestSSMExports",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify SSM parameters exist
@@ -508,14 +522,14 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestNoOrigins",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-
-        # Build should raise ValueError for missing origins
         with pytest.raises(ValueError, match="At least one origin is required"):
-            stack.build()
+            stack.build(
+                stack_config=stack_config,
+                deployment=deployment_config,
+                workload=workload_config,
+            )
 
     def test_cloudfront_with_price_class(self, app, deployment_config, workload_config):
         """Test CloudFront with custom price class"""
@@ -542,11 +556,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestPriceClass",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify price class
@@ -586,11 +602,13 @@ class TestCloudFrontStack:
         stack = CloudFrontStack(
             app,
             "TestHTTPVersion",
-            stack_config=stack_config,
-            deployment=deployment_config,
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build()
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
         template = Template.from_stack(stack)
 
         # Verify HTTP version (CloudFormation uses lowercase without underscores)

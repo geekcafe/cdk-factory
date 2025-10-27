@@ -61,3 +61,8 @@ class SecurityGroupFullStackConfig:
     def tags(self) -> Dict[str, str]:
         """Tags to apply to the Security Group"""
         return self.__config.get("tags", {})
+
+    @property
+    def ssm_imports(self) -> Dict[str, str]:
+        """SSM parameter imports for the Security Group"""
+        return self.__config.get("ssm_imports", {})

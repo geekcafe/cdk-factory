@@ -88,18 +88,33 @@ class VpcStack(IStack, EnhancedSsmParameterMixin):
         # Configure NAT gateways
         nat_gateway_count = self.vpc_config.nat_gateways.get("count", 1)
 
-        # Create the VPC
-        vpc = ec2.Vpc(
-            self,
-            vpc_name,
-            vpc_name=vpc_name,
-            cidr=self.vpc_config.cidr,
-            max_azs=self.vpc_config.max_azs,
-            nat_gateways=nat_gateway_count,
-            subnet_configuration=subnet_configuration,
-            enable_dns_hostnames=self.vpc_config.enable_dns_hostnames,
-            enable_dns_support=self.vpc_config.enable_dns_support,
-            gateway_endpoints=(
+        # Get explicit availability zones to avoid dummy AZs in pipeline synthesis
+        # When CDK synthesizes in a pipeline context, it doesn't have access to real AZs
+        # So we explicitly specify them based on the deployment region
+        availability_zones = None
+        if self.deployment:
+            region = self.deployment.region or "us-east-1"
+            # Explicitly list AZs for the region to avoid dummy values
+            max_azs = self.vpc_config.max_azs or 2
+            if region == "us-east-1":
+                availability_zones = [f"us-east-1{chr(97+i)}" for i in range(max_azs)]  # us-east-1a, us-east-1b, etc.
+            elif region == "us-east-2":
+                availability_zones = [f"us-east-2{chr(97+i)}" for i in range(max_azs)]
+            elif region == "us-west-1":
+                availability_zones = [f"us-west-1{chr(97+i)}" for i in range(max_azs)]
+            elif region == "us-west-2":
+                availability_zones = [f"us-west-2{chr(97+i)}" for i in range(max_azs)]
+        
+        # Build VPC properties
+        # Note: CDK doesn't allow both 'availability_zones' and 'max_azs' - use one or the other
+        vpc_props = {
+            "vpc_name": vpc_name,
+            "cidr": self.vpc_config.cidr,
+            "nat_gateways": nat_gateway_count,
+            "subnet_configuration": subnet_configuration,
+            "enable_dns_hostnames": self.vpc_config.enable_dns_hostnames,
+            "enable_dns_support": self.vpc_config.enable_dns_support,
+            "gateway_endpoints": (
                 {
                     "S3": ec2.GatewayVpcEndpointOptions(
                         service=ec2.GatewayVpcEndpointAwsService.S3
@@ -108,7 +123,16 @@ class VpcStack(IStack, EnhancedSsmParameterMixin):
                 if self.vpc_config.enable_s3_endpoint
                 else None
             ),
-        )
+        }
+        
+        # Use either availability_zones or max_azs, not both
+        if availability_zones:
+            vpc_props["availability_zones"] = availability_zones
+        else:
+            vpc_props["max_azs"] = self.vpc_config.max_azs
+        
+        # Create the VPC
+        vpc = ec2.Vpc(self, vpc_name, **vpc_props)
 
         # Add interface endpoints if specified
         if self.vpc_config.enable_interface_endpoints:

@@ -26,11 +26,16 @@ class Route53Config:
     def hosted_zone_id(self) -> Optional[str]:
         """Hosted zone ID"""
         return self.__config.get("hosted_zone_id")
+    
+    @property
+    def existing_hosted_zone_id(self) -> Optional[str]:
+        """Existing hosted zone ID (alias for hosted_zone_id)"""
+        return self.__config.get("existing_hosted_zone_id") or self.__config.get("hosted_zone_id")
 
     @property
     def domain_name(self) -> Optional[str]:
-        """Domain name"""
-        return self.__config.get("domain_name")
+        """Domain name (also checks hosted_zone_name)"""
+        return self.__config.get("domain_name") or self.__config.get("hosted_zone_name")
 
     @property
     def record_names(self) -> List[str]:
