@@ -153,6 +153,66 @@ For very high traffic sites, AWS WAF might be an alternative:
 **Break-even Analysis:**
 Lambda@Edge remains more cost-effective than WAF until you reach extremely high traffic (>100M requests/month). Additionally, Lambda@Edge offers more flexibility for custom logic.
 
+## Response Mode Cost Comparison
+
+The IP gating function supports two response modes when blocking unauthorized IPs, each with different cost implications:
+
+### Redirect Mode (Default)
+
+**Cost Profile:**
+```
+Monthly Traffic: 1M requests (all blocked)
+Memory: 128MB
+Avg Duration: 2-5ms
+```
+
+**Calculation:**
+- Request cost: (1M / 1M) × $0.60 = $0.60
+- Duration cost: (1M × 0.003s × 0.125GB) × $0.00005001 ≈ $0.02
+- **Total: ~$0.62/month**
+
+**Characteristics:**
+- Fast execution (~2-5ms)
+- Minimal compute cost
+- Returns HTTP 302 redirect
+- User sees lockout URL in browser
+
+### Proxy Mode
+
+**Cost Profile:**
+```
+Monthly Traffic: 1M requests (all blocked)
+Memory: 128MB
+Avg Duration: 100-200ms (includes HTTP fetch)
+```
+
+**Calculation:**
+- Request cost: (1M / 1M) × $0.60 = $0.60
+- Duration cost: (1M × 0.150s × 0.125GB) × $0.00005001 ≈ $0.94
+- **Total: ~$1.54/month**
+
+**Characteristics:**
+- Slower execution (~100-200ms)
+- Higher compute cost (50x more duration)
+- Fetches and returns lockout page content
+- User stays on original URL
+
+### Cost Comparison Summary
+
+| Traffic/Month | Redirect Mode | Proxy Mode | Difference |
+|---------------|---------------|------------|------------|
+| 10K | $0.01 | $0.02 | +100% |
+| 100K | $0.06 | $0.15 | +150% |
+| 1M | $0.62 | $1.54 | +148% |
+| 10M | $6.20 | $15.40 | +148% |
+
+**Key Takeaway:** Proxy mode costs approximately **2.5x more** than redirect mode due to longer execution times (fetching and returning content). However, both remain very affordable for typical use cases.
+
+**Recommendation:**
+- **Use redirect mode by default** - Lower cost, faster performance
+- **Switch to proxy mode for scheduled maintenance** - Better UX, worth the small extra cost
+- **Changes via SSM take 5 minutes** - No redeployment needed
+
 ## Monitoring Your Actual Costs
 
 ### Method 1: CloudWatch Metrics

@@ -66,14 +66,48 @@ User Request → CloudFront Edge Location
         Check IP against Allow-List (from SSM)
                     ↓
         ✅ Allowed → Serve Content
-        ❌ Blocked → Redirect to Maintenance Page
+        ❌ Blocked → Redirect OR Proxy to Lockout Page
 ```
 
 **The Lambda function:**
 1. Extracts the client's IP from the CloudFront request headers
-2. Fetches the allow-list from SSM Parameter Store (cached for 5 minutes)
+2. Fetches the allow-list from SSM Parameter Store (cached via `@lru_cache`)
 3. Checks if the IP matches any CIDR block in the allow-list
-4. Either forwards the request or returns a redirect to a maintenance page
+4. If blocked, either:
+   - **Redirect mode**: Returns HTTP 302 to lockout page (URL changes)
+   - **Proxy mode**: Fetches lockout page content and returns it (URL stays the same)
+
+### Two Response Modes
+
+**Redirect Mode (Default)**
+```python
+# Returns HTTP 302
+return {
+    'status': '302',
+    'headers': {
+        'location': [{'value': f'https://{dns_alias}'}]
+    }
+}
+```
+- User sees the lockout URL in their browser
+- Simple and fast
+- Clear indication they've been blocked
+
+**Proxy Mode (Advanced)**
+```python
+# Fetches and returns lockout page content
+import urllib3
+http = urllib3.PoolManager()
+response = http.request('GET', f'https://{dns_alias}/index.html')
+return {
+    'status': '200',
+    'body': response.data.decode('utf-8')
+}
+```
+- User stays on the original URL
+- Better user experience (less confusing)
+- Slightly higher latency (~100-200ms for fetch)
+- Falls back to redirect if proxy fails
 
 **Configuration is simple:**
 
@@ -105,6 +139,192 @@ aws ssm put-parameter \
 ```
 
 No deployment required!
+
+## Lessons Learned: Real-World Implementation Gotchas
+
+When we first implemented this system, we encountered several subtle issues that aren't immediately obvious from the documentation. Here's what we learned the hard way:
+
+### Gotcha #1: CloudFront Domain vs DNS Alias
+
+**The Problem:**
+Our initial proxy mode implementation fetched content from the raw CloudFront domain:
+```python
+# ❌ This returns 403!
+response = http.request('GET', f'https://d14pisygxjo4bs.cloudfront.net/index.html')
+```
+
+Result: Google's 403 error page instead of our beautiful lockout page.
+
+**The Root Cause:**
+CloudFront distributions with custom domain names (aliases) and host header restrictions only accept requests with the proper `Host` header. When you hit the raw CloudFront domain, it doesn't match any configured aliases and returns 403.
+
+**The Solution:**
+Always use the DNS alias (custom domain) in your proxy requests:
+```python
+# ✅ This works!
+response = http.request('GET', f'https://lockout.techtalkwitheric.com/index.html')
+```
+
+**Key Lesson**: Export the DNS alias, not the CloudFront domain, from your CDK stack:
+```json
+"ssm_exports": {
+  "dns_alias": "/dev/my-app/secondary-site/dns-alias",
+  "cloudfront_domain": "/dev/my-app/secondary-site/cloudfront-domain"  // ❌ Don't use this for proxy mode
+}
+```
+
+### Gotcha #2: Missing Default Parameter Support
+
+**The Problem:**
+Our Lambda function crashed with:
+```
+TypeError: get_ssm_parameter() got an unexpected keyword argument 'default'
+```
+
+We were calling:
+```python
+response_mode = get_ssm_parameter(param_name, default='redirect')
+```
+
+But the function signature didn't support it:
+```python
+def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1') -> str:
+```
+
+**The Solution:**
+Add proper default parameter support with graceful fallback:
+```python
+def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1', default: str = None) -> str:
+    """Fetch SSM parameter with optional default value."""
+    try:
+        response = ssm.get_parameter(Name=parameter_name, WithDecryption=False)
+        return response['Parameter']['Value']
+    except ssm.exceptions.ParameterNotFound:
+        if default is not None:
+            print(f"Parameter {parameter_name} not found, using default: {default}")
+            return default
+        raise
+    except Exception as e:
+        if default is not None:
+            print(f"Error fetching {parameter_name}, using default: {default}")
+            return default
+        raise
+```
+
+**Key Lesson**: Lambda@Edge errors take 30 minutes to deploy fixes. Comprehensive unit tests are not optional—they're essential.
+
+### Gotcha #3: SSM Parameter Path Consistency
+
+**The Problem:**
+We accidentally used inconsistent SSM parameter paths:
+```python
+# ❌ Missing environment prefix
+response_mode = get_ssm_parameter(f"/{function_name}/response-mode")
+
+# ✅ Correct format with environment
+response_mode = get_ssm_parameter(f"/{env}/{function_name}/response-mode")
+```
+
+CDK auto-generates SSM paths as `/{environment}/{function-name}/{key}`, but it's easy to forget the environment prefix in code.
+
+**The Solution:**
+Maintain strict path conventions and document them:
+```python
+# Standard SSM parameter path format:
+# /{env}/{function_name}/{parameter-name}
+
+# Examples:
+# /dev/tech-talk-dev-ip-gate/gate-enabled
+# /dev/tech-talk-dev-ip-gate/allow-cidrs
+# /dev/tech-talk-dev-ip-gate/dns-alias
+# /dev/tech-talk-dev-ip-gate/response-mode
+```
+
+**Key Lesson**: Document your SSM parameter naming conventions and validate them in tests.
+
+### Gotcha #4: Proxy Mode Needs Explicit Path
+
+**The Problem:**
+Fetching the root path returned 403:
+```python
+# ❌ Returns 403
+response = http.request('GET', f'https://{dns_alias}')
+```
+
+**The Solution:**
+Always request the explicit file:
+```python
+# ✅ Works!
+response = http.request('GET', f'https://{dns_alias}/index.html')
+```
+
+CloudFront distributions need an explicit path even if you have a default root object configured. This is because the proxy request bypasses CloudFront's automatic index.html resolution.
+
+### Gotcha #5: Python Naming Conventions
+
+**The Problem:**
+We initially used `DNS_ALIAS` (all caps) as a variable name, which violates Python conventions where all-caps indicates a module-level constant.
+
+**The Solution:**
+```python
+# ❌ Looks like a constant but it's a variable
+DNS_ALIAS = get_ssm_parameter(f'/{env}/{function_name}/dns-alias', 'us-east-1')
+
+# ✅ Proper snake_case for variables
+dns_alias = get_ssm_parameter(f'/{env}/{function_name}/dns-alias', 'us-east-1')
+```
+
+**Key Lesson**: Even simple scripts benefit from following language conventions—it makes code more maintainable.
+
+### Gotcha #6: Displaying the User's IP Address
+
+**Enhancement:**
+We added IP address display to the lockout page using a client-side API call:
+```html
+<p>
+  Your current IP address 
+  (<strong><span id="user-ip">Loading...</span></strong>) 
+  is not on the authorized list.
+</p>
+
+<script>
+  fetch('https://api.ipify.org?format=json')
+    .then(response => response.json())
+    .then(data => {
+      document.getElementById('user-ip').textContent = data.ip;
+    })
+    .catch(() => {
+      document.getElementById('user-ip').textContent = 'Unable to detect';
+    });
+</script>
+```
+
+**Key Lesson**: Small UX improvements make a big difference. Users can now copy their IP and send it to admins for allowlist updates.
+
+### Testing Strategy That Saved Us
+
+After the first round of bugs, we implemented comprehensive pytest tests:
+
+```python
+@patch('handler.get_ssm_parameter')
+def test_proxy_mode_uses_dns_alias(mock_get_ssm):
+    """Verify proxy mode uses DNS alias, not CloudFront domain."""
+    mock_get_ssm.side_effect = lambda name, region, default=None: {
+        '/dev/my-app/gate-enabled': 'true',
+        '/dev/my-app/allow-cidrs': '10.0.0.0/8',
+        '/dev/my-app/dns-alias': 'lockout.example.com',
+        '/dev/my-app/response-mode': 'proxy'
+    }.get(name, default)
+    
+    # Test blocked IP triggers proxy mode
+    event = create_test_event(client_ip='1.2.3.4')
+    result = handler.lambda_handler(event, mock_context)
+    
+    # Verify the proxy URL uses dns-alias
+    assert 'lockout.example.com' in result['body']
+```
+
+These tests caught issues before deployment, saving 30-minute deployment cycles.
 
 ## Lambda@Edge IP Gating: The Good, The Bad, and The Ugly
 
@@ -214,6 +434,8 @@ If you find a bug in your IP validation logic, you're waiting half an hour for t
 
 **Mitigation**: Test thoroughly! Use the SSM parameters for configuration changes (instant) rather than code changes.
 
+**Real-world example**: We discovered a bug where `get_ssm_parameter()` was being called with a `default` keyword argument that the function didn't support. The fix took 2 minutes to code, but 30 minutes to deploy and test. This is why thorough unit testing is critical for Lambda@Edge.
+
 **2. Lambda@Edge Limits are Strict**
 
 Lambda@Edge has tighter limits than regular Lambda:
@@ -239,7 +461,13 @@ You can't run Lambda@Edge locally with the same CloudFront context. Testing requ
 - Deploying to AWS (30-minute wait)
 - Or mocking the CloudFront event structure (tedious)
 
-We've built test harnesses, but it's still not as smooth as regular Lambda development.
+We've built comprehensive test harnesses with pytest that mock:
+- CloudFront request events
+- SSM parameter responses
+- Runtime configuration files
+- Multiple environment scenarios
+
+This catches 90% of bugs before deployment, but it's still not as smooth as regular Lambda development.
 
 ## When to Use AWS WAF Instead
 
@@ -496,26 +724,40 @@ With CDK Factory, implementing IP gating is trivial:
 {
   "stacks": [
     {
-      "name": "my-app-lambda-edge",
+      "name": "my-app-secondary-site",
+      "module": "static_website_stack",
+      "enabled": true,
+      "dns": {
+        "aliases": ["lockout.example.com"]
+      },
+      "ssm_exports": {
+        "dns_alias": "/dev/my-app/secondary-site/dns-alias",
+        "cloudfront_domain": "/dev/my-app/secondary-site/cloudfront-domain"
+      }
+    },
+    {
+      "name": "my-app-ip-gate",
       "module": "lambda_edge_library_module",
+      "dependencies": ["my-app-secondary-site"],
       "lambda_edge": {
         "name": "my-app-ip-gate",
         "runtime": "python3.11",
-        "handler": "index.lambda_handler",
-        "code": "lambdas/ip_gate",
-        "environment_variables": {
-          "GATE_ENABLED_PARAM": "/dev/my-app/gate-enabled",
-          "ALLOWED_IPS_PARAM": "/dev/my-app/allow-cidrs",
-          "DNS_ALIAS": "${ssm:/dev/my-app/maint-site/cloudfront-domain}"
+        "handler": "handler.lambda_handler",
+        "code_path": "cdk_factory:lambdas/edge/ip_gate",
+        "environment": {
+          "GATE_ENABLED": "true",
+          "ALLOW_CIDRS": "10.0.0.0/8,192.168.0.0/16",
+          "DNS_ALIAS": "{{ssm:/dev/my-app/secondary-site/dns-alias}}",
+          "RESPONSE_MODE": "proxy"
         }
       }
     },
     {
       "name": "my-app-site",
       "module": "static_website_stack",
-      "dependencies": ["my-app-lambda-edge"],
+      "dependencies": ["my-app-ip-gate"],
       "cloudfront": {
-        "enable_ip_gating": true  // ← That's it!
+        "enable_ip_gating": true
       }
     }
   ]

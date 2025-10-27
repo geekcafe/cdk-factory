@@ -276,10 +276,60 @@ User experience: Slower initial load
 
 **Symptoms:**
 - Still seeing redirect even though proxy mode is set
+- Getting 403 error page instead of lockout page
 - 502 errors from CloudFront
 - Timeout errors in Lambda logs
 
 **Common causes:**
+
+**1. Using CloudFront domain instead of DNS alias (CRITICAL):**
+
+This is the most common mistake! If you're getting Google's 403 error page, you're likely using the raw CloudFront domain.
+
+```python
+# ❌ WRONG - Returns 403!
+response = http.request('GET', f'https://d14pisygxjo4bs.cloudfront.net/index.html')
+
+# ✅ CORRECT - Works!
+response = http.request('GET', f'https://lockout.techtalkwitheric.com/index.html')
+```
+
+**Why this happens:**
+- CloudFront distributions with custom domains only accept requests with matching `Host` headers
+- Raw CloudFront URLs don't match any configured aliases
+- CloudFront returns 403 when no alias matches
+
+**Fix:**
+Ensure your Lambda@Edge function uses the DNS alias, not the CloudFront domain:
+
+```bash
+# Check what's configured
+aws ssm get-parameter --name "/dev/tech-talk-dev-ip-gate/dns-alias"
+
+# Should return: lockout.example.com (NOT d14pisygxjo4bs.cloudfront.net)
+```
+
+Update your SSM exports in CDK config:
+```json
+"ssm_exports": {
+  "dns_alias": "/dev/my-app/secondary-site/dns-alias",  // ✅ Use this!
+  "cloudfront_domain": "/dev/my-app/secondary-site/cloudfront-domain"  // ❌ Don't use for proxy
+}
+```
+
+**2. Missing explicit /index.html path:**
+
+```python
+# ❌ May return 403
+response = http.request('GET', f'https://{dns_alias}')
+
+# ✅ Always specify the path
+response = http.request('GET', f'https://{dns_alias}/index.html')
+```
+
+Even if you have a default root object configured, the proxy request needs an explicit path.
+
+**Other common causes:**
 
 1. **SSM parameter not set correctly:**
 ```bash

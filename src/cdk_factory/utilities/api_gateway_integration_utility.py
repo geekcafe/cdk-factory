@@ -1425,7 +1425,9 @@ class ApiGatewayIntegrationUtility:
                 f"   2. Add 'allow_public_override': true to explicitly allow public access\n"
                 f"   3. Remove 'authorization_type': 'NONE' to use secure Cognito auth\n\n"
                 f"🔒 This prevents accidental public endpoints when authentication is available.\n\n"
-                f"👉 ApiGatewayIntegrationUtility documentation for more details: https://github.com/your-repo/api-gateway-stack"
+                f"👉 ApiGatewayIntegrationUtility documentation for more details: \n\n "
+                "\t https://github.com/geekcafe/cdk-factory/blob/main/src/cdk_factory/utilities/api_gateway_integration_utility.py \n\n"
+                "\t and https://github.com/geekcafe/cdk-factory/blob/main/src/cdk_factory/stack_library/api_gateway/api_gateway_stack.py"
             )
             raise ValueError(error_msg)
 
