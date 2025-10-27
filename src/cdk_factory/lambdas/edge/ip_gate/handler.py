@@ -15,7 +15,7 @@ from functools import lru_cache
 ssm = None
 
 @lru_cache(maxsize=128)
-def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1') -> str:
+def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1', default: str = None) -> str:
     """
     Fetch SSM parameter with caching.
     Lambda@Edge cannot use environment variables, so we fetch from SSM.
@@ -25,9 +25,10 @@ def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1') -> str:
     Args:
         parameter_name: Name of the SSM parameter
         region: AWS region (default us-east-1)
+        default: Default value to return if parameter not found (optional)
     
     Returns:
-        Parameter value, or empty string if value is 'NONE'
+        Parameter value, default value if parameter not found, or empty string if value is 'NONE'
     """
     global ssm
     if ssm is None:
@@ -43,8 +44,17 @@ def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1') -> str:
             return ''
         
         return value
+    except ssm.exceptions.ParameterNotFound:
+        if default is not None:
+            print(f"SSM parameter {parameter_name} not found, using default: {default}")
+            return default
+        print(f"SSM parameter {parameter_name} not found and no default provided")
+        raise
     except Exception as e:
         print(f"Error fetching SSM parameter {parameter_name}: {str(e)}")
+        if default is not None:
+            print(f"Returning default value due to error: {default}")
+            return default
         raise
 
 
@@ -180,8 +190,8 @@ def lambda_handler(event, context):
         
         # IP not allowed - either redirect or proxy maintenance page
         # Check response mode from SSM (default: redirect for backward compatibility)
-        response_mode_param = f"/{function_name}/response-mode"
-        response_mode = get_ssm_parameter(response_mode_param, default='redirect')
+        response_mode_param = f"/{env}/{function_name}/response-mode"
+        response_mode = get_ssm_parameter(response_mode_param, 'us-east-1', default='redirect')
         
         if response_mode == 'proxy':
             # Proxy mode: Fetch and return maintenance content (keeps URL the same)
