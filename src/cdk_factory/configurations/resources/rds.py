@@ -130,3 +130,8 @@ class RdsConfig(EnhancedBaseConfig):
     def vpc_id(self, value: str):
         """Sets the VPC ID for the Security Group"""
         self.__config["vpc_id"] = value
+
+    @property
+    def ssm_imports(self) -> Dict[str, str]:
+        """SSM parameter imports for the RDS instance"""
+        return self.__config.get("ssm_imports", {})

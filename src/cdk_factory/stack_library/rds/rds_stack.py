@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 import aws_cdk as cdk
 from aws_cdk import aws_rds as rds
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ssm as ssm
 from aws_cdk import Duration
 from aws_lambda_powertools import Logger
 from constructs import Construct
@@ -41,6 +42,8 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
         self.db_instance = None
         self.security_groups = []
         self._vpc = None
+        # SSM imported values
+        self.ssm_imported_values: Dict[str, str] = {}
 
     def build(
         self,
@@ -65,6 +68,9 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
         self.rds_config = RdsConfig(stack_config.dictionary.get("rds", {}), deployment)
         db_name = deployment.build_resource_name(self.rds_config.name)
 
+        # Process SSM imports first
+        self._process_ssm_imports()
+
         # Get VPC and security groups
         self.security_groups = self._get_security_groups()
 
@@ -77,18 +83,58 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
         # Add outputs
         self._add_outputs(db_name)
 
+    def _process_ssm_imports(self) -> None:
+        """Process SSM imports from configuration"""
+        ssm_imports = self.rds_config.ssm_imports
+        
+        if not ssm_imports:
+            logger.debug("No SSM imports configured for RDS")
+            return
+        
+        logger.info(f"Processing {len(ssm_imports)} SSM imports for RDS")
+        
+        for param_key, param_path in ssm_imports.items():
+            try:
+                if not param_path.startswith('/'):
+                    param_path = f"/{param_path}"
+                
+                construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self, construct_id, param_path
+                )
+                
+                self.ssm_imported_values[param_key] = param.string_value
+                logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to import SSM parameter {param_key} from {param_path}: {e}")
+                raise
+
     @property
     def vpc(self) -> ec2.IVpc:
         """Get the VPC for the RDS instance"""
-        # Assuming VPC is provided by the workload
         if self._vpc:
             return self._vpc
-        if self.rds_config.vpc_id:
+        
+        # Check SSM imported values first (tokens from SSM parameters)
+        if "vpc_id" in self.ssm_imported_values:
+            vpc_id = self.ssm_imported_values["vpc_id"]
+            
+            # When using tokens, we can't provide subnet lists to from_vpc_attributes
+            # because CDK validates subnet count against AZ count at synthesis time
+            # We'll create a DB subnet group separately instead
+            vpc_attrs = {
+                "vpc_id": vpc_id,
+                "availability_zones": ["us-east-1a", "us-east-1b"]
+            }
+            
+            # Use from_vpc_attributes() for SSM tokens
+            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
+        elif self.rds_config.vpc_id:
             self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.rds_config.vpc_id)
-        if self.workload.vpc_id:
+        elif self.workload.vpc_id:
             self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
         else:
-            # Use default VPC if not provided
             raise ValueError(
                 "VPC is not defined in the configuration.  "
                 "You can provide it a the rds.vpc_id in the configuration "
@@ -99,19 +145,47 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the RDS instance"""
         security_groups = []
-        for sg_id in self.rds_config.security_group_ids:
+        
+        # Check SSM imports first for security group ID
+        if "security_group_rds_id" in self.ssm_imported_values:
+            sg_id = self.ssm_imported_values["security_group_rds_id"]
             security_groups.append(
                 ec2.SecurityGroup.from_security_group_id(
-                    self, f"SecurityGroup-{sg_id}", sg_id
+                    self, "RDSSecurityGroup", sg_id
                 )
             )
+        
+        # Also check config for any additional security group IDs
+        for idx, sg_id in enumerate(self.rds_config.security_group_ids):
+            security_groups.append(
+                ec2.SecurityGroup.from_security_group_id(
+                    self, f"SecurityGroup-{idx}", sg_id
+                )
+            )
+        
         return security_groups
 
     def _create_db_instance(self, db_name: str) -> rds.DatabaseInstance:
         """Create a new RDS instance"""
-        # Configure subnet selection
-        # Use private subnets for database placement
-        subnets = ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS)
+        # Configure subnet group
+        # If we have subnet IDs from SSM, create a DB subnet group explicitly
+        db_subnet_group = None
+        if "subnet_ids" in self.ssm_imported_values:
+            subnet_ids_str = self.ssm_imported_values["subnet_ids"]
+            # Split the comma-separated token into a list
+            subnet_ids_list = cdk.Fn.split(",", subnet_ids_str)
+            
+            # Create DB subnet group with the token-based subnet list
+            db_subnet_group = rds.CfnDBSubnetGroup(
+                self,
+                "DBSubnetGroup",
+                db_subnet_group_description=f"Subnet group for {db_name}",
+                subnet_ids=subnet_ids_list,
+                db_subnet_group_name=f"{db_name}-subnet-group"
+            )
+        
+        # Configure subnet selection for VPC (when not using SSM imports)
+        subnets = None if db_subnet_group else ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED)
 
         # Configure engine
         engine_version = None
@@ -147,28 +221,36 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
             removal_policy = cdk.RemovalPolicy.RETAIN
 
         # Create the database instance
-        db_instance = rds.DatabaseInstance(
-            self,
-            db_name,
-            engine=engine,
-            vpc=self.vpc,
-            vpc_subnets=subnets,
-            instance_type=instance_type,
-            credentials=rds.Credentials.from_generated_secret(
+        # Build common properties
+        db_props = {
+            "engine": engine,
+            "vpc": self.vpc,
+            "instance_type": instance_type,
+            "credentials": rds.Credentials.from_generated_secret(
                 username=self.rds_config.username,
                 secret_name=self.rds_config.secret_name,
             ),
-            database_name=self.rds_config.database_name,
-            multi_az=self.rds_config.multi_az,
-            allocated_storage=self.rds_config.allocated_storage,
-            storage_encrypted=self.rds_config.storage_encrypted,
-            security_groups=self.security_groups if self.security_groups else None,
-            deletion_protection=self.rds_config.deletion_protection,
-            backup_retention=Duration.days(self.rds_config.backup_retention),
-            cloudwatch_logs_exports=self.rds_config.cloudwatch_logs_exports,
-            enable_performance_insights=self.rds_config.enable_performance_insights,
-            removal_policy=removal_policy,
-        )
+            "database_name": self.rds_config.database_name,
+            "multi_az": self.rds_config.multi_az,
+            "allocated_storage": self.rds_config.allocated_storage,
+            "storage_encrypted": self.rds_config.storage_encrypted,
+            "security_groups": self.security_groups if self.security_groups else None,
+            "deletion_protection": self.rds_config.deletion_protection,
+            "backup_retention": Duration.days(self.rds_config.backup_retention),
+            "cloudwatch_logs_exports": self.rds_config.cloudwatch_logs_exports,
+            "enable_performance_insights": self.rds_config.enable_performance_insights,
+            "removal_policy": removal_policy,
+        }
+        
+        # Use either subnet group or vpc_subnets depending on what's available
+        if db_subnet_group:
+            db_props["subnet_group"] = rds.SubnetGroup.from_subnet_group_name(
+                self, "ImportedSubnetGroup", db_subnet_group.ref
+            )
+        else:
+            db_props["vpc_subnets"] = subnets
+        
+        db_instance = rds.DatabaseInstance(self, db_name, **db_props)
 
         # Add tags
         for key, value in self.rds_config.tags.items():
