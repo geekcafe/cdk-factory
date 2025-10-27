@@ -135,6 +135,10 @@ class StaticWebSiteStack(IStack):
         version = self.__get_version_number(assets_path)
         logger.info(f"👉 WEBSITE VERSION NUMBER: {version}")
 
+        # Get cloudfront config options
+        cloudfront_config = stack_config.dictionary.get("cloudfront", {})
+        restrict_to_known_hosts = cloudfront_config.get("restrict_to_known_hosts", True)
+
         cloudfront_distribution = CloudFrontDistributionConstruct(
             scope=self,
             id=deployment.build_resource_name("CloudFrontDistribution"),
@@ -142,6 +146,7 @@ class StaticWebSiteStack(IStack):
             aliases=aliases,
             source_bucket_sub_directory=version,
             certificate=certificate,
+            restrict_to_known_hosts=restrict_to_known_hosts,
             stack_config=stack_config,
         )
 

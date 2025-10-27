@@ -78,10 +78,87 @@ class CloudFrontDistributionConstruct(Construct):
         """
         return CloudFrontDistributionConstruct.AWS_HOSTED_ZONE_ID
 
+    def __validate_function_associations(self):
+        """
+        Validate CloudFront function association configuration.
+        Provides clear error messages for common misconfigurations.
+        
+        CloudFront limits:
+        - 1 CloudFront Function (JavaScript) per event type
+        - 1 Lambda@Edge (Python/Node) per event type
+        - Different types CAN coexist at same event type
+        """
+        if not self.stack_config or not isinstance(self.stack_config, StackConfig):
+            return  # No config to validate
+        
+        cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+        
+        # Get configuration flags
+        enable_url_rewrite = cloudfront_config.get("enable_url_rewrite", False)
+        enable_ip_gating = cloudfront_config.get("enable_ip_gating", False)
+        restrict_to_known_hosts = cloudfront_config.get("restrict_to_known_hosts", self.restrict_to_known_hosts)
+        
+        # Count CloudFront Functions at viewer-request
+        cloudfront_functions_at_viewer_request = 0
+        if enable_url_rewrite:
+            cloudfront_functions_at_viewer_request += 1
+        if restrict_to_known_hosts and self.aliases:
+            cloudfront_functions_at_viewer_request += 1
+        
+        # Note: Multiple CloudFront Functions are OK - we combine them automatically
+        if cloudfront_functions_at_viewer_request > 1:
+            logger.info(
+                f"Multiple CloudFront Functions at viewer-request detected. "
+                f"Will combine into single function. "
+                f"Features: enable_url_rewrite={enable_url_rewrite}, "
+                f"restrict_to_known_hosts={restrict_to_known_hosts}"
+            )
+        
+        # Check for manual Lambda@Edge associations that might conflict
+        lambda_edge_associations = cloudfront_config.get("lambda_edge_associations", [])
+        manual_viewer_request = any(
+            assoc.get("event_type") == "viewer-request" 
+            for assoc in lambda_edge_associations
+        )
+        
+        # ERROR: Manual Lambda@Edge + enable_ip_gating both at viewer-request
+        if enable_ip_gating and manual_viewer_request:
+            raise ValueError(
+                "Configuration conflict: Cannot use both 'enable_ip_gating: true' "
+                "and manual 'lambda_edge_associations' with 'event_type: viewer-request'. "
+                "\n\nSolution 1 (Recommended): Use only 'enable_ip_gating: true' "
+                "and remove manual lambda_edge_associations."
+                "\n\nSolution 2: Use only manual lambda_edge_associations "
+                "and set 'enable_ip_gating: false'."
+                "\n\nCurrent config:"
+                f"\n  enable_ip_gating: {enable_ip_gating}"
+                f"\n  lambda_edge_associations with viewer-request: {manual_viewer_request}"
+            )
+        
+        # WARNING: Both Lambda@Edge IP gating and CloudFront Functions enabled
+        # This is VALID but might indicate misconfiguration
+        if enable_ip_gating and cloudfront_functions_at_viewer_request > 0:
+            features = []
+            if enable_url_rewrite:
+                features.append("URL rewrite")
+            if restrict_to_known_hosts:
+                features.append("Host restrictions")
+            
+            logger.info(
+                f"✓ CloudFront configuration at viewer-request:"
+                f"\n  - CloudFront Function: {', '.join(features)}"
+                f"\n  - Lambda@Edge: IP gating"
+                f"\nThis is valid: CloudFront Functions and Lambda@Edge can coexist "
+                f"at the same event type."
+            )
+
     def __setup(self):
         """
         Any setup / init logic goes here
         """
+        # Validate CloudFront function association configuration
+        self.__validate_function_associations()
+        
         self.oai = cloudfront.OriginAccessIdentity(
             self, "OAI", comment="OAI for accessing S3 bucket content securely"
         )
