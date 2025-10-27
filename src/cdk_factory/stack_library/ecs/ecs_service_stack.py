@@ -49,6 +49,8 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
         self.service: Optional[ecs.FargateService] = None
         self.task_definition: Optional[ecs.FargateTaskDefinition] = None
         self._vpc: Optional[ec2.IVpc] = None
+        # SSM imported values
+        self.ssm_imported_values: Dict[str, Any] = {}
 
     def build(
         self,
@@ -77,6 +79,9 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
         
         service_name = deployment.build_resource_name(self.ecs_config.name)
         
+        # Process SSM imports first
+        self._process_ssm_imports()
+        
         # Load VPC
         self._load_vpc()
         
@@ -98,16 +103,79 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
 
     def _load_vpc(self) -> None:
         """Load VPC from configuration"""
-        vpc_id = self.ecs_config.vpc_id or self.workload.vpc_id
+        # Check SSM imported values first
+        if "vpc_id" in self.ssm_imported_values:
+            vpc_id = self.ssm_imported_values["vpc_id"]
+            
+            # Build VPC attributes
+            vpc_attrs = {
+                "vpc_id": vpc_id,
+                "availability_zones": ["us-east-1a", "us-east-1b"]
+            }
+            
+            # Use from_vpc_attributes() for SSM tokens
+            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
+        else:
+            vpc_id = self.ecs_config.vpc_id or self.workload.vpc_id
+            
+            if not vpc_id:
+                raise ValueError("VPC ID is required for ECS service")
+            
+            self._vpc = ec2.Vpc.from_lookup(
+                self,
+                "VPC",
+                vpc_id=vpc_id
+            )
+
+    def _process_ssm_imports(self) -> None:
+        """
+        Process SSM imports from configuration.
+        Follows the same pattern as RDS, Load Balancer, and Security Group stacks.
+        """
+        from aws_cdk import aws_ssm as ssm
         
-        if not vpc_id:
-            raise ValueError("VPC ID is required for ECS service")
+        ssm_imports = self.ecs_config.ssm_imports
         
-        self._vpc = ec2.Vpc.from_lookup(
-            self,
-            "VPC",
-            vpc_id=vpc_id
-        )
+        if not ssm_imports:
+            logger.debug("No SSM imports configured for ECS Service")
+            return
+        
+        logger.info(f"Processing {len(ssm_imports)} SSM imports for ECS Service")
+        
+        for param_key, param_value in ssm_imports.items():
+            try:
+                # Handle list values (like security_group_ids)
+                if isinstance(param_value, list):
+                    imported_list = []
+                    for idx, param_path in enumerate(param_value):
+                        if not param_path.startswith('/'):
+                            param_path = f"/{param_path}"
+                        
+                        construct_id = f"ssm-import-{param_key}-{idx}-{hash(param_path) % 10000}"
+                        param = ssm.StringParameter.from_string_parameter_name(
+                            self, construct_id, param_path
+                        )
+                        imported_list.append(param.string_value)
+                    
+                    self.ssm_imported_values[param_key] = imported_list
+                    logger.info(f"Imported SSM parameter list: {param_key} with {len(imported_list)} items")
+                else:
+                    # Handle string values
+                    param_path = param_value
+                    if not param_path.startswith('/'):
+                        param_path = f"/{param_path}"
+                    
+                    construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                    param = ssm.StringParameter.from_string_parameter_name(
+                        self, construct_id, param_path
+                    )
+                    
+                    self.ssm_imported_values[param_key] = param.string_value
+                    logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to import SSM parameter {param_key}: {e}")
+                raise
 
     def _create_or_load_cluster(self) -> None:
         """Create a new ECS cluster or load an existing one"""

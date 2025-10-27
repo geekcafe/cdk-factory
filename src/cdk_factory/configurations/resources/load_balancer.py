@@ -143,3 +143,11 @@ class LoadBalancerConfig(EnhancedBaseConfig):
         return self.__config.get("ip_whitelist", {}).get(
             "block_response", default_response
         )
+
+    @property
+    def ssm_imports(self) -> Dict[str, Any]:
+        """SSM parameter imports for the Load Balancer"""
+        # Check both nested and flat structures for backwards compatibility
+        if "ssm" in self.__config and "imports" in self.__config["ssm"]:
+            return self.__config["ssm"]["imports"]
+        return self.__config.get("ssm_imports", {})

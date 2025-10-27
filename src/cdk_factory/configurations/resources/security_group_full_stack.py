@@ -65,4 +65,7 @@ class SecurityGroupFullStackConfig:
     @property
     def ssm_imports(self) -> Dict[str, str]:
         """SSM parameter imports for the Security Group"""
+        # Check both nested and flat structures for backwards compatibility
+        if "ssm" in self.__config and "imports" in self.__config["ssm"]:
+            return self.__config["ssm"]["imports"]
         return self.__config.get("ssm_imports", {})

@@ -129,8 +129,11 @@ class EcsServiceConfig:
         return self._config.get("ssm_exports", {})
 
     @property
-    def ssm_imports(self) -> Dict[str, str]:
+    def ssm_imports(self) -> Dict[str, Any]:
         """SSM parameter imports"""
+        # Check both nested and flat structures for backwards compatibility
+        if "ssm" in self._config and "imports" in self._config["ssm"]:
+            return self._config["ssm"]["imports"]
         return self._config.get("ssm_imports", {})
 
     @property
