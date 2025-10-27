@@ -105,19 +105,16 @@ class VpcStack(IStack, EnhancedSsmParameterMixin):
             elif region == "us-west-2":
                 availability_zones = [f"us-west-2{chr(97+i)}" for i in range(max_azs)]
         
-        # Create the VPC
-        vpc = ec2.Vpc(
-            self,
-            vpc_name,
-            vpc_name=vpc_name,
-            cidr=self.vpc_config.cidr,
-            max_azs=self.vpc_config.max_azs,
-            availability_zones=availability_zones,  # Explicitly specify AZs
-            nat_gateways=nat_gateway_count,
-            subnet_configuration=subnet_configuration,
-            enable_dns_hostnames=self.vpc_config.enable_dns_hostnames,
-            enable_dns_support=self.vpc_config.enable_dns_support,
-            gateway_endpoints=(
+        # Build VPC properties
+        # Note: CDK doesn't allow both 'availability_zones' and 'max_azs' - use one or the other
+        vpc_props = {
+            "vpc_name": vpc_name,
+            "cidr": self.vpc_config.cidr,
+            "nat_gateways": nat_gateway_count,
+            "subnet_configuration": subnet_configuration,
+            "enable_dns_hostnames": self.vpc_config.enable_dns_hostnames,
+            "enable_dns_support": self.vpc_config.enable_dns_support,
+            "gateway_endpoints": (
                 {
                     "S3": ec2.GatewayVpcEndpointOptions(
                         service=ec2.GatewayVpcEndpointAwsService.S3
@@ -126,7 +123,16 @@ class VpcStack(IStack, EnhancedSsmParameterMixin):
                 if self.vpc_config.enable_s3_endpoint
                 else None
             ),
-        )
+        }
+        
+        # Use either availability_zones or max_azs, not both
+        if availability_zones:
+            vpc_props["availability_zones"] = availability_zones
+        else:
+            vpc_props["max_azs"] = self.vpc_config.max_azs
+        
+        # Create the VPC
+        vpc = ec2.Vpc(self, vpc_name, **vpc_props)
 
         # Add interface endpoints if specified
         if self.vpc_config.enable_interface_endpoints:
