@@ -23,6 +23,7 @@ class WebAppStack(Stack):
         # ---- Context / parameters ----
         ctx = self.node.try_get_context
         env_name = ctx("env_name") or "dev"
+        workload_name = ctx("workload_name") or "webapp"
         vpc_cidr = ctx("vpc_cidr") or "10.0.0.0/16"
         nat_gateways = int(ctx("nat_gateways") or 2)
 
@@ -132,7 +133,7 @@ class WebAppStack(Stack):
                 else ec2.InstanceType(db_instance_class)
             ),
             credentials=rds.Credentials.from_generated_secret(
-                username="appuser", secret_name=f"/{env_name}/db/creds"
+                username="appuser", secret_name=f"/{env_name}/{workload_name}/rds/credentials"
             ),
             database_name=db_name,
             multi_az=False,

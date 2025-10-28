@@ -131,11 +131,24 @@ class RdsConfig(EnhancedBaseConfig):
 
     @property
     def secret_name(self) -> str:
-        """Name of the secret to store credentials"""
-        env_name = self.__deployment.environment if self.__deployment else None
+        """Name of the secret to store credentials (includes workload to prevent collisions)"""
+        if "secret_name" in self.__config:
+            return self.__config["secret_name"]
+        
+        # Build a unique secret name using environment and workload
+        if not self.__deployment:
+            raise ValueError("No deployment context found for RDS secret name")
+        
+        env_name = self.__deployment.environment
+        workload_name = self.__deployment.workload_name
+        
         if not env_name:
-            raise ValueError("No environment found for RDS secret name.  Please add an environment to the deployment.")
-        return self.__config.get("secret_name", f"/{env_name}/db/creds")
+            raise ValueError("No environment found for RDS secret name. Please add an environment to the deployment.")
+        if not workload_name:
+            raise ValueError("No workload name found for RDS secret name. Please add a workload name to the deployment.")
+        
+        # Default pattern: /{environment}/{workload}/rds/credentials
+        return f"/{env_name}/{workload_name}/rds/credentials"
 
     @property
     def allocated_storage(self) -> int:
