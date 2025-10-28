@@ -124,6 +124,7 @@ class WorkloadFactory:
                     scope=self.app,
                     id=stack.name,
                     deployment=deployment,
+                    stack_config=stack,
                     add_env_context=self.add_env_context,
                     **kwargs,
                 )

@@ -305,6 +305,7 @@ class PipelineFactoryStack(IStack):
                     scope=pipeline_stage,
                     id=stack_config.name,
                     deployment=deployment,
+                    stack_config=stack_config,
                     add_env_context=self.add_env_context,
                     **kwargs,
                 )
