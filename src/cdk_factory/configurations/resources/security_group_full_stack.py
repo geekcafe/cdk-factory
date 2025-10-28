@@ -69,3 +69,16 @@ class SecurityGroupFullStackConfig:
         if "ssm" in self.__config and "imports" in self.__config["ssm"]:
             return self.__config["ssm"]["imports"]
         return self.__config.get("ssm_imports", {})
+
+    @property
+    def ssm_exports(self) -> Dict[str, str]:
+        """SSM parameter exports for the Security Group"""
+        # Check both nested and flat structures for backwards compatibility
+        if "ssm" in self.__config and "exports" in self.__config["ssm"]:
+            return self.__config["ssm"]["exports"]
+        return self.__config.get("ssm_exports", {})
+
+    @property
+    def security_groups(self) -> List[Dict[str, Any]]:
+        """List of security groups to create"""
+        return self.__config.get("security_groups", [])

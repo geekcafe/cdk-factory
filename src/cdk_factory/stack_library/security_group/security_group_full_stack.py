@@ -225,6 +225,18 @@ class SecurityGroupsStack(IStack):
             export_name=f"{self.deployment.environment}-{self.workload.name}-WebMonitoringSecurityGroup",
         )
 
+        # =========================================================
+        # SSM Parameter Store Exports
+        # =========================================================
+        self._export_ssm_parameters(
+            security_groups_map={
+                "alb": alb_sg,
+                "ecs": web_fleet_sg,
+                "rds": mysql_sg,
+                "monitoring": monitoring_sg,
+            }
+        )
+
     def _process_ssm_imports(self) -> None:
         """
         Process SSM imports from configuration.
@@ -287,3 +299,64 @@ class SecurityGroupsStack(IStack):
             raise ValueError("VPC ID is not defined in the configuration or SSM imports.")
 
         return self._vpc
+
+    def _export_ssm_parameters(self, security_groups_map: Dict[str, ec2.CfnSecurityGroup]) -> None:
+        """
+        Export security group IDs to SSM Parameter Store based on configuration.
+        
+        Args:
+            security_groups_map: Dictionary mapping security group types to their CDK resources
+        """
+        # Get the security groups configuration list from the config
+        security_groups_config = self.sg_config.security_groups
+        
+        if not security_groups_config:
+            logger.debug("No security groups configuration found for SSM exports")
+            return
+        
+        logger.info(f"Processing SSM exports for {len(security_groups_config)} security groups")
+        
+        # Process each security group configuration
+        for sg_config in security_groups_config:
+            # Get the security group name and SSM exports
+            sg_name = sg_config.get("name", "")
+            ssm_config = sg_config.get("ssm", {})
+            ssm_exports = ssm_config.get("exports", {})
+            
+            if not ssm_exports:
+                logger.debug(f"No SSM exports configured for security group: {sg_name}")
+                continue
+            
+            # Determine which security group this config refers to based on the name pattern
+            # The config uses patterns like "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-rds-sg"
+            sg_resource = None
+            sg_type = None
+            
+            if "-rds-sg" in sg_name or "-rds" in sg_name:
+                sg_resource = security_groups_map.get("rds")
+                sg_type = "rds"
+            elif "-ecs-sg" in sg_name or "instances" in sg_name:
+                sg_resource = security_groups_map.get("ecs")
+                sg_type = "ecs"
+            elif "-alb-sg" in sg_name or "alb" in sg_name:
+                sg_resource = security_groups_map.get("alb")
+                sg_type = "alb"
+            elif "monitoring" in sg_name:
+                sg_resource = security_groups_map.get("monitoring")
+                sg_type = "monitoring"
+            
+            if not sg_resource:
+                logger.warning(f"Could not map security group configuration to resource: {sg_name}")
+                continue
+            
+            # Export the security group ID if configured
+            security_group_id_path = ssm_exports.get("security_group_id")
+            if security_group_id_path:
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"SsmExport{sg_type.upper()}SecurityGroupId",
+                    value=sg_resource.ref,
+                    parameter_name=security_group_id_path,
+                    description=f"Security Group ID for {sg_type} ({sg_name})",
+                )
+                logger.info(f"Exported SSM parameter: {security_group_id_path} for {sg_type} security group")
