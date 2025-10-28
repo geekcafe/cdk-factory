@@ -5,11 +5,14 @@ MIT License. See Project Root for license information.
 """
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Literal
 from aws_lambda_powertools import Logger
 from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
 logger = Logger(service="RdsConfig")
+
+# Supported RDS engines
+Engine = Literal["mysql", "mariadb", "postgres", "aurora-mysql", "aurora-postgres", "sqlserver", "oracle"]
 
 
 class RdsConfig(EnhancedBaseConfig):
@@ -27,6 +30,74 @@ class RdsConfig(EnhancedBaseConfig):
     def name(self) -> str:
         """RDS instance name"""
         return self.__config.get("name", "database")
+    
+    @property
+    def identifier(self) -> str:
+        """RDS DB instance identifier (sanitized)"""
+        raw_id = self.__config.get("identifier", self.name)
+        return self._sanitize_instance_identifier(raw_id)
+    
+    def _sanitize_instance_identifier(self, identifier: str) -> str:
+        """
+        Sanitize DB instance identifier to meet RDS requirements:
+        - 1-63 chars, lowercase letters/digits/hyphen
+        - Must start with letter, can't end with hyphen, no consecutive hyphens
+        """
+        if not identifier:
+            raise ValueError("Instance identifier cannot be empty")
+        
+        sanitized, notes = self._sanitize_instance_identifier_impl(identifier)
+        
+        if notes:
+            logger.info(f"Sanitized instance identifier from '{identifier}' to '{sanitized}': {', '.join(notes)}")
+        
+        return sanitized
+    
+    def _sanitize_instance_identifier_impl(self, identifier: str) -> Tuple[str, List[str]]:
+        """
+        DB instance identifier rules (all engines):
+        - 1-63 chars, lowercase letters/digits/hyphen
+        - Must start with letter
+        - Can't end with hyphen
+        - No consecutive hyphens (--)
+        """
+        notes: List[str] = []
+        s = identifier.lower()
+        
+        # Keep only lowercase letters, digits, hyphen
+        s_clean = re.sub(r"[^a-z0-9-]", "", s)
+        if s_clean != s:
+            notes.append("removed invalid characters (only a-z, 0-9, '-' allowed)")
+        s = s_clean
+        
+        if not s:
+            raise ValueError(f"Instance identifier '{identifier}' contains no valid characters")
+        
+        # Must start with letter
+        if not re.match(r"^[a-z]", s):
+            s = f"db{s}"
+            notes.append("prefixed with 'db' to start with a letter")
+        
+        # Collapse consecutive hyphens
+        s_collapsed = re.sub(r"-{2,}", "-", s)
+        if s_collapsed != s:
+            s = s_collapsed
+            notes.append("collapsed consecutive hyphens")
+        
+        # Can't end with hyphen
+        if s.endswith("-"):
+            s = s.rstrip("-")
+            notes.append("removed trailing hyphen")
+        
+        # Truncate to 63 characters
+        if len(s) > 63:
+            s = s[:63]
+            # Make sure we didn't truncate to a trailing hyphen
+            if s.endswith("-"):
+                s = s.rstrip("-")
+            notes.append("truncated to 63 characters")
+        
+        return s, notes
 
     @property
     def engine(self) -> str:
@@ -155,10 +226,8 @@ class RdsConfig(EnhancedBaseConfig):
     
     def _sanitize_database_name(self, name: str) -> str:
         """
-        Sanitize database name to meet RDS requirements:
-        - Must begin with a letter (a-z, A-Z)
-        - Can contain alphanumeric characters and underscores
-        - Max 64 characters
+        Sanitize database name to meet RDS requirements (engine-specific).
+        Implements rules from RDS documentation for each engine type.
         
         Args:
             name: Raw database name from config
@@ -167,41 +236,89 @@ class RdsConfig(EnhancedBaseConfig):
             Sanitized database name
             
         Raises:
-            ValueError: If name starts with a number or is empty after sanitization
+            ValueError: If name cannot be sanitized to meet requirements
         """
         if not name:
             raise ValueError("Database name cannot be empty")
         
-        # Replace hyphens with underscores, remove other invalid chars
-        sanitized = name.replace('-', '_')
-        sanitized = re.sub(r'[^a-zA-Z0-9_]', '', sanitized)
+        engine = self.engine.lower()
+        sanitized, notes = self._sanitize_db_name_impl(engine, name)
         
-        if not sanitized:
-            raise ValueError(f"Database name '{name}' contains no valid characters")
-        
-        # Check if it starts with a number
-        if sanitized[0].isdigit():
-            raise ValueError(
-                f"Database name '{name}' (sanitized to '{sanitized}') cannot start with a number. "
-                f"Please ensure the database name begins with a letter."
-            )
-        
-        # Truncate to 64 characters if needed
-        if len(sanitized) > 64:
-            sanitized = sanitized[:64]
-        
-        # Log if sanitization changed the name
-        if sanitized != name:
-            logger.info(f"Sanitized database name from '{name}' to '{sanitized}'")
+        if notes:
+            logger.info(f"Sanitized database name from '{name}' to '{sanitized}': {', '.join(notes)}")
         
         return sanitized
     
+    def _sanitize_db_name_impl(self, engine: str, name: str) -> Tuple[str, List[str]]:
+        """
+        Engine-specific database name sanitization.
+        Based on AWS RDS naming requirements:
+        - MySQL/MariaDB: 1-64 chars, start with letter, letters/digits/underscore
+        - PostgreSQL: 1-63 chars, start with letter, letters/digits/underscore
+        - SQL Server: 1-128 chars, start with letter, letters/digits/underscore
+        - Oracle: 1-8 chars (SID), alphanumeric only, start with letter
+        """
+        notes: List[str] = []
+        
+        # Determine engine-specific limits
+        if engine in ("mysql", "mariadb", "aurora-mysql"):
+            allowed_chars = r"A-Za-z0-9_"
+            max_len = 64
+        elif engine in ("postgres", "postgresql", "aurora-postgres", "aurora-postgresql"):
+            allowed_chars = r"A-Za-z0-9_"
+            max_len = 63
+        elif engine in ("sqlserver", "sqlserver-ee", "sqlserver-se", "sqlserver-ex", "sqlserver-web"):
+            allowed_chars = r"A-Za-z0-9_"
+            max_len = 128
+        elif engine in ("oracle", "oracle-ee", "oracle-se2", "oracle-se1"):
+            allowed_chars = r"A-Za-z0-9"  # No underscore for Oracle SID
+            max_len = 8
+        else:
+            # Default to conservative rules
+            allowed_chars = r"A-Za-z0-9_"
+            max_len = 64
+            notes.append(f"unknown engine '{engine}', using default MySQL rules")
+        
+        # Replace hyphens with underscores (except Oracle which doesn't allow underscores)
+        s = name
+        if "oracle" not in engine:
+            s = s.replace("-", "_")
+            if "_" in name and "-" in name:
+                notes.append("replaced hyphens with underscores")
+        
+        # Strip disallowed characters
+        s_clean = re.sub(f"[^{allowed_chars}]", "", s)
+        if s_clean != s:
+            notes.append("removed invalid characters")
+        s = s_clean
+        
+        if not s:
+            raise ValueError(f"Database name '{name}' contains no valid characters after sanitization")
+        
+        # Must start with a letter
+        if not re.match(r"^[A-Za-z]", s):
+            s = f"db{s}"
+            notes.append("prefixed with 'db' to start with a letter")
+        
+        # Truncate to max length
+        if len(s) > max_len:
+            s = s[:max_len]
+            notes.append(f"truncated to {max_len} characters")
+        
+        # SQL Server: can't start with 'rdsadmin'
+        if "sqlserver" in engine and s.lower().startswith("rdsadmin"):
+            s = f"db_{s}"
+            notes.append("prefixed to avoid 'rdsadmin' (SQL Server restriction)")
+        
+        return s, notes
+    
     def _sanitize_username(self, username: str) -> str:
         """
-        Sanitize username to meet RDS requirements:
+        Sanitize master username to meet RDS requirements:
         - Must begin with a letter (a-z, A-Z)
         - Can contain alphanumeric characters and underscores
-        - Max 16 characters for MySQL
+        - Max 16 characters (AWS RDS master username limit)
+        - Cannot be a reserved word
         
         Args:
             username: Raw username from config
@@ -215,26 +332,51 @@ class RdsConfig(EnhancedBaseConfig):
         if not username:
             raise ValueError("Username cannot be empty")
         
-        # Replace hyphens with underscores, remove other invalid chars
-        sanitized = username.replace('-', '_')
-        sanitized = re.sub(r'[^a-zA-Z0-9_]', '', sanitized)
+        sanitized, notes = self._sanitize_master_username_impl(username)
         
-        if not sanitized:
-            raise ValueError(f"Username '{username}' contains no valid characters")
-        
-        # Check if it starts with a number
-        if sanitized[0].isdigit():
-            raise ValueError(
-                f"Username '{username}' (sanitized to '{sanitized}') cannot start with a number. "
-                f"Please ensure the username begins with a letter."
-            )
-        
-        # Truncate to 16 characters for MySQL (other engines may vary)
-        if len(sanitized) > 16:
-            sanitized = sanitized[:16]
-        
-        # Log if sanitization changed the username
-        if sanitized != username:
-            logger.info(f"Sanitized username from '{username}' to '{sanitized}'")
+        if notes:
+            logger.info(f"Sanitized username from '{username}' to '{sanitized}': {', '.join(notes)}")
         
         return sanitized
+    
+    def _sanitize_master_username_impl(self, username: str) -> Tuple[str, List[str]]:
+        """
+        Sanitize master username according to AWS RDS rules:
+        - 1-16 characters
+        - Start with a letter
+        - Letters, digits, underscore only
+        - Not a reserved word
+        """
+        notes: List[str] = []
+        s = username
+        
+        # Replace hyphens with underscores, remove other invalid chars
+        s = s.replace("-", "_")
+        s_clean = re.sub(r"[^A-Za-z0-9_]", "", s)
+        if s_clean != s:
+            notes.append("removed invalid characters")
+        s = s_clean
+        
+        if not s:
+            raise ValueError(f"Username '{username}' contains no valid characters after sanitization")
+        
+        # Must start with a letter
+        if not re.match(r"^[A-Za-z]", s):
+            s = f"user{s}"
+            notes.append("prefixed with 'user' to start with a letter")
+        
+        # Truncate to 16 characters
+        if len(s) > 16:
+            s = s[:16]
+            notes.append("truncated to 16 characters")
+        
+        # Check against common reserved words
+        reserved = {"postgres", "mysql", "root", "admin", "rdsadmin", "system", "sa", "user"}
+        if s.lower() in reserved:
+            s = f"{s}_usr"
+            # Re-truncate if needed after adding suffix
+            if len(s) > 16:
+                s = s[:16]
+            notes.append("appended '_usr' to avoid reserved username")
+        
+        return s, notes
