@@ -180,8 +180,37 @@ class RdsConfig(EnhancedBaseConfig):
 
     @property
     def cloudwatch_logs_exports(self) -> List[str]:
-        """Log types to export to CloudWatch"""
-        return self.__config.get("cloudwatch_logs_exports", ["postgresql"])
+        """
+        Log types to export to CloudWatch (engine-specific).
+        Returns configured log types or engine-specific defaults.
+        """
+        # If explicitly configured, use that
+        if "cloudwatch_logs_exports" in self.__config:
+            return self.__config["cloudwatch_logs_exports"]
+        
+        # Otherwise, return engine-specific defaults
+        engine = self.engine.lower()
+        
+        # MySQL / MariaDB
+        if engine in ("mysql", "mariadb", "aurora-mysql"):
+            return ["error", "general", "slowquery"]
+        
+        # PostgreSQL
+        elif engine in ("postgres", "postgresql", "aurora-postgres", "aurora-postgresql"):
+            return ["postgresql"]
+        
+        # SQL Server
+        elif engine in ("sqlserver", "sqlserver-ee", "sqlserver-se", "sqlserver-ex", "sqlserver-web"):
+            return ["error", "agent"]
+        
+        # Oracle
+        elif engine in ("oracle", "oracle-ee", "oracle-se2", "oracle-se1"):
+            return ["alert", "audit", "trace"]
+        
+        # Default to empty list for unknown engines (safer than guessing)
+        else:
+            logger.warning(f"Unknown engine '{engine}', disabling CloudWatch logs exports by default")
+            return []
 
     @property
     def removal_policy(self) -> str:
