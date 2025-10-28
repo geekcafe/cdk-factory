@@ -84,6 +84,9 @@ class PipelineFactoryStack(IStack):
 
         self.deployment_waves: Dict[str, pipelines.Wave] = {}
 
+        # Cache created sources keyed by repo+branch to avoid duplicate node IDs
+        self._source_cache: Dict[str, pipelines.CodePipelineSource] = {}
+
     @property
     def aws_code_pipeline(self) -> pipelines.CodePipeline:
         """AWS Code Pipeline"""
@@ -207,8 +210,8 @@ class PipelineFactoryStack(IStack):
                 stage_config=stage, pipeline_stage=pipeline_stage, deployment=deployment
             )
             # add the stacks to a wave or a regular
-            pre_steps = self._get_pre_steps(stage)
-            post_steps = self._get_post_steps(stage)
+            pre_steps = self._get_pre_steps(stage, deployment)
+            post_steps = self._get_post_steps(stage, deployment)
             wave_name = stage.wave_name
 
             # if we don't have any stacks we'll need to use the wave
@@ -237,16 +240,16 @@ class PipelineFactoryStack(IStack):
                 )
 
     def _get_pre_steps(
-        self, stage_config: PipelineStageConfig
+        self, stage_config: PipelineStageConfig, deployment: DeploymentConfig
     ) -> List[pipelines.ShellStep]:
-        return self._get_steps("pre_steps", stage_config)
+        return self._get_steps("pre_steps", stage_config, deployment)
 
     def _get_post_steps(
-        self, stage_config: PipelineStageConfig
+        self, stage_config: PipelineStageConfig, deployment: DeploymentConfig
     ) -> List[pipelines.ShellStep]:
-        return self._get_steps("post_steps", stage_config)
+        return self._get_steps("post_steps", stage_config, deployment)
 
-    def _get_steps(self, key: str, stage_config: PipelineStageConfig):
+    def _get_steps(self, key: str, stage_config: PipelineStageConfig, deployment: DeploymentConfig):
         """
         Gets the build steps from the config.json.
 
@@ -255,29 +258,207 @@ class PipelineFactoryStack(IStack):
         - A single multi-line string (treated as a single script block)
 
         This allows support for complex shell constructs like if blocks, loops, etc.
+        
+        For builds with source/buildspec/environment, creates CodeBuildStep instead of ShellStep.
         """
-        shell_steps: List[pipelines.ShellStep] = []
+        shell_steps: List[pipelines.Step] = []
+
+        # Only process builds if this stage explicitly defines them
+        if not stage_config.dictionary.get("builds"):
+            return shell_steps
 
         for build in stage_config.builds:
             if str(build.get("enabled", "true")).lower() == "true":
-                steps = build.get(key, [])
-                step: Dict[str, Any]
-                for step in steps:
-                    step_id = step.get("id") or step.get("name")
-                    commands = step.get("commands", [])
+                # Check if this is a CodeBuild step (has source, buildspec, or environment)
+                if build.get("source") or build.get("buildspec") or build.get("environment"):
+                    # Create CodeBuildStep for external builds
+                    codebuild_step = self._create_codebuild_step(build, key, deployment, stage_config.name)
+                    if codebuild_step:
+                        shell_steps.append(codebuild_step)
+                else:
+                    # Create traditional ShellStep for inline commands
+                    steps = build.get(key, [])
+                    step: Dict[str, Any]
+                    for step in steps:
+                        step_id = step.get("id") or step.get("name")
+                        commands = step.get("commands", [])
 
-                    # Normalize commands to a list
-                    # If commands is a single string, wrap it in a list
-                    if isinstance(commands, str):
-                        commands = [commands]
+                        # Normalize commands to a list
+                        # If commands is a single string, wrap it in a list
+                        if isinstance(commands, str):
+                            commands = [commands]
 
-                    shell_step = pipelines.ShellStep(
-                        id=step_id,
-                        commands=commands,
-                    )
-                    shell_steps.append(shell_step)
+                        shell_step = pipelines.ShellStep(
+                            id=step_id,
+                            commands=commands,
+                        )
+                        shell_steps.append(shell_step)
 
         return shell_steps
+    
+    def _create_codebuild_step(self, build: Dict[str, Any], key: str, deployment: DeploymentConfig, stage_name: str) -> pipelines.CodeBuildStep:
+        """
+        Creates a CodeBuildStep for builds that specify source, buildspec, or environment.
+        
+        Supports:
+        - External GitHub repositories (public and private)
+        - Custom buildspec files
+        - Environment configuration (compute type, image, privileged mode)
+        - Environment variables
+        - GitHub authentication via CodeConnections
+        """
+        build_name = build.get("name", "custom-build")
+        
+        # Parse source configuration
+        source_config = build.get("source", {})
+        source_type = source_config.get("type", "GITHUB").upper()
+        source_location = source_config.get("location")
+        source_branch = source_config.get("branch", "main")
+        
+        # Determine if this is the right step type (pre or post)
+        # Only create the step if it's supposed to run at this point
+        # For now, assume CodeBuild steps run as pre_steps by default
+        if key != "pre_steps":
+            return None
+        
+        if not source_location:
+            logger.warning(f"Build '{build_name}' has no source location specified, skipping")
+            return None
+        
+        # Parse buildspec
+        # For CodeBuildStep with external source, buildspec.yml is read automatically from the repo
+        # We only need to create a custom buildspec if using inline commands
+        buildspec_path = build.get("buildspec")
+        buildspec = None
+        
+        if not buildspec_path:
+            # No buildspec specified - check for inline commands
+            commands = build.get("commands", [])
+            if isinstance(commands, str):
+                commands = [commands]
+            if commands:
+                # Create inline buildspec from commands
+                buildspec = codebuild.BuildSpec.from_object({
+                    "version": "0.2",
+                    "phases": {
+                        "build": {
+                            "commands": commands
+                        }
+                    }
+                })
+        # If buildspec_path is specified, CodeBuildStep will automatically read it from the source repo
+        # No need to load it explicitly
+        
+        # Parse environment configuration
+        env_config = build.get("environment", {})
+        compute_type_str = env_config.get("compute_type", "BUILD_GENERAL1_SMALL")
+        
+        # Map string to CDK enum
+        compute_type_map = {
+            "BUILD_GENERAL1_SMALL": codebuild.ComputeType.SMALL,
+            "BUILD_GENERAL1_MEDIUM": codebuild.ComputeType.MEDIUM,
+            "BUILD_GENERAL1_LARGE": codebuild.ComputeType.LARGE,
+            "BUILD_GENERAL1_2XLARGE": codebuild.ComputeType.X2_LARGE,
+        }
+        compute_type = compute_type_map.get(compute_type_str, codebuild.ComputeType.SMALL)
+        
+        build_image_str = env_config.get("image", "aws/codebuild/standard:7.0")
+        privileged_mode = env_config.get("privileged_mode", False)
+        
+        # Parse build image
+        if build_image_str.startswith("aws/codebuild/standard:"):
+            version = build_image_str.split(":")[-1]
+            build_image = codebuild.LinuxBuildImage.from_code_build_image_id(f"aws/codebuild/standard:{version}")
+        else:
+            build_image = codebuild.LinuxBuildImage.from_code_build_image_id(build_image_str)
+        
+        # Parse environment variables
+        env_vars_list = build.get("environment_variables", [])
+        env_vars = {}
+        for env_var in env_vars_list:
+            var_name = env_var.get("name")
+            var_value = env_var.get("value")
+            var_type = env_var.get("type", "PLAINTEXT")
+            
+            if var_name and var_value is not None:
+                if var_type == "PLAINTEXT":
+                    env_vars[var_name] = codebuild.BuildEnvironmentVariable(value=str(var_value))
+                elif var_type == "PARAMETER_STORE":
+                    env_vars[var_name] = codebuild.BuildEnvironmentVariable(
+                        value=str(var_value),
+                        type=codebuild.BuildEnvironmentVariableType.PARAMETER_STORE
+                    )
+                elif var_type == "SECRETS_MANAGER":
+                    env_vars[var_name] = codebuild.BuildEnvironmentVariable(
+                        value=str(var_value),
+                        type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER
+                    )
+        
+        # Create build environment
+        build_environment = codebuild.BuildEnvironment(
+            build_image=build_image,
+            compute_type=compute_type,
+            privileged=privileged_mode,
+            environment_variables=env_vars
+        )
+        
+        # Determine input source
+        if source_type == "GITHUB":
+            # GitHub source - supports both public and private repos
+            # For private repos, use the workload's code repository connection
+            repo_string = self._parse_github_repo_string(source_location)
+            cache_key = f"{repo_string}:{source_branch}"
+            input_source = self._source_cache.get(cache_key)
+            if not input_source:
+                input_source = pipelines.CodePipelineSource.connection(
+                    repo_string=repo_string,
+                    branch=source_branch,
+                    connection_arn=self.workload.devops.code_repository.connector_arn,
+                    action_name=f"{build_name}",
+                )
+                self._source_cache[cache_key] = input_source
+        else:
+            logger.warning(f"Unsupported source type '{source_type}' for build '{build_name}'")
+            return None
+        
+        # Create CodeBuildStep
+        logger.info(f"Creating CodeBuildStep '{build_name}' with source from {source_location}")
+        
+        # CodeBuildStep requires commands even when using partial_build_spec
+        # Provide placeholder since either:
+        # 1. buildspec.yml in the repo handles the build, or
+        # 2. inline buildspec (partial_build_spec) handles the build
+        commands = ["echo 'Build configuration from buildspec'"]
+        
+        codebuild_step = pipelines.CodeBuildStep(
+            id=f"{build_name}-{stage_name}",
+            input=input_source,
+            commands=commands,
+            build_environment=build_environment,
+            partial_build_spec=buildspec,
+        )
+        
+        return codebuild_step
+    
+    def _parse_github_repo_string(self, location: str) -> str:
+        """
+        Converts GitHub URL to org/repo format.
+        
+        Examples:
+        - https://github.com/geekcafe/myrepo.git -> geekcafe/myrepo
+        - https://github.com/geekcafe/myrepo -> geekcafe/myrepo
+        - geekcafe/myrepo -> geekcafe/myrepo
+        """
+        if location.startswith("https://github.com/"):
+            # Remove https://github.com/ prefix
+            repo_string = location.replace("https://github.com/", "")
+            # Remove .git suffix if present
+            if repo_string.endswith(".git"):
+                repo_string = repo_string[:-4]
+            return repo_string
+        else:
+            # Assume it's already in org/repo format
+            return location
 
     def __setup_stacks(
         self,

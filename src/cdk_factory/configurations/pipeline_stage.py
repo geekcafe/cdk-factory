@@ -117,8 +117,32 @@ class PipelineStageConfig:
     @property
     def builds(self) -> List[Dict[str, Any]]:
         """
-        Returns the stages for this pipeline
+        Returns the builds configured for this stage.
+        
+        If the stage has a "builds" array of strings, resolve them to the
+        corresponding build objects defined at workload["builds"].
+        Otherwise, return an empty list.
         """
-        builds = self.workload.get("builds", [])
+        stage_build_refs = self.dictionary.get("builds", [])
+        if not stage_build_refs:
+            return []
 
-        return builds
+        workload_builds: List[Dict[str, Any]] = self.workload.get("builds", [])
+        by_name: Dict[str, Dict[str, Any]] = {}
+        for b in workload_builds:
+            name = b.get("name") or b.get("id")
+            if name:
+                by_name[name] = b
+
+        resolved: List[Dict[str, Any]] = []
+        for ref in stage_build_refs:
+            if isinstance(ref, str):
+                if ref in by_name:
+                    resolved.append(by_name[ref])
+                else:
+                    raise ValueError(f"Build '{ref}' referenced by stage '{self.name}' not found in workload.builds")
+            elif isinstance(ref, dict):
+                # Allow inline build definitions at the stage level as a fallback
+                resolved.append(ref)
+
+        return resolved
