@@ -211,8 +211,10 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
             raise ValueError(f"Unsupported database engine: {self.rds_config.engine}")
 
         # Configure instance type
+        # Strip 'db.' prefix if present since ec2.InstanceType expects just the instance family/size
         instance_class = self.rds_config.instance_class
-        instance_type = ec2.InstanceType(instance_class)
+        instance_class_name = instance_class.replace("db.", "") if instance_class.startswith("db.") else instance_class
+        instance_type = ec2.InstanceType(instance_class_name)
 
         # Configure removal policy
         removal_policy = None
