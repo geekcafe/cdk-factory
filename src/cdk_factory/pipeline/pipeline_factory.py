@@ -326,28 +326,27 @@ class PipelineFactoryStack(IStack):
             return None
         
         # Parse buildspec
-        # For CodeBuildStep with external source, buildspec.yml is read automatically from the repo
-        # We only need to create a custom buildspec if using inline commands
+        # If a buildspec path is specified, use the buildspec.yml from the source repo
         buildspec_path = build.get("buildspec")
         buildspec = None
-        
-        if not buildspec_path:
+
+        if buildspec_path:
+            buildspec = codebuild.BuildSpec.from_source_filename(buildspec_path)
+        else:
             # No buildspec specified - check for inline commands
-            commands = build.get("commands", [])
-            if isinstance(commands, str):
-                commands = [commands]
-            if commands:
+            inline_commands = build.get("commands", [])
+            if isinstance(inline_commands, str):
+                inline_commands = [inline_commands]
+            if inline_commands:
                 # Create inline buildspec from commands
                 buildspec = codebuild.BuildSpec.from_object({
                     "version": "0.2",
                     "phases": {
                         "build": {
-                            "commands": commands
+                            "commands": inline_commands
                         }
                     }
                 })
-        # If buildspec_path is specified, CodeBuildStep will automatically read it from the source repo
-        # No need to load it explicitly
         
         # Parse environment configuration
         env_config = build.get("environment", {})
@@ -424,11 +423,9 @@ class PipelineFactoryStack(IStack):
         # Create CodeBuildStep
         logger.info(f"Creating CodeBuildStep '{build_name}' with source from {source_location}")
         
-        # CodeBuildStep requires commands even when using partial_build_spec
-        # Provide placeholder since either:
-        # 1. buildspec.yml in the repo handles the build, or
-        # 2. inline buildspec (partial_build_spec) handles the build
-        commands = ["echo 'Build configuration from buildspec'"]
+        # CodeBuildStep requires 'commands' param; when using a buildspec (repo or inline)
+        # we pass an empty list so only the buildspec runs
+        commands: List[str] = []
         
         codebuild_step = pipelines.CodeBuildStep(
             id=f"{build_name}-{stage_name}",
