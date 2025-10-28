@@ -82,6 +82,9 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
 
         # Add outputs
         self._add_outputs(db_name)
+        
+        # Export to SSM Parameter Store
+        self._export_ssm_parameters(db_name)
 
     def _process_ssm_imports(self) -> None:
         """Process SSM imports from configuration"""
@@ -296,3 +299,60 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
                     value=self.db_instance.secret.secret_arn,
                     export_name=f"{self.deployment.build_resource_name(db_name)}-secret-arn",
                 )
+
+    def _export_ssm_parameters(self, db_name: str) -> None:
+        """Export RDS connection info and credentials to SSM Parameter Store"""
+        ssm_exports = self.rds_config.ssm_exports
+        
+        if not ssm_exports:
+            logger.debug("No SSM exports configured for RDS")
+            return
+        
+        logger.info(f"Exporting {len(ssm_exports)} SSM parameters for RDS")
+        
+        # Export database endpoint
+        if "db_endpoint" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportDbEndpoint",
+                value=self.db_instance.db_instance_endpoint_address,
+                parameter_name=ssm_exports["db_endpoint"],
+                description=f"RDS endpoint for {db_name}",
+            )
+            logger.info(f"Exported SSM parameter: {ssm_exports['db_endpoint']}")
+        
+        # Export database port
+        if "db_port" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportDbPort",
+                value=self.db_instance.db_instance_endpoint_port,
+                parameter_name=ssm_exports["db_port"],
+                description=f"RDS port for {db_name}",
+            )
+            logger.info(f"Exported SSM parameter: {ssm_exports['db_port']}")
+        
+        # Export database name
+        if "db_name" in ssm_exports and self.rds_config.database_name:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportDbName",
+                value=self.rds_config.database_name,
+                parameter_name=ssm_exports["db_name"],
+                description=f"RDS database name for {db_name}",
+            )
+            logger.info(f"Exported SSM parameter: {ssm_exports['db_name']}")
+        
+        # Export secret ARN (contains username and password)
+        if "db_secret_arn" in ssm_exports:
+            if hasattr(self.db_instance, "secret") and self.db_instance.secret:
+                self.export_ssm_parameter(
+                    scope=self,
+                    id="SsmExportDbSecretArn",
+                    value=self.db_instance.secret.secret_arn,
+                    parameter_name=ssm_exports["db_secret_arn"],
+                    description=f"Secrets Manager ARN containing RDS credentials for {db_name}",
+                )
+                logger.info(f"Exported SSM parameter: {ssm_exports['db_secret_arn']}")
+            else:
+                logger.warning(f"Secret not found for RDS instance {db_name}, skipping secret ARN export")
