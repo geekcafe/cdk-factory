@@ -74,7 +74,7 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
         
         # Load ECS configuration
         self.ecs_config = EcsServiceConfig(
-            stack_config.dictionary.get("ecs_service", {})
+            stack_config.dictionary.get("ecs_service") or stack_config.dictionary.get("ecs", {})
         )
         
         service_name = deployment.build_resource_name(self.ecs_config.name)
