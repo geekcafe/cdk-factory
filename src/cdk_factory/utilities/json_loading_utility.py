@@ -171,9 +171,18 @@ class JsonLoadingUtility:
     def merge_sections(self, base: dict, new: dict):
         """Merge two configuration sections, with new section overriding base section."""
         for key, value in new.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                self.merge_sections(base[key], value)
+            if key in base:
+                if isinstance(base[key], dict) and isinstance(value, dict):
+                    # Recursively merge nested dicts
+                    self.merge_sections(base[key], value)
+                elif isinstance(base[key], list) and isinstance(value, list):
+                    # Extend arrays instead of replacing them
+                    base[key].extend(value)
+                else:
+                    # Override for all other types (string, int, bool, etc.)
+                    base[key] = value
             else:
+                # Key doesn't exist in base, add it
                 base[key] = value
         return base
 
