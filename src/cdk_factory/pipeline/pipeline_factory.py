@@ -5,6 +5,7 @@ Geek Cafe Pipeline
 import os
 from pathlib import Path
 from typing import List, Dict, Any
+import yaml
 
 import aws_cdk as cdk
 from aws_cdk import aws_codebuild as codebuild
@@ -326,12 +327,27 @@ class PipelineFactoryStack(IStack):
             return None
         
         # Parse buildspec
-        # If a buildspec path is specified, use the buildspec.yml from the source repo
+        # If a buildspec path is specified, try to load it locally and convert to from_object()
         buildspec_path = build.get("buildspec")
         buildspec = None
 
         if buildspec_path:
-            buildspec = codebuild.BuildSpec.from_source_filename(buildspec_path)
+            try:
+                candidate = Path(buildspec_path)
+                if not candidate.is_file():
+                    # Try relative to cwd
+                    candidate = Path(os.getcwd()) / buildspec_path
+                if candidate.is_file():
+                    with candidate.open("r", encoding="utf-8") as f:
+                        yml = yaml.safe_load(f)
+                    if isinstance(yml, dict):
+                        buildspec = codebuild.BuildSpec.from_object(yml)
+                    else:
+                        raise ValueError("Parsed buildspec YAML is not a dictionary")
+                else:
+                    raise FileNotFoundError(f"Buildspec file not found: {buildspec_path}")
+            except Exception as exc:
+                raise RuntimeError(f"Failed to load buildspec from '{buildspec_path}': {exc}")
         else:
             # No buildspec specified - check for inline commands
             inline_commands = build.get("commands", [])
