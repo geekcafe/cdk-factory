@@ -447,8 +447,19 @@ class LoadBalancerStack(IStack, EnhancedSsmParameterMixin):
     def _get_certificates(self) -> List[elbv2.ListenerCertificate]:
         """Get certificates for HTTPS listeners"""
         certificates = []
-        for cert_arn in self.lb_config.certificate_arns:
-            certificates.append(elbv2.ListenerCertificate.from_arn(cert_arn))
+        
+        # Check SSM imported values first (takes priority)
+        if "certificate_arns" in self.ssm_imported_values:
+            cert_arns = self.ssm_imported_values["certificate_arns"]
+            if not isinstance(cert_arns, list):
+                cert_arns = [cert_arns]
+            for cert_arn in cert_arns:
+                certificates.append(elbv2.ListenerCertificate.from_arn(cert_arn))
+            logger.info(f"Using {len(cert_arns)} certificate(s) from SSM")
+        else:
+            # Fall back to config values
+            for cert_arn in self.lb_config.certificate_arns:
+                certificates.append(elbv2.ListenerCertificate.from_arn(cert_arn))
 
         if self.ssl_certificate:
             certificates.append(

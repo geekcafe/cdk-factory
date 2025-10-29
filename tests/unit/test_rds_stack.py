@@ -79,7 +79,7 @@ def test_rds_stack_minimal():
                 assert stack.rds_config.engine_version == "14"
                 assert stack.rds_config.instance_class == "t3.micro"
                 assert stack.rds_config.database_name == "testdb"
-                assert stack.rds_config.username == "admin"
+                assert stack.rds_config.username == "admin_usr"
 
                 # Verify the DB instance was created
                 assert stack.db_instance is mock_db_instance

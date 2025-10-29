@@ -151,3 +151,17 @@ class LoadBalancerConfig(EnhancedBaseConfig):
         if "ssm" in self.__config and "imports" in self.__config["ssm"]:
             return self.__config["ssm"]["imports"]
         return self.__config.get("ssm_imports", {})
+    
+    @property
+    def ssm_exports(self) -> Dict[str, Any]:
+        """SSM parameter exports for the Load Balancer"""
+        # Check both nested and flat structures for backwards compatibility
+        if "ssm" in self.__config and "exports" in self.__config["ssm"]:
+            return self.__config["ssm"]["exports"]
+        return self.__config.get("ssm_exports", {})
+    
+    @property
+    def ssm_parameters(self) -> Dict[str, Any]:
+        """SSM parameters for the Load Balancer (only exports, not imports)"""
+        # For LoadBalancer, only return exports to prevent trying to export imported values
+        return self.ssm_exports

@@ -58,8 +58,13 @@ class Route53Stack(IStack, EnhancedSsmParameterMixin):
         # Get or create hosted zone
         self.hosted_zone = self._get_or_create_hosted_zone()
         
-        # Create certificate if needed
+        # Create certificate if needed (DEPRECATED - use dedicated ACM stack)
         if self.route53_config.create_certificate:
+            logger.warning(
+                "Creating certificates in Route53Stack is deprecated. "
+                "Please use the dedicated 'acm_stack' module for certificate management. "
+                "This feature will be maintained for backward compatibility."
+            )
             self.certificate = self._create_certificate()
             
         # Create DNS records
