@@ -141,6 +141,19 @@ class LoadBalancerStack(IStack, EnhancedSsmParameterMixin):
                 vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
             )
 
+        # If subnets is None, check if we have SSM-imported subnet_ids as a token
+        # We need to use Fn.Split to convert the comma-separated string to an array
+        if subnets is None and "subnet_ids" in self.ssm_imported_values:
+            subnet_ids_value = self.ssm_imported_values["subnet_ids"]
+            if cdk.Token.is_unresolved(subnet_ids_value):
+                logger.info("Using Fn.Split to convert comma-separated subnet IDs token to array")
+                # Use CloudFormation escape hatch to set Subnets property with Fn.Split
+                cfn_lb = load_balancer.node.default_child
+                cfn_lb.add_property_override(
+                    "Subnets",
+                    cdk.Fn.split(",", subnet_ids_value)
+                )
+
         # Add tags
         for key, value in self.lb_config.tags.items():
             cdk.Tags.of(load_balancer).add(key, value)
@@ -255,15 +268,28 @@ class LoadBalancerStack(IStack, EnhancedSsmParameterMixin):
         
         # Check SSM imported values first
         if "subnet_ids" in self.ssm_imported_values:
-            subnet_ids = self.ssm_imported_values["subnet_ids"]
-            # SSM returns comma-separated string for StringList, need to split
-            if isinstance(subnet_ids, str):
-                subnet_ids = [s.strip() for s in subnet_ids.split(',')]
-            elif not isinstance(subnet_ids, list):
-                subnet_ids = [subnet_ids]
+            subnet_ids_value = self.ssm_imported_values["subnet_ids"]
+            
+            # Check if this is a CDK token (unresolved SSM parameter)
+            if cdk.Token.is_unresolved(subnet_ids_value):
+                # For tokens, we can't split at synth time
+                # Return None to signal that subnets should be resolved via SubnetSelection
+                # The ALB construct will handle the token-based subnet IDs
+                logger.info("Subnet IDs are unresolved tokens, will use vpc_subnets with token resolution")
+                return None
+            elif isinstance(subnet_ids_value, str):
+                # If it's a resolved string, split it
+                subnet_ids = [s.strip() for s in subnet_ids_value.split(',')]
+            elif isinstance(subnet_ids_value, list):
+                subnet_ids = subnet_ids_value
+            else:
+                subnet_ids = [subnet_ids_value]
         else:
             subnet_ids = self.lb_config.subnets
         
+        if not subnet_ids:
+            return None
+            
         for idx, subnet_id in enumerate(subnet_ids):
             subnets.append(
                 ec2.Subnet.from_subnet_id(self, f"Subnet-{idx}", subnet_id)
