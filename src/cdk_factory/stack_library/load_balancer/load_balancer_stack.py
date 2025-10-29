@@ -112,34 +112,46 @@ class LoadBalancerStack(IStack, EnhancedSsmParameterMixin):
         # Get subnets
         subnets = self._get_subnets()
 
+        # Prepare vpc_subnets parameter
+        # If subnets is None, we'll handle it via escape hatch after creation
+        vpc_subnets_param = ec2.SubnetSelection(subnets=subnets) if subnets else None
+
         # Create the Load Balancer based on type
         if self.lb_config.type == "APPLICATION":
-            load_balancer = elbv2.ApplicationLoadBalancer(
-                self,
-                lb_name,
-                load_balancer_name=lb_name,
-                vpc=self.vpc,
-                internet_facing=self.lb_config.internet_facing,
-                security_group=(
+            # When vpc_subnets is None and we have token-based subnet_ids,
+            # we need to create the ALB without vpc_subnets to avoid VPC subnet lookup errors
+            alb_props = {
+                "load_balancer_name": lb_name,
+                "vpc": self.vpc,
+                "internet_facing": self.lb_config.internet_facing,
+                "security_group": (
                     security_groups[0]
                     if security_groups and len(security_groups) > 0
                     else None
                 ),
-                deletion_protection=self.lb_config.deletion_protection,
-                idle_timeout=cdk.Duration.seconds(self.lb_config.idle_timeout),
-                http2_enabled=self.lb_config.http2_enabled,
-                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
-            )
+                "deletion_protection": self.lb_config.deletion_protection,
+                "idle_timeout": cdk.Duration.seconds(self.lb_config.idle_timeout),
+                "http2_enabled": self.lb_config.http2_enabled,
+            }
+            
+            # Only add vpc_subnets if we have concrete subnet objects
+            if vpc_subnets_param:
+                alb_props["vpc_subnets"] = vpc_subnets_param
+            
+            load_balancer = elbv2.ApplicationLoadBalancer(self, lb_name, **alb_props)
         else:  # NETWORK
-            load_balancer = elbv2.NetworkLoadBalancer(
-                self,
-                lb_name,
-                load_balancer_name=lb_name,
-                vpc=self.vpc,
-                internet_facing=self.lb_config.internet_facing,
-                deletion_protection=self.lb_config.deletion_protection,
-                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
-            )
+            nlb_props = {
+                "load_balancer_name": lb_name,
+                "vpc": self.vpc,
+                "internet_facing": self.lb_config.internet_facing,
+                "deletion_protection": self.lb_config.deletion_protection,
+            }
+            
+            # Only add vpc_subnets if we have concrete subnet objects
+            if vpc_subnets_param:
+                nlb_props["vpc_subnets"] = vpc_subnets_param
+            
+            load_balancer = elbv2.NetworkLoadBalancer(self, lb_name, **nlb_props)
 
         # If subnets is None, check if we have SSM-imported subnet_ids as a token
         # We need to use Fn.Split to convert the comma-separated string to an array
@@ -173,8 +185,15 @@ class LoadBalancerStack(IStack, EnhancedSsmParameterMixin):
             # Build VPC attributes
             vpc_attrs = {
                 "vpc_id": vpc_id,
-                "availability_zones": ["us-east-1a", "us-east-1b"]
+                "availability_zones": ["us-east-1a", "us-east-1b"],
             }
+            
+            # If we have subnet_ids from SSM, provide dummy public subnets
+            # The actual subnets will be set via CloudFormation escape hatch
+            if "subnet_ids" in self.ssm_imported_values:
+                # Provide dummy subnet IDs - these will be overridden by the escape hatch
+                # We need at least one dummy subnet per AZ to satisfy CDK's validation
+                vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
             
             # Use from_vpc_attributes() instead of from_lookup() because SSM imports return tokens
             self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
