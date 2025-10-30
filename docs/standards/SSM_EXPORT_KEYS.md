@@ -157,8 +157,8 @@ SSM parameter paths should follow this pattern:
 
 **Examples:**
 ```
-/prod/trav-talks/ecr/infra-test/uri
-/prod/trav-talks/rds/endpoint
+/prod/acme-inc/ecr/infra-test/uri
+/prod/acme-inc/rds/endpoint
 /dev/myapp/vpc/id
 ```
 

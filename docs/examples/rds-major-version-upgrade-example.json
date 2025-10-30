@@ -1,0 +1,52 @@
+{
+  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-rds",
+  "module": "rds_stack",
+  "enabled": true,
+  "dependencies": [
+    "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+    "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-security-groups"
+  ],
+  "rds": {
+    "identifier": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-db",
+    "engine": "mysql",
+    "engine_version": "8.4.6",
+    "instance_class": "db.t4g.small",
+    
+    "// MAJOR VERSION UPGRADE": "Set this to true when upgrading from 8.0 -> 8.4",
+    "allow_major_version_upgrade": true,
+    
+    "// STORAGE AUTO-SCALING": "RDS will automatically scale storage from 20GB up to 100GB",
+    "allocated_storage": 20,
+    "max_allocated_storage": 100,
+    
+    "enable_performance_insights": false,
+    "multi_az": false,
+    "backup_retention": 7,
+    "storage_encrypted": true,
+    "deletion_protection": false,
+    
+    "database_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}",
+    "master_username": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-admin",
+    
+    "ssm": {
+      "imports": {
+        "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id",
+        "subnet_ids": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/private-subnet-ids",
+        "security_group_ids": [
+          "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/security-groups/rds-id"
+        ]
+      },
+      "exports": {
+        "db_endpoint": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/rds/endpoint",
+        "db_port": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/rds/port",
+        "db_secret_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/rds/secret-arn"
+      }
+    },
+    
+    "tags": {
+      "Environment": "{{ENVIRONMENT}}",
+      "Workload": "{{WORKLOAD_NAME}}",
+      "ManagedBy": "CDK-Factory"
+    }
+  }
+}

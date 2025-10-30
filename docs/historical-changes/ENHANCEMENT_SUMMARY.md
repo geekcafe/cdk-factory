@@ -162,21 +162,21 @@ factory = CdkAppFactory(
 #### Locally (with .git)
 
 ```
-1. runtime_dir: .../trav-talks-real-estate/devops/cdk-iac
+1. runtime_dir: .../acme-inc/devops/cdk-iac
 2. Detection: Walk up tree, found .git at project root
-3. Result: cdk.out at .../trav-talks-real-estate/cdk.out ✅
+3. Result: cdk.out at .../acme-inc/cdk.out ✅
 ```
 
 #### Locally (without .git, like CI zip)
 
 ```
-1. runtime_dir: .../trav-talks-real-estate/devops/cdk-iac
+1. runtime_dir: .../acme-inc/devops/cdk-iac
 2. Detection: Walk up tree, found:
    - README.md at project root
    - .gitignore at project root
    - requirements.txt at project root
    → 3 markers = project root confirmed ✅
-3. Result: cdk.out at .../trav-talks-real-estate/cdk.out ✅
+3. Result: cdk.out at .../acme-inc/cdk.out ✅
 ```
 
 ### Detection Priority (Updated for CodeBuild)
@@ -215,7 +215,7 @@ Just use the template:
 cdk-factory init devops/cdk-iac
 ```
 
-#### For Existing Projects (Like trav-talks-real-estate)
+#### For Existing Projects (Like acme-inc)
 
 After publishing new cdk-factory version:
 

@@ -162,7 +162,7 @@ The Route53Stack still supports certificate creation for backward compatibility,
 
 Convention: `/{environment}/{workload}/certificate/arn`
 
-Example: `/prod/trav-talks/certificate/arn`
+Example: `/prod/acme-inc/certificate/arn`
 
 ## Certificate Transparency Logging
 

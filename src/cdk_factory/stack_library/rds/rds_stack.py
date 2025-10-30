@@ -244,8 +244,17 @@ class RdsStack(IStack, EnhancedSsmParameterMixin):
             "backup_retention": Duration.days(self.rds_config.backup_retention),
             "cloudwatch_logs_exports": self.rds_config.cloudwatch_logs_exports,
             "enable_performance_insights": self.rds_config.enable_performance_insights,
+            "allow_major_version_upgrade": self.rds_config.allow_major_version_upgrade,
             "removal_policy": removal_policy,
         }
+        
+        # Add storage auto-scaling if max_allocated_storage is configured
+        if self.rds_config.max_allocated_storage:
+            db_props["max_allocated_storage"] = self.rds_config.max_allocated_storage
+            logger.info(
+                f"Storage auto-scaling enabled: {self.rds_config.allocated_storage}GB "
+                f"-> {self.rds_config.max_allocated_storage}GB"
+            )
         
         # Use either subnet group or vpc_subnets depending on what's available
         if db_subnet_group:

@@ -44,7 +44,7 @@ Universal rules across all engines:
 
 **Example transformations**:
 ```
-"trav-talks-prod-admin" → "trav_talks_prod_"
+"acme-inc-prod-admin" → "acme_inc_prod_"
 "1admin" → "user1admin"
 "postgres" → "postgres_usr"
 ```
@@ -60,7 +60,7 @@ Universal rules across all engines:
 - ✅ **Auto-fix hyphens**: converts `-` to `_`
 
 ```
-"trav-talks-prod" → "trav_talks_prod"
+"acme-inc-prod" → "acme_inc_prod"
 ```
 
 #### **PostgreSQL / Aurora PostgreSQL**
@@ -123,7 +123,7 @@ Universal rules across all engines:
 All sanitization operations are logged with details:
 
 ```python
-logger.info(f"Sanitized database name from 'trav-talks-prod' to 'trav_talks_prod': replaced hyphens with underscores")
+logger.info(f"Sanitized database name from 'acme-inc-prod' to 'acme_inc_prod': replaced hyphens with underscores")
 ```
 
 ### Error Handling
@@ -142,14 +142,14 @@ ValueError: "Database name 'my-db' (sanitized to '123db') cannot start with a nu
 ```json
 {
   "engine": "mysql",
-  "database_name": "trav-talks-prod",
-  "master_username": "trav-talks-prod-admin"
+  "database_name": "acme-inc-prod",
+  "master_username": "acme-inc-prod-admin"
 }
 ```
 
 **Result**:
-- Database name: `trav_talks_prod`
-- Username: `trav_talks_prod_`
+- Database name: `acme_inc_prod`
+- Username: `acme_inc_prod_`
 
 ### Example 2: Oracle Database
 ```json
@@ -219,9 +219,9 @@ ValueError: "Database name 'my-db' (sanitized to '123db') cannot start with a nu
 }
 ```
 
-With `WORKLOAD_NAME=trav-talks` and `ENVIRONMENT=prod`:
-- **Instance ID**: `trav-talks-prod-db` (hyphens OK for identifiers)
-- **Database name**: `trav_talks_prod` (hyphens → underscores)
-- **Username**: `trav_talks_admin` (hyphens → underscores)
+With `WORKLOAD_NAME=acme-inc` and `ENVIRONMENT=prod`:
+- **Instance ID**: `acme-inc-prod-db` (hyphens OK for identifiers)
+- **Database name**: `acme_inc_prod` (hyphens → underscores)
+- **Username**: `acme_inc_admin` (hyphens → underscores)
 
 All sanitization happens automatically during stack synthesis.

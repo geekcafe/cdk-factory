@@ -155,6 +155,12 @@ class RdsConfig(EnhancedBaseConfig):
         """Allocated storage in GB"""
         # Ensure we return an integer
         return int(self.__config.get("allocated_storage", 20))
+    
+    @property
+    def max_allocated_storage(self) -> Optional[int]:
+        """Maximum storage for auto-scaling in GB (enables storage auto-scaling if set)"""
+        max_storage = self.__config.get("max_allocated_storage")
+        return int(max_storage) if max_storage is not None else None
 
     @property
     def storage_encrypted(self) -> bool:
@@ -180,6 +186,11 @@ class RdsConfig(EnhancedBaseConfig):
     def enable_performance_insights(self) -> bool:
         """Whether to enable Performance Insights"""
         return self.__config.get("enable_performance_insights", True)
+    
+    @property
+    def allow_major_version_upgrade(self) -> bool:
+        """Whether to allow major version upgrades"""
+        return self.__config.get("allow_major_version_upgrade", False)
 
     @property
     def subnet_group_name(self) -> str:
