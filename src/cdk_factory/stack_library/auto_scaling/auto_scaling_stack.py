@@ -632,56 +632,34 @@ class AutoScalingStack(IStack, VPCProviderMixin):
             # Scheduled action implementation would go here
             pass
 
-    def _create_ecs_cluster_if_needed(self, asg_name: str) -> None:
-        """Create ECS cluster if ECS configuration is detected"""
-        # Check if this is an ECS configuration by looking for ECS-related patterns
-        is_ecs_config = (
-            # Check if ECS managed policy is attached
-            any("AmazonEC2ContainerServiceforEC2Role" in policy for policy in self.asg_config.managed_policies) or
-            # Check for explicit ECS configuration
-            self.stack_config.dictionary.get("auto_scaling", {}).get("enable_ecs_cluster", False)
-        )
-        
-        if not is_ecs_config:
-            logger.debug("No ECS configuration detected, skipping cluster creation")
+    def _create_ecs_cluster_if_needed(self, asg_name: str):
+        """
+        ECS cluster creation should be handled by the dedicated EcsClusterStack module.
+        This method only handles SSM imports for cluster name injection.
+        """
+        # Check if ECS cluster name is available via SSM imports
+        if self.has_ssm_import("ecs_cluster_name"):
+            logger.info(f"ECS cluster name available via SSM imports")
+            # Inject cluster name into user data if available
+            if self.user_data and self.user_data_commands:
+                self._inject_cluster_name_into_user_data()
             return
         
-        # Generate cluster name from stack configuration
-        cluster_name = f"{self.workload.name}-{self.workload.environment}-cluster"
-        
-        logger.info(f"Creating ECS cluster: {cluster_name}")
-        
-        # Create ECS cluster
-        self.ecs_cluster = ecs.Cluster(
-            self,
-            "ECSCluster",
-            cluster_name=cluster_name,
-            vpc=self.vpc,
-            container_insights=True
-        )
-        
-        # Inject the cluster name into user data if user data exists
-        if self.user_data and self.user_data_commands:
-            self._inject_cluster_name_into_user_data(cluster_name)
-        
-        # Export cluster name
-        cdk.CfnOutput(
-            self,
-            f"{cluster_name}-name",
-            value=self.ecs_cluster.cluster_name,
-            export_name=f"{self.deployment.build_resource_name(cluster_name)}-name",
-        )
-        
-        # Export cluster ARN
-        cdk.CfnOutput(
-            self,
-            f"{cluster_name}-arn",
-            value=self.ecs_cluster.cluster_arn,
-            export_name=f"{self.deployment.build_resource_name(cluster_name)}-arn",
+        logger.warning(
+            "No ECS cluster name found in SSM imports. "
+            "Use the dedicated EcsClusterStack module to create ECS clusters."
         )
 
-    def _inject_cluster_name_into_user_data(self, cluster_name: str) -> None:
-        """Inject the ECS cluster name into user data commands"""
+    def _inject_cluster_name_into_user_data(self) -> None:
+        """Inject the ECS cluster name into user data commands using SSM imports"""
+        # Check if ECS cluster name is available via SSM imports
+        if self.has_ssm_import("ecs_cluster_name"):
+            cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
+            logger.info(f"Using ECS cluster name from SSM: {cluster_name}")
+        else:
+            logger.warning("No ECS cluster name found in SSM imports, skipping cluster name injection")
+            return
+        
         injected_commands = []
         cluster_name_injected = False
         

@@ -38,11 +38,11 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         )
 
     def test_vpc_naming_with_ecs_cluster(self):
-        """Test that VPC and ECS cluster can coexist without naming conflicts"""
+        """Test that VPC can be used without ECS cluster naming conflicts (new architecture)"""
         # Create AutoScalingStack with ECS configuration
         stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster")
         
-        # Configure for ECS
+        # Configure for ECS (but no implicit cluster creation)
         stack_config = StackConfig({
             "auto_scaling": {
                 "name": "test-ecs-asg",
@@ -79,27 +79,22 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         try:
             stack.build(stack_config, self.deployment_config, self.workload_config)
             
-            # Verify both VPC and ECS cluster were created
+            # Verify VPC was created/imported
             self.assertIsNotNone(stack.vpc)
-            self.assertIsNotNone(stack.ecs_cluster)
+            
+            # With new architecture, ECS cluster should NOT be created implicitly
+            self.assertIsNone(stack.ecs_cluster, 
+                             "ECS cluster should not be created implicitly in AutoScalingStack")
             
             # Verify VPC has correct properties
             self.assertEqual(stack.vpc.vpc_id, "vpc-test123")
             
-            # Verify ECS cluster has correct name (handle CDK tokens)
-            cluster_name = stack.ecs_cluster.cluster_name
-            # Check if it's a CDK token (contains ${Token[})
-            if "${Token[" in str(cluster_name):
-                # It's a CDK token, which is expected
-                print(f"✅ ECS cluster name is CDK token: {cluster_name}")
-            else:
-                # Should contain our expected cluster name
-                self.assertIn("test-workload-prod-cluster", str(cluster_name))
-            
-            print("✅ VPC and ECS cluster created without naming conflicts")
+            print("✅ VPC configuration works without implicit ECS cluster creation")
+            print("   - Use dedicated EcsClusterStack for cluster creation")
+            print("   - No naming conflicts between VPC and ECS cluster")
             
         except Exception as e:
-            self.fail(f"VPC and ECS cluster creation failed with naming conflict: {e}")
+            self.fail(f"VPC configuration failed: {e}")
 
     def test_vpc_construct_name_uniqueness(self):
         """Test that VPC construct names are unique across different stacks"""
@@ -189,7 +184,7 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         print("✅ ECS configuration detection working correctly")
 
     def test_ecs_cluster_naming_default(self):
-        """Test that ECS cluster gets default name when no user data cluster is specified"""
+        """Test that ECS cluster creation is properly handled with new architecture"""
         # Create AutoScalingStack with ECS configuration but no cluster name in user data
         stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster-default")
         
@@ -216,7 +211,7 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
             }
         }, self.workload_config.dictionary)
         
-        # Mock SSM parameter values
+        # Mock SSM parameter values (no ECS cluster name provided)
         stack._ssm_imported_values = {
             "vpc_id": "vpc-test123",
             "subnet_ids": "subnet-test1,subnet-test2"
@@ -226,36 +221,19 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         try:
             stack.build(stack_config, self.deployment_config, self.workload_config)
             
-            # Verify ECS cluster was created
-            self.assertIsNotNone(stack.ecs_cluster)
+            # With the new architecture, ECS cluster should NOT be created implicitly
+            self.assertIsNone(stack.ecs_cluster, 
+                             "ECS cluster should not be created implicitly in AutoScalingStack")
             
-            # Verify default cluster naming (should contain 'cluster')
-            cluster_name = stack.ecs_cluster.cluster_name
-            if "${Token[" in str(cluster_name):
-                # Check template synthesis for default naming
-                template = self.app.synth().get_stack_by_name("test-workload-prod-ecs-cluster-default").template
-                ecs_cluster_resource = None
-                for resource_id, resource in template.get('Resources', {}).items():
-                    if resource.get('Type') == 'AWS::ECS::Cluster':
-                        ecs_cluster_resource = resource
-                        break
-                
-                self.assertIsNotNone(ecs_cluster_resource, "ECS cluster resource should exist in template")
-                actual_cluster_name = ecs_cluster_resource.get('Properties', {}).get('ClusterName')
-                self.assertIsNotNone(actual_cluster_name, "Default cluster name should not be None")
-                self.assertIn("cluster", actual_cluster_name.lower(), 
-                             "Default cluster name should contain 'cluster'")
-            else:
-                self.assertIn("cluster", cluster_name.lower(), 
-                             "Default cluster name should contain 'cluster'")
-            
-            print("✅ ECS cluster default naming works correctly")
+            print("✅ AutoScalingStack correctly does not create ECS cluster implicitly")
+            print("   - Use dedicated EcsClusterStack for cluster creation")
+            print("   - Configure SSM imports to reference cluster name")
             
         except Exception as e:
             self.fail(f"ECS cluster default naming test failed: {e}")
 
     def test_ecs_cluster_naming_from_stack(self):
-        """Test that ECS cluster gets the correct name from stack and injects into user data"""
+        """Test that ECS cluster name is properly injected from SSM imports"""
         # Create AutoScalingStack with ECS configuration
         stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster")
         
@@ -276,107 +254,51 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
                 "ssm_imports": {
                     "vpc_id": "/test/vpc/id",
                     "subnet_ids": "/test/vpc/subnet-ids",
-                    "security_group_ids": "/test/sg/ecs-id"
+                    "security_group_ids": "/test/sg/ecs-id",
+                    "ecs_cluster_name": "/test/ecs/cluster/name"
                 },
                 "user_data_commands": [
                     "#!/bin/bash",
-                    "echo ECS_CLUSTER=placeholder >> /etc/ecs/ecs.config"
+                    "echo ECS_CLUSTER={{ecs_cluster_name}} >> /etc/ecs/ecs.config"
                 ]
             }
         }, self.workload_config.dictionary)
         
-        # Mock SSM parameter values
+        # Mock SSM parameter values (including ECS cluster name)
         stack._ssm_imported_values = {
             "vpc_id": "vpc-test123",
             "subnet_ids": "subnet-test1,subnet-test2,subnet-test3",
-            "security_group_ids": "sg-test123"
+            "security_group_ids": "sg-test123",
+            "ecs_cluster_name": "test-workload-prod-cluster"
         }
         
         # Build the stack
         try:
             stack.build(stack_config, self.deployment_config, self.workload_config)
             
-            # Verify ECS cluster was created
-            self.assertIsNotNone(stack.ecs_cluster)
+            # With new architecture, ECS cluster should NOT be created implicitly
+            self.assertIsNone(stack.ecs_cluster, 
+                             "ECS cluster should not be created implicitly in AutoScalingStack")
             
-            # Verify the cluster name was generated correctly (should contain 'cluster')
-            cluster_name = stack.ecs_cluster.cluster_name
-            if "${Token[" in str(cluster_name):
-                # If it's a token, we need to check the template synthesis
-                template = self.app.synth().get_stack_by_name("test-workload-prod-ecs-cluster").template
-                ecs_cluster_resource = None
-                for resource_id, resource in template.get('Resources', {}).items():
-                    if resource.get('Type') == 'AWS::ECS::Cluster':
-                        ecs_cluster_resource = resource
-                        break
-                
-                self.assertIsNotNone(ecs_cluster_resource, "ECS cluster resource should exist in template")
-                actual_cluster_name = ecs_cluster_resource.get('Properties', {}).get('ClusterName')
-                self.assertIsNotNone(actual_cluster_name, "Cluster name should not be None")
-                self.assertIn("cluster", actual_cluster_name.lower(), 
-                             "Cluster name should contain 'cluster'")
-            else:
-                self.assertIn("cluster", cluster_name.lower(), 
-                             "Cluster name should contain 'cluster'")
+            # Verify the cluster name was injected into user data from SSM
+            updated_commands = stack.user_data_commands
+            cluster_command = None
+            for cmd in updated_commands:
+                if 'ECS_CLUSTER=' in cmd:
+                    cluster_command = cmd
+                    break
             
-            # Verify that the user data was updated with the correct cluster name
-            cluster_injected = any("ECS_CLUSTER=" in cmd and "placeholder" not in cmd for cmd in stack.user_data_commands)
-            self.assertTrue(cluster_injected, "ECS cluster name should be injected into user data")
+            self.assertIsNotNone(cluster_command, "Should have ECS cluster command in user data")
+            self.assertIn("test-workload-prod-cluster", cluster_command, 
+                         "Should use SSM-imported cluster name")
+            self.assertNotIn("{{ecs_cluster_name}}", cluster_command,
+                           "Should substitute template variable")
             
-            print("✅ ECS cluster naming and user data injection works correctly")
+            print("✅ ECS cluster name properly injected from SSM imports")
+            print(f"   Updated command: {cluster_command}")
             
         except Exception as e:
             self.fail(f"ECS cluster naming test failed: {e}")
-
-    def test_ecs_cluster_naming_without_user_data_cluster(self):
-        """Test that ECS cluster gets created and adds cluster name to user data when none exists"""
-        # Create AutoScalingStack with ECS configuration but no cluster in user data
-        stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster-auto")
-        
-        # Configure for ECS without cluster name in user data
-        stack_config = StackConfig({
-            "auto_scaling": {
-                "name": "test-ecs-asg",
-                "instance_type": "t3.small",
-                "min_capacity": 1,
-                "max_capacity": 2,
-                "desired_capacity": 1,
-                "subnet_group_name": "Public",
-                "managed_policies": [
-                    "service-role/AmazonEC2ContainerServiceforEC2Role"
-                ],
-                "ssm_imports": {
-                    "vpc_id": "/test/vpc/id",
-                    "subnet_ids": "/test/vpc/subnet-ids"
-                },
-                "user_data_commands": [
-                    "#!/bin/bash",
-                    "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config"
-                ]
-            }
-        }, self.workload_config.dictionary)
-        
-        # Mock SSM parameter values
-        stack._ssm_imported_values = {
-            "vpc_id": "vpc-test123",
-            "subnet_ids": "subnet-test1,subnet-test2"
-        }
-        
-        # Build the stack
-        try:
-            stack.build(stack_config, self.deployment_config, self.workload_config)
-            
-            # Verify ECS cluster was created
-            self.assertIsNotNone(stack.ecs_cluster)
-            
-            # Verify that the cluster name was added to user data
-            cluster_added = any("ECS_CLUSTER=" in cmd for cmd in stack.user_data_commands)
-            self.assertTrue(cluster_added, "ECS cluster name should be added to user data")
-            
-            print("✅ ECS cluster auto-adds cluster name to user data when missing")
-            
-        except Exception as e:
-            self.fail(f"ECS cluster auto-add test failed: {e}")
 
 
 if __name__ == "__main__":
