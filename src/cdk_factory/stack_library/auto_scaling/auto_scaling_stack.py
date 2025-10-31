@@ -248,10 +248,12 @@ class AutoScalingStack(IStack, VPCProviderMixin):
         # Add base commands
         user_data.add_commands("set -euxo pipefail")
 
-        # Add custom commands from config
+        # Add custom commands from config (with variable substitution)
         for command in self.asg_config.user_data_commands:
-            user_data.add_commands(command)
-            self.user_data_commands.append(command)
+            # Perform variable substitution on the command
+            substituted_command = self._substitute_variables(command)
+            user_data.add_commands(substituted_command)
+            self.user_data_commands.append(substituted_command)
 
         # Add user data scripts from files (with variable substitution)
         if self.asg_config.user_data_scripts:
@@ -323,6 +325,49 @@ class AutoScalingStack(IStack, VPCProviderMixin):
                     user_data.add_commands(line)
             
             logger.info(f"Added user data script from {script_type}: {script_config.get('path', 'inline')}")
+
+    def _substitute_variables(self, command: str) -> str:
+        """
+        Perform variable substitution on a user data command.
+        Uses workload and deployment configuration for substitution.
+        """
+        if not command:
+            return command
+            
+        # Start with the original command
+        substituted_command = command
+        
+        # Define available variables for substitution
+        variables = {}
+        
+        # Add workload variables
+        if self.workload:
+            variables.update({
+                "WORKLOAD_NAME": getattr(self.workload, 'name', ''),
+                "ENVIRONMENT": getattr(self.workload, 'environment', ''),
+                "WORKLOAD": getattr(self.workload, 'name', ''),
+            })
+        
+        # Add deployment variables
+        if self.deployment:
+            variables.update({
+                "DEPLOYMENT_NAME": getattr(self.deployment, 'name', ''),
+                "REGION": getattr(self.deployment, 'region', ''),
+                "ACCOUNT": getattr(self.deployment, 'account', ''),
+            })
+        
+        # Add stack-level variables
+        variables.update({
+            "STACK_NAME": self.stack_name,
+        })
+        
+        # Perform substitution
+        for var_name, var_value in variables.items():
+            if var_value is not None:
+                placeholder = f"{{{{{var_name}}}}}"  # {{VAR_NAME}}
+                substituted_command = substituted_command.replace(placeholder, str(var_value))
+        
+        return substituted_command
 
     def _add_container_user_data(
         self, user_data: ec2.UserData, container_config: Dict[str, Any]
@@ -602,7 +647,7 @@ class AutoScalingStack(IStack, VPCProviderMixin):
             return
         
         # Generate cluster name from stack configuration
-        cluster_name = f"{self.deployment.build_resource_name('cluster')}"
+        cluster_name = f"{self.workload.name}-{self.workload.environment}-cluster"
         
         logger.info(f"Creating ECS cluster: {cluster_name}")
         
