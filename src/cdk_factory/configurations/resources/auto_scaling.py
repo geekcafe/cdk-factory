@@ -175,3 +175,8 @@ class AutoScalingConfig(EnhancedBaseConfig):
     def key_name(self) -> Optional[str]:
         """EC2 key pair name for SSH access"""
         return self.__config.get("key_name")
+
+    @property
+    def ssm_imports(self) -> Dict[str, Any]:
+        """SSM imports for the Auto Scaling Group"""
+        return self.__config.get("ssm", {}).get("imports", {})

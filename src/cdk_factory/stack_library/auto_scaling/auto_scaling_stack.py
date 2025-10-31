@@ -47,6 +47,8 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         self.instance_role = None
         self.user_data = None
         self._vpc = None
+        # SSM imported values
+        self.ssm_imported_values: Dict[str, str] = {}
 
     def build(
         self,
@@ -73,6 +75,9 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         )
         asg_name = deployment.build_resource_name(self.asg_config.name)
 
+        # Process SSM imports
+        self._process_ssm_imports()
+
         # Get VPC and security groups
         self.security_groups = self._get_security_groups()
 
@@ -97,11 +102,28 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
     @property
     def vpc(self) -> ec2.IVpc:
         """Get the VPC for the Auto Scaling Group"""
-        # Assuming VPC is provided by the workload
-
         if self._vpc:
             return self._vpc
 
+        # Check SSM imported values first (tokens from SSM parameters)
+        if "vpc_id" in self.ssm_imported_values:
+            vpc_id = self.ssm_imported_values["vpc_id"]
+            
+            # Build VPC attributes
+            vpc_attrs = {
+                "vpc_id": vpc_id,
+                "availability_zones": ["us-east-1a", "us-east-1b"],
+            }
+            
+            # If we have subnet_ids from SSM, provide dummy subnets
+            # The actual subnets will be set via CloudFormation escape hatch
+            if "subnet_ids" in self.ssm_imported_values:
+                # Provide dummy subnet IDs - these will be overridden by the escape hatch
+                # We need at least one dummy subnet per AZ to satisfy CDK's validation
+                vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
+            
+            # Use from_vpc_attributes() for SSM tokens
+            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
         elif self.asg_config.vpc_id:
             self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.asg_config.vpc_id)
         elif self.workload.vpc_id:
@@ -120,18 +142,13 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         """Get target group ARNs from SSM imports"""
         target_group_arns = []
 
-        # Import target group ARNs using the SSM import pattern
-        imported_values = self.import_resources_from_ssm(
-            scope=self,
-            config=self.asg_config,
-            resource_name=self.asg_config.name,
-            resource_type="auto-scaling",
-        )
-
-        # Look for target group ARN imports
-        for key, value in imported_values.items():
-            if "target_group" in key and "arn" in key:
-                target_group_arns.append(value)
+        # Check if we have SSM imports for target groups
+        if "target_group_arns" in self.ssm_imported_values:
+            imported_tg_arns = self.ssm_imported_values["target_group_arns"]
+            if isinstance(imported_tg_arns, list):
+                target_group_arns.extend(imported_tg_arns)
+            else:
+                target_group_arns.append(imported_tg_arns)
 
         # see if we have any directly defined in the config
         if self.asg_config.target_group_arns:
@@ -562,11 +579,47 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
                     export_name=f"{self.deployment.build_resource_name(asg_name)}-launch-template-id",
                 )
 
-            # Instance Role ARN
-            if self.instance_role:
-                cdk.CfnOutput(
-                    self,
-                    f"{asg_name}-instance-role-arn",
-                    value=self.instance_role.role_arn,
-                    export_name=f"{self.deployment.build_resource_name(asg_name)}-instance-role-arn",
-                )
+    def _process_ssm_imports(self) -> None:
+        """
+        Process SSM imports from configuration.
+
+        This method handles importing SSM parameters that are specified in the
+        auto_scaling configuration under the 'ssm.imports' section.
+        """
+        logger.info(f"Processing {len(self.asg_config.ssm_imports)} SSM imports for Auto Scaling Group")
+        
+        for param_key, param_value in self.asg_config.ssm_imports.items():
+            try:
+                if isinstance(param_value, list):
+                    # Handle list imports (like security_group_ids)
+                    imported_list = []
+                    for item in param_value:
+                        param_path = item
+                        if not param_path.startswith('/'):
+                            param_path = f"/{self.deployment.environment}/{self.deployment.workload_name}/{item}"
+                        
+                        construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                        param = ssm.StringParameter.from_string_parameter_name(
+                            self, construct_id, param_path
+                        )
+                        imported_list.append(param.string_value)
+                    
+                    self.ssm_imported_values[param_key] = imported_list
+                    logger.info(f"Imported SSM parameter list: {param_key} with {len(imported_list)} items")
+                else:
+                    # Handle string values
+                    param_path = param_value
+                    if not param_path.startswith('/'):
+                        param_path = f"/{self.deployment.environment}/{self.deployment.workload_name}/{param_path}"
+                    
+                    construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                    param = ssm.StringParameter.from_string_parameter_name(
+                        self, construct_id, param_path
+                    )
+                    
+                    self.ssm_imported_values[param_key] = param.string_value
+                    logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to import SSM parameter {param_key}: {e}")
+                raise
