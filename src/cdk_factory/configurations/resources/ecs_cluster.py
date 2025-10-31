@@ -85,3 +85,17 @@ class EcsClusterConfig:
     def export_ssm_parameters(self) -> bool:
         """Whether to export cluster information to SSM parameters"""
         return self._config.get("export_ssm_parameters", True)
+
+    
+    @property
+    def ssm_exports(self) -> Dict[str, str]:
+        """SSM parameter exports"""
+        return self._config.get("ssm_exports", {})
+
+    @property
+    def ssm_imports(self) -> Dict[str, Any]:
+        """SSM parameter imports"""
+        # Check both nested and flat structures for backwards compatibility
+        if "ssm" in self._config and "imports" in self._config["ssm"]:
+            return self._config["ssm"]["imports"]
+        return self._config.get("ssm_imports", {})
