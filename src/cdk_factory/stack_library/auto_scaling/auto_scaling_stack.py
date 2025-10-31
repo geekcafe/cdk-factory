@@ -12,6 +12,7 @@ from aws_cdk import aws_autoscaling as autoscaling
 from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
+from aws_cdk import aws_ecs as ecs
 from aws_cdk import Duration, Stack
 from aws_lambda_powertools import Logger
 from constructs import Construct
@@ -49,6 +50,7 @@ class AutoScalingStack(IStack):
         self.launch_template = None
         self.instance_role = None
         self.user_data = None
+        self.ecs_cluster = None
         
         # SSM imports storage is now handled by the enhanced SsmParameterMixin via IStack
 
@@ -91,6 +93,9 @@ class AutoScalingStack(IStack):
 
         # Create launch template
         self.launch_template = self._create_launch_template(asg_name)
+
+        # Create ECS cluster if ECS configuration is detected
+        self._create_ecs_cluster_if_needed(asg_name)
 
         # Create Auto Scaling Group
         self.auto_scaling_group = self._create_auto_scaling_group(asg_name)
@@ -604,6 +609,60 @@ class AutoScalingStack(IStack):
         for action_config in self.asg_config.scheduled_actions:
             # Scheduled action implementation would go here
             pass
+
+    def _create_ecs_cluster_if_needed(self, asg_name: str) -> None:
+        """Create ECS cluster if ECS configuration is detected"""
+        # Check if this is an ECS configuration by looking for ECS-related patterns
+        is_ecs_config = (
+            # Check if ECS cluster name is in user data
+            (self.user_data and "ECS_CLUSTER=" in str(self.user_data)) or
+            # Check if ECS managed policy is attached
+            any("AmazonEC2ContainerServiceforEC2Role" in policy for policy in self.asg_config.managed_policies) or
+            # Check for explicit ECS configuration
+            self.stack_config.dictionary.get("auto_scaling", {}).get("enable_ecs_cluster", False)
+        )
+        
+        if not is_ecs_config:
+            logger.debug("No ECS configuration detected, skipping cluster creation")
+            return
+        
+        # Extract cluster name from user data or use default
+        cluster_name = f"{self.deployment.build_resource_name('cluster')}"
+        
+        # Try to extract cluster name from user data if available
+        if self.user_data:
+            user_data_str = str(self.user_data)
+            for line in user_data_str.split('\n'):
+                if 'ECS_CLUSTER=' in line:
+                    cluster_name = line.split('ECS_CLUSTER=')[1].strip()
+                    break
+        
+        logger.info(f"Creating ECS cluster: {cluster_name}")
+        
+        # Create ECS cluster
+        self.ecs_cluster = ecs.Cluster(
+            self,
+            "ECSCluster",
+            cluster_name=cluster_name,
+            vpc=self.vpc,
+            container_insights=True
+        )
+        
+        # Export cluster name
+        cdk.CfnOutput(
+            self,
+            f"{cluster_name}-name",
+            value=self.ecs_cluster.cluster_name,
+            export_name=f"{self.deployment.build_resource_name(cluster_name)}-name",
+        )
+        
+        # Export cluster ARN
+        cdk.CfnOutput(
+            self,
+            f"{cluster_name}-arn",
+            value=self.ecs_cluster.cluster_arn,
+            export_name=f"{self.deployment.build_resource_name(cluster_name)}-arn",
+        )
 
     def _export_resources(self, asg_name: str) -> None:
         """Export stack resources to SSM and CloudFormation outputs"""
