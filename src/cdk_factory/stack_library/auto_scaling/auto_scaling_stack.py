@@ -114,17 +114,27 @@ class AutoScalingStack(IStack):
         if self.has_ssm_import("vpc_id"):
             vpc_id = self.get_ssm_imported_value("vpc_id")
             
-            # Build VPC attributes
+            # Get subnet IDs first to determine AZ count
+            subnet_ids = []
+            if self.has_ssm_import("subnet_ids"):
+                imported_subnets = self.get_ssm_imported_value("subnet_ids", [])
+                if isinstance(imported_subnets, str):
+                    # Split comma-separated subnet IDs
+                    subnet_ids = [s.strip() for s in imported_subnets.split(",") if s.strip()]
+                elif isinstance(imported_subnets, list):
+                    subnet_ids = imported_subnets
+            
+            # Build VPC attributes with matching AZ count
             vpc_attrs = {
                 "vpc_id": vpc_id,
-                "availability_zones": ["us-east-1a", "us-east-1b"],
+                "availability_zones": [f"us-east-1{chr(97+i)}" for i in range(len(subnet_ids))] if subnet_ids else ["us-east-1a", "us-east-1b"],
             }
             
-            # If we have subnet_ids from SSM, provide dummy subnets
-            # The actual subnets will be set via CloudFormation escape hatch
-            if self.has_ssm_import("subnet_ids"):
-                # Provide dummy subnet IDs - these will be overridden by the escape hatch
-                # We need at least one dummy subnet per AZ to satisfy CDK's validation
+            # Use the actual subnet IDs from SSM
+            if subnet_ids:
+                vpc_attrs["public_subnet_ids"] = subnet_ids
+            else:
+                # Fallback to dummy subnets if no valid subnet IDs
                 vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
             
             # Use from_vpc_attributes() for SSM tokens
