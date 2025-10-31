@@ -47,7 +47,7 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
         self.workload: Optional[WorkloadConfig] = None
         self.cluster: Optional[ecs.ICluster] = None
         self.service: Optional[ecs.FargateService] = None
-        self.task_definition: Optional[ecs.FargateTaskDefinition] = None
+        self.task_definition: Optional[ecs.FargateTaskDefinition] | Optional[ecs.EcsTaskDefinition] = None
         self._vpc: Optional[ec2.IVpc] = None
         # SSM imported values
         self.ssm_imported_values: Dict[str, Any] = {}
@@ -662,15 +662,6 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                 description=f"ECS Service ARN: {service_name}",
             )
         
-        # Cluster name
-        if "cluster_name" in ssm_exports:
-            self.export_ssm_parameter(
-                scope=self,
-                id="ClusterNameParam",
-                value=self.cluster.cluster_name,
-                parameter_name=ssm_exports["cluster_name"],
-                description=f"ECS Cluster Name for {service_name}",
-            )
         
         # Task definition ARN
         if "task_definition_arn" in ssm_exports:

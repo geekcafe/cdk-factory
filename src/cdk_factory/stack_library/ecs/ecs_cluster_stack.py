@@ -194,53 +194,39 @@ class EcsClusterStack(IStack, VPCProviderMixin):
         """Export cluster information via SSM parameters and CloudFormation outputs."""
         logger.info("Exporting ECS cluster information")
 
-        # Export cluster name
-        self.export_ssm_parameter(
-            self, "ClusterNameParameter",
-            self.ecs_config.name,
-            f"/{self.deployment.name}/{self.workload.name}/ecs/cluster/name",
-            "ECS Cluster Name",
-        )
+        ssm_exports = self.ecs_config.ssm_exports
+        
+        if not ssm_exports:
+            logger.info("No SSM exports configured for ECS Cluster")
+            return
 
-        # Export cluster ARN
-        self.export_ssm_parameter(
-            self, "ClusterArnParameter",
-            self.ecs_cluster.cluster_arn,
-            f"/{self.deployment.name}/{self.workload.name}/ecs/cluster/arn",
-            "ECS Cluster ARN",
-        )
+        logger.info(f"Processing {len(ssm_exports)} SSM exports for ECS Cluster")
 
-        # Export instance role ARN if created
-        if hasattr(self, "instance_role"):
+        if "cluster_name" in ssm_exports:
             self.export_ssm_parameter(
-                self, "InstanceRoleArnParameter",
-                self.instance_role.role_arn,
-                f"/{self.deployment.name}/{self.workload.name}/ecs/instance-role/arn",
-                "ECS Instance Role ARN",
+                scope=self,
+                id="ClusterNameParam",
+                value=self.ecs_config.name,
+                parameter_name=ssm_exports["cluster_name"],
+                description=f"ECS Cluster Name: {self.ecs_config.name}",
             )
 
-        # CloudFormation outputs
-        CfnOutput(
-            self,
-            "cluster-name",
-            value=self.ecs_config.name,
-            description=f"Name of the ECS cluster: {self.ecs_config.name}",
-            export_name=f"{self.deployment.name}-ecs-cluster-name",
-        )
+        if "cluster_arn" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="ClusterArnParam",
+                value=self.ecs_cluster.cluster_arn,
+                parameter_name=ssm_exports["cluster_arn"],
+                description=f"ECS Cluster ARN: {self.ecs_cluster.cluster_arn}",
+            )
 
-        CfnOutput(
-            self,
-            "cluster-arn",
-            value=self.ecs_cluster.cluster_arn,
-            description=f"ARN of the ECS cluster: {self.ecs_config.name}",
-            export_name=f"{self.deployment.name}-ecs-cluster-arn",
-        )
-
-        if hasattr(self, "instance_role"):
-            CfnOutput(
-                self,
-                "instance-role-arn",
+        if "instance_role_arn" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="InstanceRoleArnParam",
                 value=self.instance_role.role_arn,
-                description=f"ARN of the ECS instance role: {self.ecs_config.name}",
-                export_name=f"{self.deployment.name}-ecs-instance-role-arn",
+                parameter_name=ssm_exports["instance_role_arn"],
+                description=f"ECS Instance Role ARN: {self.instance_role.role_arn}",
             )
+        
+        
