@@ -199,3 +199,5 @@ activate.sh
 # Lambda runtime config (generated during CDK deployment)
 **/runtime_config.json
 .pip/
+**/.debug/*
+**/.dynamic/*
