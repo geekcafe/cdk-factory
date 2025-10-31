@@ -183,9 +183,11 @@ class CdkConfig:
         if self._resolved_config_file_path is None:
             raise ValueError("Config file path is not set")
 
-        file_name = f".dynamic_{os.path.basename(self._resolved_config_file_path)}"
+        file_name = os.path.join(".dynamic", os.path.basename(self._resolved_config_file_path))
         path = os.path.join(Path(self._resolved_config_file_path).parent, file_name)
-
+        
+        if not os.path.exists(Path(path).parent):
+            os.makedirs(Path(path).parent)
         cdk = config.get("cdk", {})
         if replacements and len(replacements) > 0:
             config = JsonLoadingUtility.recursive_replace(config, replacements)
@@ -214,7 +216,7 @@ class CdkConfig:
             value = static_value
         elif environment_variable_name is not None and not value:
             value = os.environ.get(environment_variable_name, None)
-            if value is None and required:
+            if (value is None or str(value).strip() == "") and required:
                 raise ValueError(
                     f"Failed to get value for environment variable {environment_variable_name}"
                 )
