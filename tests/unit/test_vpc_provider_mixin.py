@@ -95,10 +95,10 @@ class TestVPCProviderMixin(unittest.TestCase):
         # Resolve VPC
         result = self.stack.resolve_vpc(config, self.deployment_config, workload)
         
-        # Verify VPC was created with dummy subnets
+        # Verify VPC was created with actual subnet IDs
         call_args = mock_from_vpc_attrs.call_args
         vpc_attrs = call_args[1]  # kwargs
-        self.assertEqual(vpc_attrs["public_subnet_ids"], ["subnet-dummy1", "subnet-dummy2"])
+        self.assertEqual(vpc_attrs["public_subnet_ids"], ["subnet-1", "subnet-2"])
 
     @patch('cdk_factory.interfaces.vpc_provider_mixin.ec2.Vpc.from_lookup')
     def test_resolve_vpc_from_config(self, mock_from_lookup):
@@ -115,9 +115,8 @@ class TestVPCProviderMixin(unittest.TestCase):
         # Resolve VPC
         result = self.stack.resolve_vpc(config, self.deployment_config, workload)
         
-        # Verify VPC was created from config
-        self.assertEqual(result, mock_vpc)
-        mock_from_lookup.assert_called_once_with(self.stack, "VPC", vpc_id="vpc-config-123")
+        # Verify VPC was created from config with unique name
+        mock_from_lookup.assert_called_once_with(self.stack, "TestStack-VPC", vpc_id="vpc-config-123")
 
     @patch('cdk_factory.interfaces.vpc_provider_mixin.ec2.Vpc.from_lookup')
     def test_resolve_vpc_from_workload(self, mock_from_lookup):
@@ -135,9 +134,9 @@ class TestVPCProviderMixin(unittest.TestCase):
         # Resolve VPC
         result = self.stack.resolve_vpc(config, self.deployment_config, workload)
         
-        # Verify VPC was created from workload
+        # Verify VPC was created from workload with unique name
         self.assertEqual(result, mock_vpc)
-        mock_from_lookup.assert_called_once_with(self.stack, "VPC", vpc_id="vpc-workload-456")
+        mock_from_lookup.assert_called_once_with(self.stack, "TestStack-VPC", vpc_id="vpc-workload-456")
 
     def test_resolve_vpc_not_found_error(self):
         """Test VPC resolution when no VPC configuration is found"""

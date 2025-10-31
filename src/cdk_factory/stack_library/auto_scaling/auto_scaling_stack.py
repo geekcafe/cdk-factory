@@ -21,6 +21,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.auto_scaling import AutoScalingConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.vpc_provider_mixin import VPCProviderMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -29,7 +30,7 @@ logger = Logger(service="AutoScalingStack")
 
 @register_stack("auto_scaling_library_module")
 @register_stack("auto_scaling_stack")
-class AutoScalingStack(IStack):
+class AutoScalingStack(IStack, VPCProviderMixin):
     """
     Reusable stack for AWS Auto Scaling Groups.
     Supports creating EC2 Auto Scaling Groups with customizable configurations.
@@ -41,6 +42,9 @@ class AutoScalingStack(IStack):
         # Initialize parent class properly - IStack inherits from enhanced SsmParameterMixin
         super().__init__(scope, id, **kwargs)
         
+        # Initialize VPC cache from mixin
+        self._initialize_vpc_cache()
+        
         self.asg_config = None
         self.stack_config = None
         self.deployment = None
@@ -50,10 +54,11 @@ class AutoScalingStack(IStack):
         self.launch_template = None
         self.instance_role = None
         self.user_data = None
+        self.user_data_commands = []  # Store raw commands for ECS cluster detection
         self.ecs_cluster = None
-        self._vpc = None
         
         # SSM imports storage is now handled by the enhanced SsmParameterMixin via IStack
+        # VPC caching is now handled by VPCProviderMixin
 
     def build(
         self,
@@ -92,11 +97,12 @@ class AutoScalingStack(IStack):
         # Create user data
         self.user_data = self._create_user_data()
 
+        # Create ECS cluster if ECS configuration is detected
+        # This must happen before launch template creation so user data can be updated
+        self._create_ecs_cluster_if_needed(asg_name)
+
         # Create launch template
         self.launch_template = self._create_launch_template(asg_name)
-
-        # Create ECS cluster if ECS configuration is detected
-        self._create_ecs_cluster_if_needed(asg_name)
 
         # Create Auto Scaling Group
         self.auto_scaling_group = self._create_auto_scaling_group(asg_name)
@@ -112,57 +118,16 @@ class AutoScalingStack(IStack):
 
     @property
     def vpc(self) -> ec2.IVpc:
-        """Get the VPC for the Auto Scaling Group using enhanced SsmParameterMixin"""
+        """Get the VPC for the Auto Scaling Group using VPCProviderMixin"""
         if not self.asg_config:
             raise AttributeError("AutoScalingStack not properly initialized. Call build() first.")
 
-        # Return cached VPC if already created
-        if self._vpc:
-            return self._vpc
-
-        # Check SSM imported values first using enhanced mixin
-        if self.has_ssm_import("vpc_id"):
-            vpc_id = self.get_ssm_imported_value("vpc_id")
-            
-            # Get subnet IDs first to determine AZ count
-            subnet_ids = []
-            if self.has_ssm_import("subnet_ids"):
-                imported_subnets = self.get_ssm_imported_value("subnet_ids", [])
-                if isinstance(imported_subnets, str):
-                    # Split comma-separated subnet IDs
-                    subnet_ids = [s.strip() for s in imported_subnets.split(",") if s.strip()]
-                elif isinstance(imported_subnets, list):
-                    subnet_ids = imported_subnets
-            
-            # Build VPC attributes with matching AZ count
-            vpc_attrs = {
-                "vpc_id": vpc_id,
-                "availability_zones": [f"us-east-1{chr(97+i)}" for i in range(len(subnet_ids))] if subnet_ids else ["us-east-1a", "us-east-1b"],
-            }
-            
-            # Use the actual subnet IDs from SSM
-            if subnet_ids:
-                vpc_attrs["public_subnet_ids"] = subnet_ids
-            else:
-                # Fallback to dummy subnets if no valid subnet IDs
-                vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
-            
-            # Use from_vpc_attributes() for SSM tokens
-            self._vpc = ec2.Vpc.from_vpc_attributes(self, f"{self.stack_name}-VPC", **vpc_attrs)
-            return self._vpc
-        elif self.asg_config.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, f"{self.stack_name}-VPC", vpc_id=self.asg_config.vpc_id)
-            return self._vpc
-        elif self.workload.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, f"{self.stack_name}-VPC", vpc_id=self.workload.vpc_id)
-            return self._vpc
-        else:
-            # Use default VPC if not provided
-            raise ValueError(
-                "VPC is not defined in the configuration.  "
-                "You can provide it a the auto_scaling.vpc_id in the configuration "
-                "or a top level workload.vpc_id in the workload configuration."
-            )
+        # Use VPCProviderMixin to resolve VPC with proper subnet handling
+        return self.resolve_vpc(
+            config=self.asg_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
 
     def _get_target_group_arns(self) -> List[str]:
         """Get target group ARNs from SSM imports using enhanced SsmParameterMixin"""
@@ -277,12 +242,16 @@ class AutoScalingStack(IStack):
         """Create user data for EC2 instances"""
         user_data = ec2.UserData.for_linux()
 
+        # Store raw commands for ECS cluster detection
+        self.user_data_commands = ["set -euxo pipefail"]
+
         # Add base commands
         user_data.add_commands("set -euxo pipefail")
 
         # Add custom commands from config
         for command in self.asg_config.user_data_commands:
             user_data.add_commands(command)
+            self.user_data_commands.append(command)
 
         # Add user data scripts from files (with variable substitution)
         if self.asg_config.user_data_scripts:
@@ -622,8 +591,6 @@ class AutoScalingStack(IStack):
         """Create ECS cluster if ECS configuration is detected"""
         # Check if this is an ECS configuration by looking for ECS-related patterns
         is_ecs_config = (
-            # Check if ECS cluster name is in user data
-            (self.user_data and "ECS_CLUSTER=" in str(self.user_data)) or
             # Check if ECS managed policy is attached
             any("AmazonEC2ContainerServiceforEC2Role" in policy for policy in self.asg_config.managed_policies) or
             # Check for explicit ECS configuration
@@ -634,16 +601,8 @@ class AutoScalingStack(IStack):
             logger.debug("No ECS configuration detected, skipping cluster creation")
             return
         
-        # Extract cluster name from user data or use default
+        # Generate cluster name from stack configuration
         cluster_name = f"{self.deployment.build_resource_name('cluster')}"
-        
-        # Try to extract cluster name from user data if available
-        if self.user_data:
-            user_data_str = str(self.user_data)
-            for line in user_data_str.split('\n'):
-                if 'ECS_CLUSTER=' in line:
-                    cluster_name = line.split('ECS_CLUSTER=')[1].strip()
-                    break
         
         logger.info(f"Creating ECS cluster: {cluster_name}")
         
@@ -655,6 +614,10 @@ class AutoScalingStack(IStack):
             vpc=self.vpc,
             container_insights=True
         )
+        
+        # Inject the cluster name into user data if user data exists
+        if self.user_data and self.user_data_commands:
+            self._inject_cluster_name_into_user_data(cluster_name)
         
         # Export cluster name
         cdk.CfnOutput(
@@ -671,6 +634,50 @@ class AutoScalingStack(IStack):
             value=self.ecs_cluster.cluster_arn,
             export_name=f"{self.deployment.build_resource_name(cluster_name)}-arn",
         )
+
+    def _inject_cluster_name_into_user_data(self, cluster_name: str) -> None:
+        """Inject the ECS cluster name into user data commands"""
+        injected_commands = []
+        cluster_name_injected = False
+        
+        for command in self.user_data_commands:
+            # If this command already sets ECS_CLUSTER, replace it
+            if 'ECS_CLUSTER=' in command:
+                # Replace existing ECS_CLUSTER setting with our cluster name
+                parts = command.split('ECS_CLUSTER=')
+                if len(parts) > 1:
+                    # Keep everything before ECS_CLUSTER=, add our cluster name, then add the rest
+                    before = parts[0]
+                    after_parts = parts[1].split(None, 1)  # Split on first whitespace
+                    after = after_parts[1] if len(after_parts) > 1 else ''
+                    new_command = f"{before}ECS_CLUSTER={cluster_name} {after}".strip()
+                    injected_commands.append(new_command)
+                    cluster_name_injected = True
+                else:
+                    injected_commands.append(f"{command}ECS_CLUSTER={cluster_name}")
+                    cluster_name_injected = True
+            else:
+                injected_commands.append(command)
+        
+        # If no ECS_CLUSTER was found in existing commands, add it
+        if not cluster_name_injected:
+            injected_commands.append(f"echo ECS_CLUSTER={cluster_name} >> /etc/ecs/ecs.config")
+        
+        # Update the user data with the injected commands
+        self.user_data_commands = injected_commands
+        
+        # If user data object exists, we need to recreate it with the updated commands
+        if hasattr(self, 'user_data') and self.user_data:
+            self.user_data = self._recreate_user_data_with_commands(injected_commands)
+
+    def _recreate_user_data_with_commands(self, commands: List[str]) -> ec2.UserData:
+        """Recreate user data with updated commands"""
+        user_data = ec2.UserData.for_linux()
+        
+        for command in commands:
+            user_data.add_commands(command)
+        
+        return user_data
 
     def _export_resources(self, asg_name: str) -> None:
         """Export stack resources to SSM and CloudFormation outputs"""

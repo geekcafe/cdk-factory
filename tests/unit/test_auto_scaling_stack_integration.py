@@ -188,6 +188,196 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         self.assertTrue(is_ecs_config, "ECS configuration should be detected")
         print("✅ ECS configuration detection working correctly")
 
+    def test_ecs_cluster_naming_default(self):
+        """Test that ECS cluster gets default name when no user data cluster is specified"""
+        # Create AutoScalingStack with ECS configuration but no cluster name in user data
+        stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster-default")
+        
+        # Configure for ECS without specific cluster name
+        stack_config = StackConfig({
+            "auto_scaling": {
+                "name": "test-ecs-asg",
+                "instance_type": "t3.small",
+                "min_capacity": 1,
+                "max_capacity": 2,
+                "desired_capacity": 1,
+                "subnet_group_name": "Public",
+                "managed_policies": [
+                    "service-role/AmazonEC2ContainerServiceforEC2Role"
+                ],
+                "ssm_imports": {
+                    "vpc_id": "/test/vpc/id",
+                    "subnet_ids": "/test/vpc/subnet-ids"
+                },
+                "user_data_commands": [
+                    "#!/bin/bash",
+                    "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config"
+                ]
+            }
+        }, self.workload_config.dictionary)
+        
+        # Mock SSM parameter values
+        stack._ssm_imported_values = {
+            "vpc_id": "vpc-test123",
+            "subnet_ids": "subnet-test1,subnet-test2"
+        }
+        
+        # Build the stack
+        try:
+            stack.build(stack_config, self.deployment_config, self.workload_config)
+            
+            # Verify ECS cluster was created
+            self.assertIsNotNone(stack.ecs_cluster)
+            
+            # Verify default cluster naming (should contain 'cluster')
+            cluster_name = stack.ecs_cluster.cluster_name
+            if "${Token[" in str(cluster_name):
+                # Check template synthesis for default naming
+                template = self.app.synth().get_stack_by_name("test-workload-prod-ecs-cluster-default").template
+                ecs_cluster_resource = None
+                for resource_id, resource in template.get('Resources', {}).items():
+                    if resource.get('Type') == 'AWS::ECS::Cluster':
+                        ecs_cluster_resource = resource
+                        break
+                
+                self.assertIsNotNone(ecs_cluster_resource, "ECS cluster resource should exist in template")
+                actual_cluster_name = ecs_cluster_resource.get('Properties', {}).get('ClusterName')
+                self.assertIsNotNone(actual_cluster_name, "Default cluster name should not be None")
+                self.assertIn("cluster", actual_cluster_name.lower(), 
+                             "Default cluster name should contain 'cluster'")
+            else:
+                self.assertIn("cluster", cluster_name.lower(), 
+                             "Default cluster name should contain 'cluster'")
+            
+            print("✅ ECS cluster default naming works correctly")
+            
+        except Exception as e:
+            self.fail(f"ECS cluster default naming test failed: {e}")
+
+    def test_ecs_cluster_naming_from_stack(self):
+        """Test that ECS cluster gets the correct name from stack and injects into user data"""
+        # Create AutoScalingStack with ECS configuration
+        stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster")
+        
+        # Configure for ECS with placeholder cluster name in user data
+        stack_config = StackConfig({
+            "auto_scaling": {
+                "name": "test-ecs-asg",
+                "instance_type": "t3.small",
+                "min_capacity": 1,
+                "max_capacity": 2,
+                "desired_capacity": 1,
+                "subnet_group_name": "Public",
+                "managed_policies": [
+                    "AmazonSSMManagedInstanceCore",
+                    "CloudWatchAgentServerPolicy", 
+                    "service-role/AmazonEC2ContainerServiceforEC2Role"
+                ],
+                "ssm_imports": {
+                    "vpc_id": "/test/vpc/id",
+                    "subnet_ids": "/test/vpc/subnet-ids",
+                    "security_group_ids": "/test/sg/ecs-id"
+                },
+                "user_data_commands": [
+                    "#!/bin/bash",
+                    "echo ECS_CLUSTER=placeholder >> /etc/ecs/ecs.config"
+                ]
+            }
+        }, self.workload_config.dictionary)
+        
+        # Mock SSM parameter values
+        stack._ssm_imported_values = {
+            "vpc_id": "vpc-test123",
+            "subnet_ids": "subnet-test1,subnet-test2,subnet-test3",
+            "security_group_ids": "sg-test123"
+        }
+        
+        # Build the stack
+        try:
+            stack.build(stack_config, self.deployment_config, self.workload_config)
+            
+            # Verify ECS cluster was created
+            self.assertIsNotNone(stack.ecs_cluster)
+            
+            # Verify the cluster name was generated correctly (should contain 'cluster')
+            cluster_name = stack.ecs_cluster.cluster_name
+            if "${Token[" in str(cluster_name):
+                # If it's a token, we need to check the template synthesis
+                template = self.app.synth().get_stack_by_name("test-workload-prod-ecs-cluster").template
+                ecs_cluster_resource = None
+                for resource_id, resource in template.get('Resources', {}).items():
+                    if resource.get('Type') == 'AWS::ECS::Cluster':
+                        ecs_cluster_resource = resource
+                        break
+                
+                self.assertIsNotNone(ecs_cluster_resource, "ECS cluster resource should exist in template")
+                actual_cluster_name = ecs_cluster_resource.get('Properties', {}).get('ClusterName')
+                self.assertIsNotNone(actual_cluster_name, "Cluster name should not be None")
+                self.assertIn("cluster", actual_cluster_name.lower(), 
+                             "Cluster name should contain 'cluster'")
+            else:
+                self.assertIn("cluster", cluster_name.lower(), 
+                             "Cluster name should contain 'cluster'")
+            
+            # Verify that the user data was updated with the correct cluster name
+            cluster_injected = any("ECS_CLUSTER=" in cmd and "placeholder" not in cmd for cmd in stack.user_data_commands)
+            self.assertTrue(cluster_injected, "ECS cluster name should be injected into user data")
+            
+            print("✅ ECS cluster naming and user data injection works correctly")
+            
+        except Exception as e:
+            self.fail(f"ECS cluster naming test failed: {e}")
+
+    def test_ecs_cluster_naming_without_user_data_cluster(self):
+        """Test that ECS cluster gets created and adds cluster name to user data when none exists"""
+        # Create AutoScalingStack with ECS configuration but no cluster in user data
+        stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster-auto")
+        
+        # Configure for ECS without cluster name in user data
+        stack_config = StackConfig({
+            "auto_scaling": {
+                "name": "test-ecs-asg",
+                "instance_type": "t3.small",
+                "min_capacity": 1,
+                "max_capacity": 2,
+                "desired_capacity": 1,
+                "subnet_group_name": "Public",
+                "managed_policies": [
+                    "service-role/AmazonEC2ContainerServiceforEC2Role"
+                ],
+                "ssm_imports": {
+                    "vpc_id": "/test/vpc/id",
+                    "subnet_ids": "/test/vpc/subnet-ids"
+                },
+                "user_data_commands": [
+                    "#!/bin/bash",
+                    "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config"
+                ]
+            }
+        }, self.workload_config.dictionary)
+        
+        # Mock SSM parameter values
+        stack._ssm_imported_values = {
+            "vpc_id": "vpc-test123",
+            "subnet_ids": "subnet-test1,subnet-test2"
+        }
+        
+        # Build the stack
+        try:
+            stack.build(stack_config, self.deployment_config, self.workload_config)
+            
+            # Verify ECS cluster was created
+            self.assertIsNotNone(stack.ecs_cluster)
+            
+            # Verify that the cluster name was added to user data
+            cluster_added = any("ECS_CLUSTER=" in cmd for cmd in stack.user_data_commands)
+            self.assertTrue(cluster_added, "ECS cluster name should be added to user data")
+            
+            print("✅ ECS cluster auto-adds cluster name to user data when missing")
+            
+        except Exception as e:
+            self.fail(f"ECS cluster auto-add test failed: {e}")
+
 
 if __name__ == "__main__":
     unittest.main()
