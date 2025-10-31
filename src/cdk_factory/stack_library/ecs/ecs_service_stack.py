@@ -450,7 +450,10 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                 health_check_grace_period=cdk.Duration.seconds(
                     self.ecs_config.health_check_grace_period
                 ) if self.ecs_config.target_group_arns else None,
-                circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
+                circuit_breaker=ecs.DeploymentCircuitBreaker(
+                    enable=self.ecs_config.deployment_circuit_breaker.get("enable", True),
+                    rollback=self.ecs_config.deployment_circuit_breaker.get("rollback", True)
+                ) if self.ecs_config.deployment_circuit_breaker else None,
                 placement_strategies=self._get_placement_strategies(),
                 placement_constraints=self._get_placement_constraints(),
             )
@@ -470,7 +473,10 @@ class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
                 health_check_grace_period=cdk.Duration.seconds(
                     self.ecs_config.health_check_grace_period
                 ) if self.ecs_config.target_group_arns else None,
-                circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
+                circuit_breaker=ecs.DeploymentCircuitBreaker(
+                    enable=self.ecs_config.deployment_circuit_breaker.get("enable", True),
+                    rollback=self.ecs_config.deployment_circuit_breaker.get("rollback", True)
+                ) if self.ecs_config.deployment_circuit_breaker else None,
             )
         
         # Attach to load balancer target groups

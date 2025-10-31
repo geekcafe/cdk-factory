@@ -142,6 +142,16 @@ class EcsServiceConfig:
         return self._config.get("deployment_type", "production")
 
     @property
+    def deployment_circuit_breaker(self) -> Dict[str, Any]:
+        """Deployment circuit breaker configuration"""
+        return self._config.get("deployment_circuit_breaker", {})
+
+    @property
+    def deployment_configuration(self) -> Dict[str, Any]:
+        """Deployment configuration (maximum_percent, minimum_healthy_percent)"""
+        return self._config.get("deployment_configuration", {})
+
+    @property
     def is_maintenance_mode(self) -> bool:
         """Whether this is a maintenance mode deployment"""
         return self.deployment_type == "maintenance"
