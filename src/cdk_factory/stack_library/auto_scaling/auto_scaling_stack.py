@@ -51,6 +51,7 @@ class AutoScalingStack(IStack):
         self.instance_role = None
         self.user_data = None
         self.ecs_cluster = None
+        self._vpc = None
         
         # SSM imports storage is now handled by the enhanced SsmParameterMixin via IStack
 
@@ -115,6 +116,10 @@ class AutoScalingStack(IStack):
         if not self.asg_config:
             raise AttributeError("AutoScalingStack not properly initialized. Call build() first.")
 
+        # Return cached VPC if already created
+        if self._vpc:
+            return self._vpc
+
         # Check SSM imported values first using enhanced mixin
         if self.has_ssm_import("vpc_id"):
             vpc_id = self.get_ssm_imported_value("vpc_id")
@@ -143,11 +148,14 @@ class AutoScalingStack(IStack):
                 vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
             
             # Use from_vpc_attributes() for SSM tokens
-            return ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
+            self._vpc = ec2.Vpc.from_vpc_attributes(self, f"{self.stack_name}-VPC", **vpc_attrs)
+            return self._vpc
         elif self.asg_config.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.asg_config.vpc_id)
+            self._vpc = ec2.Vpc.from_lookup(self, f"{self.stack_name}-VPC", vpc_id=self.asg_config.vpc_id)
+            return self._vpc
         elif self.workload.vpc_id:
-            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
+            self._vpc = ec2.Vpc.from_lookup(self, f"{self.stack_name}-VPC", vpc_id=self.workload.vpc_id)
+            return self._vpc
         else:
             # Use default VPC if not provided
             raise ValueError(
