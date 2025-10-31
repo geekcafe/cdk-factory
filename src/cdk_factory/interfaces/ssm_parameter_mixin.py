@@ -4,7 +4,7 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 from aws_lambda_powertools import Logger
@@ -19,7 +19,128 @@ class SsmParameterMixin:
 
     This mixin should be used by stack classes to standardize how SSM parameters
     are exported and imported across the project.
+    
+    Enhanced to support:
+    - List parameter imports (for security groups, etc.)
+    - Cached imported values for easy access
+    - Backward compatibility with existing interfaces
     """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the mixin with cached storage for imported values."""
+        # Don't call super() to avoid MRO issues in multiple inheritance
+        # Initialize cached storage for imported values
+        self._ssm_imported_values: Dict[str, Union[str, List[str]]] = {}
+
+    def initialize_ssm_imports(self) -> None:
+        """
+        Initialize SSM imports storage.
+        Call this in your stack's __init__ method if not using __init__ above.
+        """
+        if not hasattr(self, '_ssm_imported_values'):
+            self._ssm_imported_values: Dict[str, Union[str, List[str]]] = {}
+
+    def get_ssm_imported_value(self, key: str, default: Any = None) -> Any:
+        """
+        Get a cached SSM imported value by key.
+        
+        Args:
+            key: The SSM import key
+            default: Default value if key not found
+            
+        Returns:
+            The imported value or default
+        """
+        return self._ssm_imported_values.get(key, default)
+
+    def has_ssm_import(self, key: str) -> bool:
+        """
+        Check if an SSM import key exists in cached values.
+        
+        Args:
+            key: The SSM import key to check
+            
+        Returns:
+            True if key exists, False otherwise
+        """
+        return key in self._ssm_imported_values
+
+    def process_ssm_imports(
+        self, 
+        config: Any, 
+        deployment: Any,
+        resource_type: str = "resource"
+    ) -> None:
+        """
+        Process SSM imports from configuration and cache them for later use.
+        
+        This method handles list imports (like security_group_ids) and caches
+        the results for easy access via get_ssm_imported_value().
+        
+        Args:
+            config: The configuration object with ssm_imports property
+            deployment: The deployment configuration for path resolution
+            resource_type: Type of resource for logging purposes
+        """
+        if not hasattr(config, 'ssm_imports'):
+            logger.debug(f"No ssm_imports property found on config for {resource_type}")
+            return
+            
+        ssm_imports = config.ssm_imports
+        
+        if not ssm_imports:
+            logger.debug(f"No SSM imports configured for {resource_type}")
+            return
+        
+        logger.info(f"Processing {len(ssm_imports)} SSM imports for {resource_type}")
+        
+        for param_key, param_value in ssm_imports.items():
+            try:
+                if isinstance(param_value, list):
+                    # Handle list imports (like security_group_ids)
+                    imported_list = []
+                    for item in param_value:
+                        param_path = self._resolve_ssm_path(item, deployment)
+                        
+                        construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                        param = ssm.StringParameter.from_string_parameter_name(
+                            self, construct_id, param_path
+                        )
+                        imported_list.append(param.string_value)
+                    
+                    self._ssm_imported_values[param_key] = imported_list
+                    logger.info(f"Imported SSM parameter list: {param_key} with {len(imported_list)} items")
+                else:
+                    # Handle string values
+                    param_path = self._resolve_ssm_path(param_value, deployment)
+                    
+                    construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                    param = ssm.StringParameter.from_string_parameter_name(
+                        self, construct_id, param_path
+                    )
+                    
+                    self._ssm_imported_values[param_key] = param.string_value
+                    logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to import SSM parameter {param_key}: {e}")
+                raise
+
+    def _resolve_ssm_path(self, path: str, deployment: Any) -> str:
+        """
+        Resolve SSM parameter path (handle relative vs absolute paths).
+        
+        Args:
+            path: The parameter path from configuration
+            deployment: The deployment configuration for context
+            
+        Returns:
+            Fully resolved SSM parameter path
+        """
+        if not path.startswith('/'):
+            # Convert relative path to absolute path
+            return f"/{deployment.environment}/{deployment.workload_name}/{path}"
+        return path
 
     @staticmethod
     def normalize_resource_name(name: str, for_export: bool = False) -> str:
@@ -272,6 +393,8 @@ class SsmParameterMixin:
 
         This is a higher-level method that makes it clear we're importing values.
         It first tries to use the ssm_imports property, then falls back to ssm_parameters.
+        
+        Enhanced to also cache results for easy access via get_ssm_imported_value().
 
         Args:
             scope: The CDK construct scope
@@ -320,9 +443,11 @@ class SsmParameterMixin:
 
                 if value:
                     # Remove _path suffix if present
-                    if key.endswith("_path"):
-                        key = key[:-5]  # Remove _path suffix
-                    imported_values[key] = value
+                    final_key = key[:-5] if key.endswith("_path") else key
+                    imported_values[final_key] = value
+                    
+                    # Also cache for easy access via get_ssm_imported_value()
+                    self._ssm_imported_values[final_key] = value
         else:
             logger.info(f"No SSM import paths configured for {resource_name} resources")
 

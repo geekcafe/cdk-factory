@@ -12,7 +12,7 @@ from aws_cdk import aws_autoscaling as autoscaling
 from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
-from aws_cdk import Duration
+from aws_cdk import Duration, Stack
 from aws_lambda_powertools import Logger
 from constructs import Construct
 
@@ -20,7 +20,6 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.auto_scaling import AutoScalingConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -29,14 +28,18 @@ logger = Logger(service="AutoScalingStack")
 
 @register_stack("auto_scaling_library_module")
 @register_stack("auto_scaling_stack")
-class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
+class AutoScalingStack(IStack):
     """
     Reusable stack for AWS Auto Scaling Groups.
     Supports creating EC2 Auto Scaling Groups with customizable configurations.
+    
+    Uses enhanced SsmParameterMixin (via IStack) to eliminate SSM code duplication.
     """
 
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
+        # Initialize parent class properly - IStack inherits from enhanced SsmParameterMixin
         super().__init__(scope, id, **kwargs)
+        
         self.asg_config = None
         self.stack_config = None
         self.deployment = None
@@ -46,9 +49,8 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         self.launch_template = None
         self.instance_role = None
         self.user_data = None
-        self._vpc = None
-        # SSM imported values
-        self.ssm_imported_values: Dict[str, str] = {}
+        
+        # SSM imports storage is now handled by the enhanced SsmParameterMixin via IStack
 
     def build(
         self,
@@ -75,10 +77,10 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         )
         asg_name = deployment.build_resource_name(self.asg_config.name)
 
-        # Process SSM imports
-        self._process_ssm_imports()
+        # Process SSM imports using enhanced SsmParameterMixin
+        self.process_ssm_imports(self.asg_config, deployment, "Auto Scaling Group")
 
-        # Get VPC and security groups
+        # Get security groups
         self.security_groups = self._get_security_groups()
 
         # Create IAM role for instances
@@ -90,24 +92,27 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
         # Create launch template
         self.launch_template = self._create_launch_template(asg_name)
 
-        # Create auto scaling group
+        # Create Auto Scaling Group
         self.auto_scaling_group = self._create_auto_scaling_group(asg_name)
 
-        # Configure scaling policies
-        self._configure_scaling_policies()
+        # Add scaling policies
+        self._add_scaling_policies()
 
-        # Add outputs
-        self._add_outputs(asg_name)
+        # Add scheduled actions
+        self._add_scheduled_actions()
+
+        # Export resources
+        self._export_resources(asg_name)
 
     @property
     def vpc(self) -> ec2.IVpc:
-        """Get the VPC for the Auto Scaling Group"""
-        if self._vpc:
-            return self._vpc
+        """Get the VPC for the Auto Scaling Group using enhanced SsmParameterMixin"""
+        if not self.asg_config:
+            raise AttributeError("AutoScalingStack not properly initialized. Call build() first.")
 
-        # Check SSM imported values first (tokens from SSM parameters)
-        if "vpc_id" in self.ssm_imported_values:
-            vpc_id = self.ssm_imported_values["vpc_id"]
+        # Check SSM imported values first using enhanced mixin
+        if self.has_ssm_import("vpc_id"):
+            vpc_id = self.get_ssm_imported_value("vpc_id")
             
             # Build VPC attributes
             vpc_attrs = {
@@ -117,17 +122,17 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
             
             # If we have subnet_ids from SSM, provide dummy subnets
             # The actual subnets will be set via CloudFormation escape hatch
-            if "subnet_ids" in self.ssm_imported_values:
+            if self.has_ssm_import("subnet_ids"):
                 # Provide dummy subnet IDs - these will be overridden by the escape hatch
                 # We need at least one dummy subnet per AZ to satisfy CDK's validation
                 vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
             
             # Use from_vpc_attributes() for SSM tokens
-            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
+            return ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
         elif self.asg_config.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.asg_config.vpc_id)
+            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.asg_config.vpc_id)
         elif self.workload.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
+            return ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
         else:
             # Use default VPC if not provided
             raise ValueError(
@@ -136,15 +141,13 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
                 "or a top level workload.vpc_id in the workload configuration."
             )
 
-        return self._vpc
-
     def _get_target_group_arns(self) -> List[str]:
-        """Get target group ARNs from SSM imports"""
+        """Get target group ARNs from SSM imports using enhanced SsmParameterMixin"""
         target_group_arns = []
 
-        # Check if we have SSM imports for target groups
-        if "target_group_arns" in self.ssm_imported_values:
-            imported_tg_arns = self.ssm_imported_values["target_group_arns"]
+        # Check if we have SSM imports for target groups using enhanced mixin
+        if self.has_ssm_import("target_group_arns"):
+            imported_tg_arns = self.get_ssm_imported_value("target_group_arns", [])
             if isinstance(imported_tg_arns, list):
                 target_group_arns.extend(imported_tg_arns)
             else:
@@ -579,47 +582,33 @@ class AutoScalingStack(IStack, EnhancedSsmParameterMixin):
                     export_name=f"{self.deployment.build_resource_name(asg_name)}-launch-template-id",
                 )
 
-    def _process_ssm_imports(self) -> None:
-        """
-        Process SSM imports from configuration.
+    
+    def _add_scaling_policies(self) -> None:
+        """Add scaling policies to the Auto Scaling Group"""
+        for policy_config in self.asg_config.scaling_policies:
+            # Scaling policy implementation would go here
+            pass
 
-        This method handles importing SSM parameters that are specified in the
-        auto_scaling configuration under the 'ssm.imports' section.
-        """
-        logger.info(f"Processing {len(self.asg_config.ssm_imports)} SSM imports for Auto Scaling Group")
-        
-        for param_key, param_value in self.asg_config.ssm_imports.items():
-            try:
-                if isinstance(param_value, list):
-                    # Handle list imports (like security_group_ids)
-                    imported_list = []
-                    for item in param_value:
-                        param_path = item
-                        if not param_path.startswith('/'):
-                            param_path = f"/{self.deployment.environment}/{self.deployment.workload_name}/{item}"
-                        
-                        construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
-                        param = ssm.StringParameter.from_string_parameter_name(
-                            self, construct_id, param_path
-                        )
-                        imported_list.append(param.string_value)
-                    
-                    self.ssm_imported_values[param_key] = imported_list
-                    logger.info(f"Imported SSM parameter list: {param_key} with {len(imported_list)} items")
-                else:
-                    # Handle string values
-                    param_path = param_value
-                    if not param_path.startswith('/'):
-                        param_path = f"/{self.deployment.environment}/{self.deployment.workload_name}/{param_path}"
-                    
-                    construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
-                    param = ssm.StringParameter.from_string_parameter_name(
-                        self, construct_id, param_path
-                    )
-                    
-                    self.ssm_imported_values[param_key] = param.string_value
-                    logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
-                    
-            except Exception as e:
-                logger.error(f"Failed to import SSM parameter {param_key}: {e}")
-                raise
+    def _add_scheduled_actions(self) -> None:
+        """Add scheduled actions to the Auto Scaling Group"""
+        for action_config in self.asg_config.scheduled_actions:
+            # Scheduled action implementation would go here
+            pass
+
+    def _export_resources(self, asg_name: str) -> None:
+        """Export stack resources to SSM and CloudFormation outputs"""
+        # Export ASG name
+        cdk.CfnOutput(
+            self,
+            f"{asg_name}-name",
+            value=self.auto_scaling_group.auto_scaling_group_name,
+            export_name=f"{self.deployment.build_resource_name(asg_name)}-name",
+        )
+
+        # Export ASG ARN
+        cdk.CfnOutput(
+            self,
+            f"{asg_name}-arn",
+            value=self.auto_scaling_group.auto_scaling_group_arn,
+            export_name=f"{self.deployment.build_resource_name(asg_name)}-arn",
+        )

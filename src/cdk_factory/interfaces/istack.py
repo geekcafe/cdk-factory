@@ -23,7 +23,10 @@ class IStack(Stack, SsmParameterMixin, metaclass=StackABCMeta):
 
     @abstractmethod
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
-        super().__init__(scope, id, **kwargs)
+        # Initialize Stack first
+        Stack.__init__(self, scope, id, **kwargs)
+        # Initialize SsmParameterMixin (no super() call to avoid MRO issues)
+        SsmParameterMixin.__init__(self, **kwargs)
 
     @abstractmethod
     def build(self, *, stack_config, deployment, workload) -> None:
