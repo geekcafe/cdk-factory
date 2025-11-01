@@ -42,18 +42,115 @@ class StandardizedSsmMixin:
     
     Standard Configuration Structure:
     {
-      "ssm": {
-        "imports": {
-          "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id",
-          "security_group_ids": ["/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/sg/ecs-id"]
-        },
-        "exports": {
-          "resource_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/resource-type/id"
+        "ssm": {
+            "enabled": true,
+            "imports": {
+                "parameter_name": "/path/to/parameter"
+            },
+            "exports": {
+                "parameter_name": {
+                    "path": "/path/to/export",
+                    "value": "parameter_value_or_reference"
+                }
+            }
         }
-      }
     }
-    """
     
+    Key Features:
+    - Configuration-driven SSM imports/exports
+    - Template variable resolution
+    - List parameter support (for security groups, etc.)
+    - Cached imported values for easy access
+    - Backward compatibility with existing interfaces
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the mixin with cached storage for imported values."""
+        # Don't call super() to avoid MRO issues in multiple inheritance
+        # Initialize cached storage for imported values
+        self._ssm_imported_values: Dict[str, Union[str, List[str]]] = {}
+        self._ssm_exported_values: Dict[str, str] = {}
+
+    # Backward compatibility methods from old SsmParameterMixin
+    def get_ssm_imported_value(self, key: str, default: Any = None) -> Any:
+        """Get an SSM imported value by key with optional default."""
+        return self._ssm_imported_values.get(key, default)
+
+    def has_ssm_import(self, key: str) -> bool:
+        """Check if an SSM import exists by key."""
+        return key in self._ssm_imported_values
+
+    def export_ssm_parameter(
+        self,
+        scope: Construct,
+        id: str,
+        value: Any,
+        parameter_name: str,
+        description: str = None,
+        string_value: str = None
+    ) -> ssm.StringParameter:
+        """Export a value to SSM Parameter Store."""
+        if string_value is None:
+            string_value = str(value)
+        
+        param = ssm.StringParameter(
+            scope,
+            id,
+            parameter_name=parameter_name,
+            string_value=string_value,
+            description=description or f"SSM parameter: {parameter_name}"
+        )
+        
+        # Store in exported values for tracking
+        self._ssm_exported_values[parameter_name] = string_value
+        return param
+
+    def export_resource_to_ssm(
+        self,
+        scope: Construct,
+        resource_values: Dict[str, Any],
+        config: Any = None,
+        resource_name: str = None,
+        resource_type: str = None,
+        context: Dict[str, Any] = None
+    ) -> Dict[str, ssm.StringParameter]:
+        """Export multiple resource values to SSM Parameter Store."""
+        params = {}
+        
+        # Only export parameters that are explicitly configured in ssm_exports
+        if not hasattr(config, 'ssm_exports') or not config.ssm_exports:
+            logger.debug("No SSM exports configured")
+            return params
+            
+        for key, export_path in config.ssm_exports.items():
+            # Only export if the value exists in resource_values
+            if key in resource_values:
+                value = resource_values[key]
+                
+                param = self.export_ssm_parameter(
+                    scope=scope,
+                    id=f"{resource_name}-{key}-param",
+                    value=value,
+                    parameter_name=export_path,
+                    description=f"{(resource_type or 'Resource').title()} {key} for {resource_name}"
+                )
+                params[key] = param
+            else:
+                logger.warning(f"SSM export configured for '{key}' but no value found in resource_values")
+        
+        return params
+
+    def normalize_resource_name(self, name: str, for_export: bool = False) -> str:
+        """Normalize a resource name for SSM parameter naming."""
+        # Convert to lowercase and replace special characters with hyphens
+        import re
+        normalized = re.sub(r'[^a-zA-Z0-9-]', '-', str(name).lower())
+        # Remove consecutive hyphens
+        normalized = re.sub(r'-+', '-', normalized)
+        # Remove leading/trailing hyphens
+        normalized = normalized.strip('-')
+        return normalized
+
     def setup_standardized_ssm_integration(
         self,
         scope: Construct,

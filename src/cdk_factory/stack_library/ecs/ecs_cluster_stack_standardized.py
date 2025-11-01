@@ -165,8 +165,9 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         Get VPC using standardized SSM approach.
         """
         # Primary method: Use standardized SSM imports
-        if self.has_ssm_import("vpc_id"):
-            vpc_id = self.get_ssm_imported_value("vpc_id")
+        ssm_imports = self.ecs_config.ssm_imports
+        if "vpc_id" in ssm_imports:
+            vpc_id = ssm_imports["vpc_id"]
             return ecs.Vpc.from_vpc_attributes(
                 self, "ImportedVPC",
                 vpc_id=vpc_id

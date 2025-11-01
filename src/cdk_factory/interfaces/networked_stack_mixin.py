@@ -6,16 +6,16 @@ MIT License. See Project Root for license information.
 
 from typing import Any
 from aws_cdk import aws_ec2 as ec2
-from .ssm_parameter_mixin import SsmParameterMixin
+from .standardized_ssm_mixin import StandardizedSsmMixin
 from .vpc_provider_mixin import VPCProviderMixin
 
 
-class NetworkedStackMixin(SsmParameterMixin, VPCProviderMixin):
+class NetworkedStackMixin(StandardizedSsmMixin, VPCProviderMixin):
     """
     Combined mixin for stacks that need both SSM imports and VPC resolution.
     
     This mixin provides a complete solution for network-aware stacks by combining:
-    - Enhanced SSM parameter import functionality (with caching and list support)
+    - Enhanced SSM parameter import functionality (with standardized configuration)
     - VPC resolution with multiple fallback strategies
     - Standardized initialization patterns
     
@@ -23,17 +23,17 @@ class NetworkedStackMixin(SsmParameterMixin, VPCProviderMixin):
         class MyStack(Stack, NetworkedStackMixin):
             def __init__(self, scope, id, **kwargs):
                 super().__init__(scope, id, **kwargs)
-                # SSM initialization is handled automatically by SsmParameterMixin.__init__
+                # SSM initialization is handled automatically by StandardizedSsmMixin.__init__
                 
             def _build(self, stack_config, deployment, workload):
-                self.process_ssm_imports(stack_config, deployment, "my-resource")
+                self.setup_standardized_ssm_integration(scope=self, config=stack_config.dictionary, resource_type="my-resource", resource_name="my-name")
                 self.vpc = self.resolve_vpc(stack_config, deployment, workload)
     """
     
     def _initialize_networked_stack(self) -> None:
         """
         Initialize all networked stack functionality.
-        Note: SSM initialization is handled by SsmParameterMixin.__init__
+        Note: SSM initialization is handled by StandardizedSsmMixin.__init__
         """
         self._initialize_vpc_cache()
     

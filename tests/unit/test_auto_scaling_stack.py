@@ -502,12 +502,14 @@ class TestAutoScalingStack(unittest.TestCase):
                         "Application": "test-workload",
                         "ManagedBy": "CDK-Factory",
                     },
-                    "ssm_imports": {
-                        "target_group_main_arn_path": "/test/test-workload/load-balancer/target_group_main_arn"
-                    },
-                    "ssm_exports": {
-                        "asg_name": "/test/test-workload/auto-scaling/name",
-                        "asg_arn": "/test/test-workload/auto-scaling/arn",
+                    "ssm": {
+                        "imports": {
+                            "target_group_main_arn_path": "/test/test-workload/load-balancer/target_group_main_arn"
+                        },
+                        "exports": {
+                            "asg_name": "/test/test-workload/auto-scaling/name",
+                            "asg_arn": "/test/test-workload/auto-scaling/arn",
+                        },
                     },
                 }
             },

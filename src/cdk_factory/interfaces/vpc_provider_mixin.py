@@ -18,13 +18,13 @@ class VPCProviderMixin:
     
     This mixin eliminates code duplication across stacks that need to resolve
     VPC references, providing a standardized way to handle:
-    - SSM imported VPC parameters (works with enhanced SsmParameterMixin)
+    - SSM imported VPC parameters (works with enhanced StandardizedSsmMixin)
     - Configuration-based VPC resolution
     - Workload-level VPC fallback
     - Error handling and validation
     
     Note: This mixin does NOT handle SSM imports directly - it expects
-    the SSM values to be available via the enhanced SsmParameterMixin.
+    the SSM values to be available via the enhanced StandardizedSsmMixin.
     """
 
     def _initialize_vpc_cache(self) -> None:
@@ -43,7 +43,7 @@ class VPCProviderMixin:
         Resolve VPC from multiple sources with standardized priority order.
         
         Priority order:
-        1. SSM imported VPC ID (from enhanced SsmParameterMixin)
+        1. SSM imported VPC ID (from config.ssm.imports)
         2. Config-level VPC ID
         3. Workload-level VPC ID
         4. Raise error if none found
@@ -63,19 +63,22 @@ class VPCProviderMixin:
         if self._vpc:
             return self._vpc
 
-        # Default availability zones if not provided
+        # Default availability zones if not provided - use region-appropriate defaults
         if not availability_zones:
-            availability_zones = ["us-east-1a", "us-east-1b"]
+            region = getattr(deployment, 'region', 'us-east-1')
+            availability_zones = self._get_default_azs_for_region(region)
 
-        # Check SSM imported values first (tokens from SSM parameters)
-        # This works with the enhanced SsmParameterMixin
-        if hasattr(self, '_ssm_imported_values') and "vpc_id" in self._ssm_imported_values:
-            vpc_id = self._ssm_imported_values["vpc_id"]
+        # Check SSM imports directly from config (source of truth)
+        ssm_config = getattr(config, 'ssm', {})
+        ssm_imports = ssm_config.get('imports', {})
+        
+        if ssm_imports and "vpc_id" in ssm_imports:
+            vpc_id = ssm_imports["vpc_id"]
             
             # Get subnet IDs first to determine AZ count
             subnet_ids = []
-            if hasattr(self, '_ssm_imported_values') and "subnet_ids" in self._ssm_imported_values:
-                imported_subnets = self._ssm_imported_values["subnet_ids"]
+            if "subnet_ids" in ssm_imports:
+                imported_subnets = ssm_imports["subnet_ids"]
                 if isinstance(imported_subnets, str):
                     subnet_ids = [s.strip() for s in imported_subnets.split(",") if s.strip()]
                 elif isinstance(imported_subnets, list):
@@ -83,9 +86,11 @@ class VPCProviderMixin:
             
             # Adjust availability zones to match subnet count
             if subnet_ids and availability_zones:
-                availability_zones = [f"us-east-1{chr(97+i)}" for i in range(len(subnet_ids))]
+                region = getattr(deployment, 'region', 'us-east-1')
+                region_code = region.split('-')[0] + '-' + region.split('-')[1]
+                availability_zones = [f"{region_code}{chr(97+i)}" for i in range(len(subnet_ids))]
             
-            return self._create_vpc_from_ssm(vpc_id, availability_zones)
+            return self._create_vpc_from_ssm(vpc_id, availability_zones, subnet_ids if subnet_ids else None)
         
         # Check config-level VPC ID
         if hasattr(config, 'vpc_id') and config.vpc_id:
@@ -101,7 +106,8 @@ class VPCProviderMixin:
     def _create_vpc_from_ssm(
         self, 
         vpc_id: str, 
-        availability_zones: List[str]
+        availability_zones: List[str],
+        subnet_ids: Optional[List[str]] = None
     ) -> ec2.IVpc:
         """
         Create VPC reference from SSM imported VPC ID.
@@ -109,6 +115,7 @@ class VPCProviderMixin:
         Args:
             vpc_id: The VPC ID from SSM
             availability_zones: List of availability zones
+            subnet_ids: Optional list of subnet IDs from SSM
             
         Returns:
             VPC reference created from attributes
@@ -120,22 +127,12 @@ class VPCProviderMixin:
         }
         
         # If we have subnet_ids from SSM, use the actual subnet IDs
-        if hasattr(self, '_ssm_imported_values') and "subnet_ids" in self._ssm_imported_values:
-            imported_subnets = self._ssm_imported_values["subnet_ids"]
-            if isinstance(imported_subnets, str):
-                # Split comma-separated subnet IDs
-                subnet_ids = [s.strip() for s in imported_subnets.split(",") if s.strip()]
-            elif isinstance(imported_subnets, list):
-                subnet_ids = imported_subnets
-            else:
-                subnet_ids = []
-            
+        if subnet_ids:
             # Use the actual subnet IDs from SSM
-            if subnet_ids:
-                vpc_attrs["public_subnet_ids"] = subnet_ids
-            else:
-                # Fallback to dummy subnets if no valid subnet IDs
-                vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
+            vpc_attrs["public_subnet_ids"] = subnet_ids
+        else:
+            # Fallback to dummy subnets if no valid subnet IDs
+            vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
         
         # Use from_vpc_attributes() for SSM tokens with unique construct name
         self._vpc = ec2.Vpc.from_vpc_attributes(self, f"{self.stack_name}-VPC", **vpc_attrs)
@@ -177,3 +174,30 @@ class VPCProviderMixin:
             Resolved VPC reference
         """
         return self.resolve_vpc(config, deployment, workload)
+
+    def _get_default_azs_for_region(self, region: str) -> List[str]:
+        """
+        Get default availability zones for a given region.
+        
+        Args:
+            region: AWS region name (e.g., 'us-east-1', 'us-west-2')
+            
+        Returns:
+            List of availability zone names for the region
+        """
+        # Common AZ mappings for major AWS regions
+        region_az_map = {
+            'us-east-1': ['us-east-1a', 'us-east-1b'],
+            'us-east-2': ['us-east-2a', 'us-east-2b'],
+            'us-west-1': ['us-west-1a', 'us-west-1b'],
+            'us-west-2': ['us-west-2a', 'us-west-2b'],
+            'eu-west-1': ['eu-west-1a', 'eu-west-1b'],
+            'eu-west-2': ['eu-west-2a', 'eu-west-2b'],
+            'eu-central-1': ['eu-central-1a', 'eu-central-1b'],
+            'ap-southeast-1': ['ap-southeast-1a', 'ap-southeast-1b'],
+            'ap-southeast-2': ['ap-southeast-2a', 'ap-southeast-2b'],
+            'ap-northeast-1': ['ap-northeast-1a', 'ap-northeast-1b'],
+        }
+        
+        # Return region-specific AZs if available, otherwise fall back to us-east-1
+        return region_az_map.get(region, ['us-east-1a', 'us-east-1b'])

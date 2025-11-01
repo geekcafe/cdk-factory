@@ -97,10 +97,9 @@ class RumStack(IStack, StandardizedSsmMixin):
             identity_pool_id = self.rum_config.cognito_identity_pool_id
             logger.info(f"Using existing Cognito Identity Pool: {identity_pool_id}")
         else:
-            # Try to import from SSM using new standardized pattern
-            cognito_identity_pool_id = self.get_ssm_imported_value(
-                "cognito_identity_pool_id"
-            )
+            # Try to import from SSM using new pattern - read directly from config
+            ssm_imports = self.rum_config.ssm_imports
+            cognito_identity_pool_id = ssm_imports.get("cognito_identity_pool_id")
 
             if cognito_identity_pool_id:
                 identity_pool_id = cognito_identity_pool_id

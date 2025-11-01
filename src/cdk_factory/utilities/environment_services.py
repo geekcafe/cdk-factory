@@ -23,9 +23,9 @@ logger = Logger(__name__)
 
 class EnvironmentVariables:
     """
-    Easy access to allo the environment variables we use in the appliction.
-    It's a best practice to use this vs doing and os.getevn in each application.
-    This helps us track all the enviroment variables in use
+    Easy access to allow the environment variables we use in the application.
+    It's a best practice to use this vs doing and os.getenv in each application.
+    This helps us track all the environment variables in use
     """
 
     @staticmethod

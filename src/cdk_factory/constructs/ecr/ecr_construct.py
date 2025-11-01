@@ -14,12 +14,12 @@ from constructs import Construct, IConstruct
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
 from cdk_factory.configurations.resources.ecr import ECRConfig as ECR
 from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
-from cdk_factory.interfaces.ssm_parameter_mixin import SsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 
 logger = Logger(__name__)
 
 
-class ECRConstruct(Construct, SsmParameterMixin):
+class ECRConstruct(Construct, StandardizedSsmMixin):
     def __init__(
         self,
         scope: Construct,
@@ -30,6 +30,8 @@ class ECRConstruct(Construct, SsmParameterMixin):
         **kwargs,
     ) -> None:
         super().__init__(scope, id, **kwargs)
+        # Initialize StandardizedSsmMixin explicitly
+        StandardizedSsmMixin.__init__(self, **kwargs)
 
         self.scope = scope
         self.deployment = deployment
@@ -77,6 +79,11 @@ class ECRConstruct(Construct, SsmParameterMixin):
 
         This method uses the new configurable SSM parameter prefix system.
         """
+        # Check if SSM exports are configured
+        if not hasattr(self.repo, 'ssm_exports') or not self.repo.ssm_exports:
+            logger.debug("No SSM exports configured for ECR repository")
+            return
+        
         # Create a dictionary of resource values to export
         resource_values = {
             "name": self.ecr.repository_name,

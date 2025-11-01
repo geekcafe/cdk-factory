@@ -562,10 +562,11 @@ class ApiGatewayIntegrationUtility:
                         resource_name="user-pool",
                     )
 
-                    # Get user pool ARN using new standardized pattern
+                    # Get user pool ARN using new pattern - read directly from config
                     if ssm_path == "auto":
                         logger.info("Using auto-import for user pool ARN")
-                        user_pool_arn = ssm_mixin.get_ssm_imported_value("user_pool_arn")
+                        ssm_imports = api_gateway_config.get("ssm", {}).get("imports", {})
+                        user_pool_arn = ssm_imports.get("user_pool_arn")
                     else:
                         # Use direct parameter import for specific SSM path
                         logger.info(

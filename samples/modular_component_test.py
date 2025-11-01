@@ -116,9 +116,10 @@ class SecurityGroupOnlyStack(Stack):
             ],
             "tags": {"Component": "SG-Only", "Environment": deployment_name},
             # Define SSM parameters to import - using simplified paths with the template
-            "ssm_imports": {"vpc_id_path": "id"},
-            # Define SSM parameters to export - using simplified paths with the template
-            "ssm_exports": {"security_group_id_path": "id"},
+            "ssm": {
+                "imports": {"vpc_id_path": "id"},
+                "exports": {"security_group_id_path": "id"},
+            },
             # Override the SSM prefix template at the resource level for exports only
             "ssm_prefix_template": "/{environment}/security-groups/{resource_name}/{attribute}",
         }
@@ -181,16 +182,17 @@ class DatabaseOnlyStack(Stack):
             "tags": {"Component": "DB-Only", "Environment": deployment_name},
             # Define SSM parameters to import - using simplified paths with the template
             # Note: We need to use full paths for imports from stacks with different prefix templates
-            "ssm_imports": {
-                "vpc_id_path": f"/{deployment_name}/vpc/id",  # From VPC stack with /{environment}/{resource_type}/{attribute}
-                "security_group_id_path": f"/{deployment_name}/security-groups/web-sg/id",  # From SG stack with custom prefix
-            },
-            # Define SSM parameters to export - using simplified paths with the template
-            "ssm_exports": {
-                "db_instance_endpoint_path": "endpoint",
-                "db_instance_id_path": "id",
-                "db_secret_arn_path": "secret-arn",
-                "db_name_path": "name",
+            "ssm": {
+                "imports": {
+                    "vpc_id_path": f"/{deployment_name}/vpc/id",  # From VPC stack with /{environment}/{resource_type}/{attribute}
+                    "security_group_id_path": f"/{deployment_name}/security-groups/web-sg/id",  # From SG stack with custom prefix
+                },
+                "exports": {
+                    "db_instance_endpoint_path": "endpoint",
+                    "db_instance_id_path": "id",
+                    "db_secret_arn_path": "secret-arn",
+                    "db_name_path": "name",
+                }
             },
             # Override the resource type for this specific resource
             "ssm_resource_type": "database",

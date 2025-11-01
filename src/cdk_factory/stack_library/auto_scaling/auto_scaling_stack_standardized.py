@@ -136,17 +136,23 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         logger.info(f"Auto Scaling Group {asg_name} built successfully")
 
+    def _get_ssm_imports(self) -> Dict[str, Any]:
+        """Get SSM imports from configuration"""
+        return self.asg_config.ssm_imports
+
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """
-        Get security groups for the Auto Scaling Group using standardized SSM approach.
+        Get security groups for the Auto Scaling Group using standardized SSM imports.
         
-        This method now uses the standardized SSM mixin for consistent behavior.
+        Returns:
+            List of security group references
         """
         security_groups = []
         
         # Primary method: Use standardized SSM imports
-        if self.has_ssm_import("security_group_ids"):
-            imported_sg_ids = self.get_ssm_imported_value("security_group_ids", [])
+        ssm_imports = self._get_ssm_imports()
+        if "security_group_ids" in ssm_imports:
+            imported_sg_ids = ssm_imports["security_group_ids"]
             if isinstance(imported_sg_ids, list):
                 for idx, sg_id in enumerate(imported_sg_ids):
                     security_groups.append(
@@ -193,28 +199,28 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         Get VPC ID using standardized SSM approach.
         """
         # Primary method: Use standardized SSM imports
-        if self.has_ssm_import("vpc_id"):
-            return self.get_ssm_imported_value("vpc_id")
+        ssm_imports = self._get_ssm_imports()
+        if "vpc_id" in ssm_imports:
+            return ssm_imports["vpc_id"]
         
         # Fallback: Use VPC provider mixin (backward compatibility)
         elif hasattr(self, '_get_vpc_from_provider'):
-            vpc = self._get_vpc_from_provider()
-            return vpc.vpc_id if vpc else None
+            return self._get_vpc_from_provider()
         
-        # Final fallback: Direct configuration
+        # Fallback: Use direct configuration
         elif hasattr(self.asg_config, 'vpc_id') and self.asg_config.vpc_id:
             return self.asg_config.vpc_id
         
-        else:
-            raise ValueError("VPC ID not found in SSM imports, VPC provider, or direct configuration")
+        raise ValueError("VPC ID not found in SSM imports or configuration")
 
     def _get_subnet_ids(self) -> List[str]:
         """
         Get subnet IDs using standardized SSM approach.
         """
         # Primary method: Use standardized SSM imports
-        if self.has_ssm_import("subnet_ids"):
-            return self.get_ssm_imported_value("subnet_ids", [])
+        ssm_imports = self._get_ssm_imports()
+        if "subnet_ids" in ssm_imports:
+            return ssm_imports["subnet_ids"]
         
         # Fallback: Use VPC provider mixin (backward compatibility)
         elif hasattr(self, '_get_subnets_from_provider'):
@@ -261,11 +267,12 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if self.asg_config.user_data_commands:
             # Process template variables in user data commands
             processed_commands = []
+            ssm_imports = self._get_ssm_imports()
             for command in self.asg_config.user_data_commands:
                 processed_command = command
                 # Substitute SSM-imported values
-                if self.has_ssm_import("ecs_cluster_name") and "{{ecs_cluster_name}}" in command:
-                    cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
+                if "ecs_cluster_name" in ssm_imports and "{{ecs_cluster_name}}" in command:
+                    cluster_name = ssm_imports["ecs_cluster_name"]
                     processed_command = command.replace("{{ecs_cluster_name}}", cluster_name)
                 processed_commands.append(processed_command)
             
@@ -275,8 +282,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Add ECS cluster configuration if needed
         if self.ecs_cluster:
             # Use the SSM-imported cluster name if available, otherwise fallback to default format
-            if self.has_ssm_import("ecs_cluster_name"):
-                cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
+            ssm_imports = self._get_ssm_imports()
+            if "ecs_cluster_name" in ssm_imports:
+                cluster_name = ssm_imports["ecs_cluster_name"]
                 ecs_commands = [
                     f"echo 'ECS_CLUSTER={cluster_name}' >> /etc/ecs/ecs.config",
                     "systemctl restart ecs"
@@ -332,19 +340,21 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if self.asg_config.user_data_commands:
             ecs_detected = any("ECS_CLUSTER" in cmd for cmd in self.asg_config.user_data_commands)
         
-        if ecs_detected and self.has_ssm_import("ecs_cluster_name"):
-            cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
-            
-            # Use the shared VPC
-            vpc = self._get_or_create_vpc()
-            
-            self.ecs_cluster = ecs.Cluster.from_cluster_attributes(
-                self,
-                "ImportedECSCluster",
-                cluster_name=cluster_name,
-                vpc=vpc
-            )
-            logger.info(f"Connected to existing ECS cluster: {cluster_name}")
+        if ecs_detected:
+            ssm_imports = self._get_ssm_imports()
+            if "ecs_cluster_name" in ssm_imports:
+                cluster_name = ssm_imports["ecs_cluster_name"]
+                
+                # Use the shared VPC
+                vpc = self._get_or_create_vpc()
+                
+                self.ecs_cluster = ecs.Cluster.from_cluster_attributes(
+                    self,
+                    "ImportedECSCluster",
+                    cluster_name=cluster_name,
+                    vpc=vpc
+                )
+                logger.info(f"Connected to existing ECS cluster: {cluster_name}")
         
         return self.ecs_cluster
 
@@ -448,8 +458,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         target_group_arns = []
         
         # Use standardized SSM imports
-        if self.has_ssm_import("target_group_arns"):
-            imported_arns = self.get_ssm_imported_value("target_group_arns", [])
+        ssm_imports = self._get_ssm_imports()
+        if "target_group_arns" in ssm_imports:
+            imported_arns = ssm_imports["target_group_arns"]
             if isinstance(imported_arns, list):
                 target_group_arns.extend(imported_arns)
             else:

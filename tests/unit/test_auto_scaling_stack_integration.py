@@ -71,13 +71,6 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
             }
         }, self.workload_config.dictionary)
         
-        # Mock SSM parameter values
-        stack._ssm_imported_values = {
-            "vpc_id": "vpc-test123",
-            "subnet_ids": "subnet-test1,subnet-test2,subnet-test3",
-            "security_group_ids": "sg-test123"
-        }
-        
         # Build the stack - this should not raise naming conflicts
         try:
             stack.build(stack_config, self.deployment_config, self.workload_config)
@@ -124,13 +117,6 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
                 }
             }
         }, self.workload_config.dictionary)
-        
-        # Mock SSM values
-        for stack in [stack1, stack2]:
-            stack._ssm_imported_values = {
-                "vpc_id": "vpc-test123",
-                "subnet_ids": "subnet-test1,subnet-test2"
-            }
         
         # Build both stacks - should not interfere with each other
         try:
@@ -240,14 +226,6 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         """Test that ECS cluster name is properly injected from SSM imports"""
         # Create AutoScalingStack with ECS configuration
         stack = AutoScalingStack(self.app, "test-workload-prod-ecs-cluster")
-        
-        # Mock SSM parameter values for testing (must be set before build())
-        stack._ssm_imported_values = {
-            "vpc_id": "vpc-test123",
-            "subnet_ids": "subnet-test1,subnet-test2",
-            "security_group_ids": "sg-test123",
-            "ecs_cluster_name": "test-workload-prod-cluster"
-        }
         
         # Configure for ECS with placeholder cluster name in user data
         stack_config = StackConfig({
