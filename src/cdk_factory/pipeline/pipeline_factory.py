@@ -118,7 +118,7 @@ class PipelineFactoryStack(IStack):
                     f"\t🚨 Deployment for Environment: {deployment.environment} "
                     f"is disabled."
                 )
-        if len(pipeline_deployments) == 0:
+        if not pipeline_deployments:
             print(f"\t⛔️ No Pipeline Deployments configured for {self.workload.name}.")
 
         return len(pipeline_deployments)
@@ -216,7 +216,7 @@ class PipelineFactoryStack(IStack):
             wave_name = stage.wave_name
 
             # if we don't have any stacks we'll need to use the wave
-            if len(stage.stacks) == 0:
+            if not stage.stacks:
                 wave_name = stage.name
 
             if wave_name:
@@ -519,7 +519,7 @@ class PipelineFactoryStack(IStack):
                     f"\t\t ⚠️ Stack {stack_config.name} is disabled in stage: {stage_config.name}"
                 )
 
-        if len(cf_stacks) == 0:
+        if not cf_stacks:
             print(f"\t\t ⚠️ No stacks added to stage: {stage_config.name}")
             print(f"\t\t ⚠️ Internal Stack Count: {len(stage_config.stacks)}")
 

@@ -23,7 +23,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.ecs_service import EcsServiceConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -33,7 +33,7 @@ logger = Logger(service="EcsServiceStack")
 @register_stack("ecs_service_library_module")
 @register_stack("ecs_service_stack")
 @register_stack("fargate_service_stack")
-class EcsServiceStack(IStack, EnhancedSsmParameterMixin):
+class EcsServiceStack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for ECS/Fargate services with Docker container support.
     Supports blue-green deployments, maintenance mode, and auto-scaling.

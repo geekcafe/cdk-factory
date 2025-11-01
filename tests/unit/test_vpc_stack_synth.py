@@ -9,7 +9,7 @@ from aws_cdk import App
 # Add the src directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
-from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.workload import WorkloadConfig

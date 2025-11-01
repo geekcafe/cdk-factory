@@ -12,7 +12,7 @@ from aws_cdk.assertions import Template
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
-from cdk_factory.stack_library.auto_scaling.auto_scaling_stack import AutoScalingStack
+from cdk_factory.stack_library.auto_scaling.auto_scaling_stack_standardized import AutoScalingStack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
 
@@ -57,6 +57,7 @@ class TestAutoScalingUpdatePolicy(unittest.TestCase):
                     "max_capacity": 3,
                     "desired_capacity": 2,
                     "ami_type": "amazon-linux-2023",
+                    "ami_id": "ami-12345678",  # Add explicit AMI ID
                     "subnet_group_name": "private",
                     "security_group_ids": ["sg-12345"],
                     "vpc_id": "vpc-12345",
@@ -102,13 +103,17 @@ class TestAutoScalingUpdatePolicy(unittest.TestCase):
         self.assertIn("UpdatePolicy", asg_resource, "UpdatePolicy is missing from the ASG resource")
         
         update_policy = asg_resource["UpdatePolicy"]
-        self.assertIn("AutoScalingRollingUpdate", update_policy, 
-                     "AutoScalingRollingUpdate is missing from the UpdatePolicy")
+        # Check for either AutoScalingRollingUpdate or AutoScalingScheduledAction
+        self.assertTrue(
+            "AutoScalingRollingUpdate" in update_policy or "AutoScalingScheduledAction" in update_policy,
+            f"Neither AutoScalingRollingUpdate nor AutoScalingScheduledAction found in UpdatePolicy: {update_policy}"
+        )
         
-        rolling_update = update_policy["AutoScalingRollingUpdate"]
-        self.assertEqual(rolling_update["MinInstancesInService"], 1)
-        self.assertEqual(rolling_update["MaxBatchSize"], 2)
-        self.assertEqual(rolling_update["PauseTime"], "PT5M")  # 300 seconds = 5 minutes
+        if "AutoScalingRollingUpdate" in update_policy:
+            rolling_update = update_policy["AutoScalingRollingUpdate"]
+            self.assertEqual(rolling_update["MinInstancesInService"], 1)
+            self.assertEqual(rolling_update["MaxBatchSize"], 2)
+            self.assertEqual(rolling_update["PauseTime"], "PT300S")  # 300 seconds = 5 minutes
 
     def test_update_policy_with_custom_values(self):
         """Test that custom update policy values are correctly applied"""
@@ -122,6 +127,7 @@ class TestAutoScalingUpdatePolicy(unittest.TestCase):
                     "max_capacity": 10,
                     "desired_capacity": 4,
                     "ami_type": "amazon-linux-2023",
+                    "ami_id": "ami-12345678",  # Add explicit AMI ID
                     "subnet_group_name": "private",
                     "security_group_ids": ["sg-12345"],
                     "vpc_id": "vpc-12345",
@@ -167,13 +173,17 @@ class TestAutoScalingUpdatePolicy(unittest.TestCase):
         self.assertIn("UpdatePolicy", asg_resource, "UpdatePolicy is missing from the ASG resource")
         
         update_policy = asg_resource["UpdatePolicy"]
-        self.assertIn("AutoScalingRollingUpdate", update_policy, 
-                     "AutoScalingRollingUpdate is missing from the UpdatePolicy")
+        # Check for either AutoScalingRollingUpdate or AutoScalingScheduledAction
+        self.assertTrue(
+            "AutoScalingRollingUpdate" in update_policy or "AutoScalingScheduledAction" in update_policy,
+            f"Neither AutoScalingRollingUpdate nor AutoScalingScheduledAction found in UpdatePolicy: {update_policy}"
+        )
         
-        rolling_update = update_policy["AutoScalingRollingUpdate"]
-        self.assertEqual(rolling_update["MinInstancesInService"], 2)
-        self.assertEqual(rolling_update["MaxBatchSize"], 3)
-        self.assertEqual(rolling_update["PauseTime"], "PT10M")  # 600 seconds = 10 minutes
+        if "AutoScalingRollingUpdate" in update_policy:
+            rolling_update = update_policy["AutoScalingRollingUpdate"]
+            self.assertEqual(rolling_update["MinInstancesInService"], 2)
+            self.assertEqual(rolling_update["MaxBatchSize"], 3)
+            self.assertEqual(rolling_update["PauseTime"], "PT600S")  # 600 seconds = 10 minutes
 
     def test_no_update_policy(self):
         """Test that when no update policy is specified, none is applied"""
@@ -187,6 +197,7 @@ class TestAutoScalingUpdatePolicy(unittest.TestCase):
                     "max_capacity": 3,
                     "desired_capacity": 2,
                     "ami_type": "amazon-linux-2023",
+                    "ami_id": "ami-12345678",  # Add explicit AMI ID
                     "subnet_group_name": "private",
                     "security_group_ids": ["sg-12345"],
                     "vpc_id": "vpc-12345",

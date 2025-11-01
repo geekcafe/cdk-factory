@@ -12,9 +12,10 @@ paths = []
 
 try:
     paths = __path__
-except:  # noqa: E722, pylint: disable=bare-except
+except (AttributeError, ImportError) as e:
+    # Fallback to using os.path if __path__ is not available
     import os
-
+    
     paths.append(os.path.dirname(__file__))
 
 

@@ -14,7 +14,7 @@ from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.workload.workload_factory import WorkloadConfig, WorkloadFactory
 
 # Import individual stack library modules
-from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
 from cdk_factory.stack_library.security_group.security_group_stack import (
     SecurityGroupStack,
 )

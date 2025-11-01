@@ -128,7 +128,7 @@ class ECRConfig(EnhancedBaseConfig):
         Example:
         {
             "enabled": true,
-            "accounts": ["123456789012", "987654321098"],
+            "accounts": [os.environ.get("ECR_ALLOWED_ACCOUNT_1"), os.environ.get("ECR_ALLOWED_ACCOUNT_2")],
             "services": [
                 {
                     "name": "lambda",

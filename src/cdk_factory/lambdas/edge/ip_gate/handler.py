@@ -11,11 +11,18 @@ import ipaddress
 import boto3
 from functools import lru_cache
 
+# Simple logging for Lambda@Edge (since we can't use external logging libraries)
+import logging
+
+# Configure basic logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
 # SSM client - will be created in the region where the function executes
 ssm = None
 
 @lru_cache(maxsize=128)
-def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1', default: str = None) -> str:
+def get_ssm_parameter(parameter_name: str, region: str = None, default: str = None) -> str:
     """
     Fetch SSM parameter with caching.
     Lambda@Edge cannot use environment variables, so we fetch from SSM.
@@ -23,14 +30,18 @@ def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1', default: s
     The sentinel value 'NONE' indicates an explicitly unset/disabled parameter.
     
     Args:
-        parameter_name: Name of the SSM parameter
-        region: AWS region (default us-east-1)
-        default: Default value to return if parameter not found (optional)
+        parameter_name: SSM parameter name
+        region: AWS region (defaults to us-east-1 for Lambda@Edge compatibility)
+        default: Default value if parameter not found
     
     Returns:
         Parameter value, default value if parameter not found, or empty string if value is 'NONE'
     """
     global ssm
+    # Default to us-east-1 for Lambda@Edge compatibility if no region specified
+    if region is None:
+        region = 'us-east-1'
+    
     if ssm is None:
         ssm = boto3.client('ssm', region_name=region)
     
@@ -40,20 +51,20 @@ def get_ssm_parameter(parameter_name: str, region: str = 'us-east-1', default: s
         
         # Treat 'NONE' sentinel as empty/unset
         if value == 'NONE':
-            print(f"SSM parameter {parameter_name} is set to 'NONE' (explicitly disabled)")
+            logger.info(f"SSM parameter {parameter_name} is set to 'NONE' (explicitly disabled)")
             return ''
         
         return value
     except ssm.exceptions.ParameterNotFound:
         if default is not None:
-            print(f"SSM parameter {parameter_name} not found, using default: {default}")
+            logger.info(f"SSM parameter {parameter_name} not found, using default: {default}")
             return default
-        print(f"SSM parameter {parameter_name} not found and no default provided")
+        logger.error(f"SSM parameter {parameter_name} not found and no default provided")
         raise
     except Exception as e:
-        print(f"Error fetching SSM parameter {parameter_name}: {str(e)}")
+        logger.error(f"Error fetching SSM parameter {parameter_name}: {str(e)}")
         if default is not None:
-            print(f"Returning default value due to error: {default}")
+            logger.info(f"Returning default value due to error: {default}")
             return default
         raise
 
@@ -89,7 +100,7 @@ def is_ip_allowed(client_ip: str, allowed_cidrs: list) -> bool:
     try:
         client_ip_obj = ipaddress.ip_address(client_ip)
     except ValueError as e:
-        print(f"Invalid client IP address: {e}")
+        logger.error(f"Invalid client IP address: {e}")
         return False
     
     # Check each CIDR individually, skipping invalid ones
@@ -100,7 +111,7 @@ def is_ip_allowed(client_ip: str, allowed_cidrs: list) -> bool:
                 return True
         except ValueError as e:
             # Invalid CIDR, log and continue checking others
-            print(f"Invalid CIDR '{cidr}': {e}")
+            logger.warning(f"Invalid CIDR '{cidr}': {e}")
             continue
     
     return False
@@ -130,24 +141,23 @@ def lambda_handler(event, context):
         env = runtime_config.get('environment', 'dev')
         function_base_name = runtime_config.get('function_name', 'ip-gate')
         
-        print(f"Runtime config loaded: environment={env}, function_name={function_base_name}")
+        logger.info(f"Runtime config loaded: environment={env}, function_name={function_base_name}")
     except FileNotFoundError:
         # Fallback: extract from Lambda context (less reliable)
-        print("Warning: runtime_config.json not found, falling back to function name parsing")
+        logger.warning("runtime_config.json not found, falling back to function name parsing")
         function_full_name = context.function_name
         
         # Parse environment from function name as fallback
         parts = function_full_name.split('-')
         common_envs = ['dev', 'prod', 'staging', 'test', 'qa', 'uat']
-        env = 'dev'
-        
+        env = 'dev'  # Default fallback
         for part in parts:
             if part in common_envs:
                 env = part
                 break
         
         function_base_name = 'ip-gate'
-        print(f"Fallback: environment={env}, function_name={function_base_name}")
+        logger.info(f"Fallback: environment={env}, function_name={function_base_name}")
     
     # Full function name for SSM paths
     # Lambda@Edge replicas prepend region (e.g., "us-east-1.tech-talk-dev-ip-gate")
@@ -156,46 +166,46 @@ def lambda_handler(event, context):
     if '.' in function_name and function_name.split('.')[0].startswith('us-'):
         # Strip region prefix (e.g., "us-east-1." -> "tech-talk-dev-ip-gate")
         function_name = '.'.join(function_name.split('.')[1:])
-        print(f"Stripped region prefix from function name: {function_name}")
+        logger.info(f"Stripped region prefix from function name: {function_name}")
     
-    print(f"Lambda function ARN: {context.invoked_function_arn}")
-    print(f"Using function name for SSM lookups: {function_name}")
+    logger.info(f"Lambda function ARN: {context.invoked_function_arn}")
+    logger.info(f"Using function name for SSM lookups: {function_name}")
     
     try:
         # Fetch configuration from SSM Parameter Store
         # Auto-generated paths: /{env}/{function-name}/{key}
-        gate_enabled = get_ssm_parameter(f'/{env}/{function_name}/gate-enabled', 'us-east-1')
+        gate_enabled = get_ssm_parameter(f'/{env}/{function_name}/gate-enabled', region='us-east-1')
         
         # If gating is disabled, allow all traffic
         # Empty string (from 'NONE' sentinel) is treated as disabled
         if not gate_enabled or gate_enabled.lower() not in ('true', '1', 'yes'):
-            print(f"IP gating is disabled (GATE_ENABLED={gate_enabled or 'NONE'})")
+            logger.info(f"IP gating is disabled (GATE_ENABLED={gate_enabled or 'NONE'})")
             return request
         
         # Get allowed CIDRs and backup host
-        allow_cidrs_str = get_ssm_parameter(f'/{env}/{function_name}/allow-cidrs', 'us-east-1')
-        dns_alias = get_ssm_parameter(f'/{env}/{function_name}/dns-alias', 'us-east-1')
+        allow_cidrs_str = get_ssm_parameter(f'/{env}/{function_name}/allow-cidrs', region='us-east-1')
+        dns_alias = get_ssm_parameter(f'/{env}/{function_name}/dns-alias', region='us-east-1')
         
         # Parse allowed CIDRs (empty string results in empty list)
         allowed_cidrs = [cidr.strip() for cidr in allow_cidrs_str.split(',') if cidr.strip()]
         
         # Get client IP
         client_ip = get_client_ip(request)
-        print(f"Client IP: {client_ip}")
+        logger.info(f"Client IP: {client_ip}")
         
         # Check if IP is allowed
         if is_ip_allowed(client_ip, allowed_cidrs):
-            print(f"IP {client_ip} is allowed")
+            logger.info(f"IP {client_ip} is allowed")
             return request
         
         # IP not allowed - either redirect or proxy backup page
         # Check response mode from SSM (default: redirect for backward compatibility)
         response_mode_param = f"/{env}/{function_name}/response-mode"
-        response_mode = get_ssm_parameter(response_mode_param, 'us-east-1', default='redirect')
+        response_mode = get_ssm_parameter(response_mode_param, region='us-east-1', default='redirect')
         
         if response_mode == 'proxy':
             # Proxy mode: Fetch and return backup content (keeps URL the same)
-            print(f"IP {client_ip} is NOT allowed, proxying content from {dns_alias}")
+            logger.info(f"IP {client_ip} is NOT allowed, proxying content from {dns_alias}")
             
             try:
                 import urllib3
@@ -230,17 +240,17 @@ def lambda_handler(event, context):
                     'body': alias_response.data.decode('utf-8')
                 }
                 
-                print(f"Successfully proxied backup page (status {alias_response.status})")
+                logger.info(f"Successfully proxied backup page (status {alias_response.status})")
                 return response
                 
             except Exception as proxy_error:
-                print(f"Error proxying backup content: {str(proxy_error)}")
+                logger.error(f"Error proxying backup content: {str(proxy_error)}")
                 # Fall back to redirect if proxy fails
-                print(f"Falling back to redirect mode")
+                logger.info(f"Falling back to redirect mode")
                 response_mode = 'redirect'
         
         # Redirect mode (default): HTTP 302 redirect to backup site
-        print(f"IP {client_ip} is NOT allowed, redirecting to {dns_alias}")
+        logger.info(f"IP {client_ip} is NOT allowed, redirecting to {dns_alias}")
         
         response = {
             'status': '302',
@@ -249,14 +259,6 @@ def lambda_handler(event, context):
                 'location': [{
                     'key': 'Location',
                     'value': f'https://{dns_alias}'
-                }],
-                'cache-control': [{
-                    'key': 'Cache-Control',
-                    'value': 'no-cache, no-store, must-revalidate'
-                }],
-                'x-ip-gate-mode': [{
-                    'key': 'X-IP-Gate-Mode',
-                    'value': 'redirect'
                 }]
             }
         }
@@ -264,7 +266,7 @@ def lambda_handler(event, context):
         return response
         
     except Exception as e:
-        print(f"Error in IP gating function: {str(e)}")
+        logger.error(f"Error in IP gating function: {str(e)}")
         # On error, allow the request to proceed (fail open)
         # Change this to fail closed if preferred
         return request

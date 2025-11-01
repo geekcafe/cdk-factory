@@ -212,7 +212,7 @@ class JsonLoadingUtility:
             replacements = {
                 "{{workload-name}}": "geekcafe",
                 "{{deployment-name}}": "dev",
-                "{{awsAccount}}": "123456789012",
+                "{{awsAccount}}": os.environ.get("AWS_ACCOUNT", "123456789012"),
                 "{{hostedZoneName}}": "sandbox.geekcafe.com",
                 "{{placeholder}}": "DYNAMIC_VALUE"
             }

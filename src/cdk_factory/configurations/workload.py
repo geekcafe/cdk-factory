@@ -5,6 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
+import copy
 from typing import Any, Dict, List
 
 from aws_lambda_powertools import Logger
@@ -66,12 +67,41 @@ class WorkloadConfig:
         if self.__app_config is None:
             raise ValueError("Configuration is not defined.")
 
+        # Create a deep copy to avoid mutating the original configuration
         if "workload" in self.__app_config:
-            workload = self.__app_config["workload"]
+            workload = copy.deepcopy(self.__app_config["workload"])
         else:
-            workload = self.__app_config
+            workload = copy.deepcopy(self.__app_config)
 
         self.__workload = workload
+
+        # Handle missing devops section gracefully
+        if "devops" not in workload:
+            logger.warning("Devops configuration not found in workload, using defaults")
+            
+            # Get environment variables for defaults
+            devops_account = os.environ.get("DEVOPS_AWS_ACCOUNT")
+            devops_region = os.environ.get("DEVOPS_REGION")
+            
+            # Validate required environment variables
+            if not devops_account or not devops_region:
+                raise ValueError(
+                    "DEVOPS_AWS_ACCOUNT and DEVOPS_REGION environment variables must be set when devops config is missing"
+                )
+            
+            # Use a separate defaults object instead of mutating the original
+            devops_defaults = {
+                "account": devops_account,
+                "region": devops_region,
+                "code_repository": {
+                    "name": os.environ.get("CODE_REPOSITORY_NAME", "default-repo"),
+                    "type": "connector_arn",
+                    "connector_arn": os.environ.get("CODE_REPOSITORY_ARN", f"arn:aws:codeconnections:{os.environ.get('DEVOPS_REGION', 'us-east-1')}:{os.environ.get('DEVOPS_AWS_ACCOUNT')}:connection/default")
+                },
+                "commands": []
+            }
+            
+            workload["devops"] = devops_defaults
 
         self.__devops = DevOps(workload["devops"])
         self.__management = Management(workload.get("management", {}))

@@ -35,11 +35,11 @@ class ResourceResolver:
         """Get or create enhanced SSM parameter mixin"""
         if self._ssm_mixin is None:
             try:
-                from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
-                    EnhancedSsmParameterMixin,
+                from cdk_factory.interfaces.standardized_ssm_mixin import (
+                    StandardizedSsmMixin,
                 )
 
-                self._ssm_mixin = EnhancedSsmParameterMixin()
+                self._ssm_mixin = StandardizedSsmMixin()
 
                 # Setup enhanced SSM integration if lambda config has SSM settings
                 lambda_dict = getattr(self.lambda_config, "dictionary", {})

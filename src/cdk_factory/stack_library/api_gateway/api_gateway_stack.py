@@ -15,9 +15,7 @@ from aws_cdk import Size
 from aws_cdk import aws_lambda as _lambda
 from constructs import Construct
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
-    EnhancedSsmParameterMixin,
-)
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from aws_lambda_powertools import Logger
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
@@ -43,7 +41,7 @@ logger = Logger(service="ApiGatewayStack")
 
 @register_stack("api_gateway_library_module")
 @register_stack("api_gateway_stack")
-class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
+class ApiGatewayStack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for AWS API Gateway (REST API).
     Supports all major RestApi parameters.
@@ -661,7 +659,10 @@ class ApiGatewayStack(IStack, EnhancedSsmParameterMixin):
                 # This is a bit of a hack, but we need to set the deployment stage
                 # so that api_gateway.url works properly
                 object.__setattr__(api_gateway, "_deployment_stage_internal", stage)
-            except:
+            except (AttributeError, TypeError) as e:
+                # Log the error but don't fail the entire deployment
+                # This is a non-critical operation for URL generation
+                logger.warning(f"Could not set deployment stage internal property: {e}")
                 pass
 
     def __finalize_api_gateway_deployments(self):

@@ -18,7 +18,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.route53 import Route53Config
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -27,7 +27,7 @@ logger = Logger(service="Route53Stack")
 
 @register_stack("route53_library_module")
 @register_stack("route53_stack")
-class Route53Stack(IStack, EnhancedSsmParameterMixin):
+class Route53Stack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for AWS Route53.
     Supports creating hosted zones, DNS records, and certificate validation.

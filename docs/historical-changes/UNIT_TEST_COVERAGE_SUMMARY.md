@@ -13,7 +13,7 @@ Reviewed all 18 stacks in `stack_library/` and identified test coverage gaps. Cr
 | Stack | Test File | Tests | Status |
 |-------|-----------|-------|--------|
 | **api_gateway_stack** | `test_api_gateway_stack.py` | 17 tests | ✅ Passing |
-| **auto_scaling_stack** | `test_auto_scaling_stack.py` | 5 tests | ✅ Passing |
+| **auto_scaling_stack** | `test_auto_scaling_stack.py` | 5 tests | ✅ Passing (standardized) |
 | **code_artifact_stack** | `test_code_artifact_stack.py` | Multiple | ✅ Passing |
 | **cognito_stack** | `test_cognito_stack.py` | Multiple | ✅ Passing |
 | **dynamodb_stack** | `test_dynamodb_stack.py` | Multiple | ✅ Passing |
@@ -25,7 +25,7 @@ Reviewed all 18 stacks in `stack_library/` and identified test coverage gaps. Cr
 | **route53_stack** | `test_route53_stack.py` | Multiple | ✅ Passing |
 | **security_group_stack** | `test_security_group_stack.py` | Multiple | ✅ Passing |
 | **sqs_stack** | `test_sqs_stack.py` | Multiple | ✅ Passing |
-| **vpc_stack** | `test_vpc_stack.py` | Multiple | ✅ Passing |
+| **vpc_stack** | `test_vpc_stack.py` | Multiple | ✅ Passing (standardized) |
 
 ### ✅ Stacks with NEW Tests Created (2/18)
 
@@ -167,4 +167,4 @@ Both are edge cases that would benefit more from integration testing than unit t
 ---
 
 **Test Pattern Reference:**  
-All tests follow the no-mocking pattern established in `test_auto_scaling_stack.py`, using real CDK synthesis to validate actual CloudFormation template generation.
+All tests follow the no-mocking pattern established in `test_auto_scaling_stack.py`, using real CDK synthesis to validate actual CloudFormation template generation. Standardized modules are now used for all major stacks.

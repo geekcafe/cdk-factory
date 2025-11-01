@@ -19,7 +19,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.load_balancer import LoadBalancerConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -30,7 +30,7 @@ logger = Logger(service="LoadBalancerStack")
 @register_stack("alb_stack")
 @register_stack("load_balancer_library_module")
 @register_stack("load_balancer_stack")
-class LoadBalancerStack(IStack, EnhancedSsmParameterMixin):
+class LoadBalancerStack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for AWS Load Balancers.
     Supports creating Application and Network Load Balancers with customizable configurations.

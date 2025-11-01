@@ -10,7 +10,7 @@ from aws_cdk import App, Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecs as ecs
 
-from cdk_factory.stack_library.auto_scaling.auto_scaling_stack import AutoScalingStack
+from cdk_factory.stack_library.auto_scaling.auto_scaling_stack_standardized import AutoScalingStack
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.workload.workload_factory import WorkloadConfig

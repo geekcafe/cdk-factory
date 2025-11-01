@@ -265,7 +265,7 @@ The Auto Scaling Stack is designed to work in a multi-stage deployment pipeline:
 
 ## Stack Registration
 
-The Auto Scaling Stack is registered with these aliases:
+The Auto Scaling Stack (standardized) is registered with these aliases:
 - `auto_scaling_library_module`
 - `auto_scaling_stack`
 

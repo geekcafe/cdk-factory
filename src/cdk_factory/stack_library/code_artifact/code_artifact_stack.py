@@ -15,7 +15,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.code_artifact import CodeArtifactConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -24,7 +24,7 @@ logger = Logger(service="CodeArtifactStack")
 
 @register_stack("code_artifact_library_module")
 @register_stack("code_artifact_stack")
-class CodeArtifactStack(IStack, EnhancedSsmParameterMixin):
+class CodeArtifactStack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for AWS CodeArtifact.
     Supports creating domains and repositories with configurable settings.

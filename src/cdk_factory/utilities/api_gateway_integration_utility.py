@@ -537,11 +537,11 @@ class ApiGatewayIntegrationUtility:
 
                 if ssm_path:
                     # Use enhanced SSM parameter import with auto-discovery support
-                    from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
-                        EnhancedSsmParameterMixin,
+                    from cdk_factory.interfaces.standardized_ssm_mixin import (
+                        StandardizedSsmMixin,
                     )
 
-                    ssm_mixin = EnhancedSsmParameterMixin()
+                    ssm_mixin = StandardizedSsmMixin()
 
                     # Setup enhanced SSM integration for auto-import
                     # Use "user-pool" as resource identifier for SSM paths to match cognito exports
@@ -866,11 +866,11 @@ class ApiGatewayIntegrationUtility:
 
         if ssm_config.get("enabled", False):
             try:
-                from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import (
-                    EnhancedSsmParameterMixin,
+                from cdk_factory.interfaces.standardized_ssm_mixin import (
+                    StandardizedSsmMixin,
                 )
 
-                ssm_mixin = EnhancedSsmParameterMixin()
+                ssm_mixin = StandardizedSsmMixin()
 
                 # Setup enhanced SSM integration for auto-import
                 # Use consistent resource name for cross-stack compatibility

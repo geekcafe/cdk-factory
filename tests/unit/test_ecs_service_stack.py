@@ -132,6 +132,10 @@ class TestEcsServiceStack:
                     "auto_scaling_target_cpu": 75,
                     "auto_scaling_target_memory": 85,
                     "enable_execute_command": True,
+                    "deployment_circuit_breaker": {
+                        "enable": True,
+                        "rollback": True
+                    },
                     "task_definition": {
                         "cpu": "1024",
                         "memory": "2048",

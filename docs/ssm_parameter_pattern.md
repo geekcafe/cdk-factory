@@ -324,4 +324,4 @@ See the following files for example implementations:
 - `src/cdk_factory/configurations/base_config.py` - Base configuration with SSM support
 - `src/cdk_factory/interfaces/ssm_parameter_mixin.py` - SSM parameter mixin
 - `src/cdk_factory/configurations/resources/vpc.py` - VPC configuration with SSM support
-- `src/cdk_factory/stack_library/vpc/vpc_stack.py` - VPC stack with SSM parameter export
+- `src/cdk_factory/stack_library/vpc/vpc_stack_standardized.py` - VPC stack with standardized SSM parameter export

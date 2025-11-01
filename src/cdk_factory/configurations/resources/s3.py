@@ -30,7 +30,7 @@ class S3BucketConfig(EnhancedBaseConfig):
                 "S3 Bucket Configuration must be a dictionary. Found: "
                 f"{type(self.__config)}"
             )
-        if len(self.__config.keys()) == 0:
+        if not self.__config.keys():
             raise ValueError("S3 Bucket Configuration cannot be empty")
 
     @property

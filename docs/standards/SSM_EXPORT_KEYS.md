@@ -75,7 +75,7 @@ When resources export values to AWS Systems Manager Parameter Store, they must u
 
 ### VPC (Virtual Private Cloud)
 
-**Module**: `vpc_stack`
+**Module**: `vpc_stack` (standardized)
 
 | Key | Description | Example Value |
 |-----|-------------|---------------|
@@ -99,7 +99,7 @@ When resources export values to AWS Systems Manager Parameter Store, they must u
 
 ### ECS (Elastic Container Service)
 
-**Module**: `ecs_service_stack`
+**Module**: `ecs_service_stack` (standardized)
 
 | Key | Description | Example Value |
 |-----|-------------|---------------|

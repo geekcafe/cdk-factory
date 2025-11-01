@@ -64,7 +64,7 @@ class DevOps:
             )
             if (
                 not self.__code_repository.repository
-                or len(self.__code_repository.repository) == 0
+                or not self.__code_repository.repository
             ):
                 raise ValueError(
                     "Code Repository is not defined in the configuration "

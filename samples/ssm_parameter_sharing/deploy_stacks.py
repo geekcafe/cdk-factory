@@ -11,7 +11,7 @@ from aws_lambda_powertools import Logger
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
-from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
 from cdk_factory.stack_library.cognito.cognito_stack import CognitoStack
 from cdk_factory.stack_library.api_gateway.api_gateway_stack import ApiGatewayStack
 from cdk_factory.workload.workload_factory import WorkloadConfig

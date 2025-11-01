@@ -16,7 +16,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.acm import AcmConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -25,7 +25,7 @@ logger = Logger(service="AcmStack")
 
 @register_stack("acm_stack")
 @register_stack("certificate_stack")
-class AcmStack(IStack, EnhancedSsmParameterMixin):
+class AcmStack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for AWS Certificate Manager.
     Supports creating ACM certificates with DNS validation via Route53.

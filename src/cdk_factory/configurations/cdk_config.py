@@ -189,7 +189,7 @@ class CdkConfig:
         if not os.path.exists(Path(path).parent):
             os.makedirs(Path(path).parent)
         cdk = config.get("cdk", {})
-        if replacements and len(replacements) > 0:
+        if replacements:
             config = JsonLoadingUtility.recursive_replace(config, replacements)
             print(f"📀 Saving config to {path}")
             # add the original cdk back

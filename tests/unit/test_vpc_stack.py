@@ -12,7 +12,7 @@ from aws_cdk import aws_ec2 as ec2
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.vpc import VpcConfig
-from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 from unittest.mock import MagicMock, patch, create_autospec
 

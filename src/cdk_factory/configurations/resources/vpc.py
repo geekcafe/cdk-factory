@@ -122,3 +122,22 @@ class VpcConfig(EnhancedBaseConfig):
     def isolated_subnet_name(self) -> str:
         """Custom name for isolated subnets"""
         return self.get("isolated_subnet_name", "isolated")
+
+    @property
+    def subnets(self) -> Dict[str, Any]:
+        """Subnet configuration for the VPC"""
+        return self.get("subnets", {
+            "public": {
+                "enabled": self.public_subnets,
+                "cidr_mask": self.public_subnet_mask,
+                "map_public_ip": True
+            },
+            "private": {
+                "enabled": self.private_subnets,
+                "cidr_mask": self.private_subnet_mask
+            },
+            "isolated": {
+                "enabled": self.isolated_subnets,
+                "cidr_mask": self.isolated_subnet_mask
+            }
+        })

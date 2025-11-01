@@ -49,7 +49,7 @@ The `synth_test_utils.py` module provides helper functions for synthesis testing
 def test_vpc_stack_synth(dummy_workload):
     # Create the app and stack
     app = App()
-    stack = VpcStack(app, "TestVpcStack")
+    stack = VpcStack(app, "TestVpcStack")  # Uses standardized VPC stack
     
     # Build the stack with configuration
     stack.build(stack_config, deployment, dummy_workload)
@@ -110,7 +110,7 @@ def test_security_group_stack_synth(dummy_workload):
 
 When migrating from mock-based tests to synthesis-based tests:
 
-1. Create a new test file with the suffix `_synth.py` (e.g., `test_vpc_stack_synth.py`)
+1. Create a new test file with the suffix `_synth.py` (e.g., `test_vpc_stack_synth.py` for standardized stacks)
 2. Create tests that follow the synthesis testing approach
 3. Verify that the new tests provide adequate coverage
 4. Gradually phase out the mock-based tests

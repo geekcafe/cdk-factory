@@ -11,7 +11,7 @@ from constructs import Construct
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.workload.workload_factory import WorkloadConfig
-from cdk_factory.stack_library.auto_scaling.auto_scaling_stack import AutoScalingStack
+from cdk_factory.stack_library.auto_scaling.auto_scaling_stack_standardized import AutoScalingStack
 from cdk_factory.stack_library.security_group.security_group_stack import SecurityGroupStack
 
 

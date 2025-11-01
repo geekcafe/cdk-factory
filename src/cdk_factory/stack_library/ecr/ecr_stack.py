@@ -12,7 +12,7 @@ from cdk_factory.configurations.resources.ecr import ECRConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.constructs.ecr.ecr_construct import ECRConstruct
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -21,7 +21,7 @@ logger = Logger(__name__)
 
 @register_stack("ecr_library_module")
 @register_stack("ecr_stack")
-class ECRStack(IStack, EnhancedSsmParameterMixin):
+class ECRStack(IStack, StandardizedSsmMixin):
     """
     A CloudFormation Stack for an ECR
 

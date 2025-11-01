@@ -17,7 +17,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.cognito import CognitoConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.interfaces.istack import IStack
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -26,7 +26,7 @@ logger = Logger(__name__)
 
 @register_stack("cognito_library_module")
 @register_stack("cognito_stack")
-class CognitoStack(IStack, EnhancedSsmParameterMixin):
+class CognitoStack(IStack, StandardizedSsmMixin):
     """
     Cognito Stack - Creates a Cognito User Pool with configurable settings.
     """
