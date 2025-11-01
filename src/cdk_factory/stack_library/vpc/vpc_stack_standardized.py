@@ -114,7 +114,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
         # Build VPC properties
         vpc_props = {
             "vpc_name": vpc_name,
-            "cidr": self.vpc_config.cidr,
+            "ip_addresses": ec2.IpAddresses.cidr(self.vpc_config.cidr),
             "nat_gateways": nat_gateway_count,
             "subnet_configuration": subnet_configuration,
             "enable_dns_hostnames": self.vpc_config.enable_dns_hostnames,
