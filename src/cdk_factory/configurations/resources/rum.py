@@ -125,11 +125,16 @@ class RumConfig(EnhancedBaseConfig):
 
     # SSM Integration
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """SSM configuration for importing/exporting resources"""
+        return self.__config.get("ssm", {})
+
+    @property 
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter paths for exporting RUM resources"""
-        return self.__config.get("ssm_exports", {})
+        return self.ssm.get("exports", {})
 
     @property
     def ssm_imports(self) -> Dict[str, str]:
         """SSM parameter paths for importing external resources"""
-        return self.__config.get("ssm_imports", {})
+        return self.ssm.get("imports", {})

@@ -132,7 +132,9 @@ class TestMonitoringStack:
 
         assert "critical-alerts" in stack.sns_topics
 
-    def test_monitoring_with_metric_alarm(self, app, deployment_config, workload_config):
+    def test_monitoring_with_metric_alarm(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring stack with CloudWatch metric alarm"""
         stack_config = StackConfig(
             {
@@ -204,20 +206,16 @@ class TestMonitoringStack:
             "AWS::CloudWatch::Alarm",
             {
                 "AlarmActions": Match.array_with(
-                    [
-                        Match.object_like(
-                            {
-                                "Ref": Match.string_like_regexp(".*Topic.*")
-                            }
-                        )
-                    ]
+                    [Match.object_like({"Ref": Match.string_like_regexp(".*Topic.*")})]
                 ),
             },
         )
 
         assert "high-cpu-alarm" in stack.alarms
 
-    def test_monitoring_with_multiple_alarms(self, app, deployment_config, workload_config):
+    def test_monitoring_with_multiple_alarms(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring stack with multiple alarms"""
         stack_config = StackConfig(
             {
@@ -336,7 +334,9 @@ class TestMonitoringStack:
 
         assert "test-dashboard" in stack.dashboards
 
-    def test_monitoring_with_composite_alarm(self, app, deployment_config, workload_config):
+    def test_monitoring_with_composite_alarm(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring stack with composite alarm"""
         stack_config = StackConfig(
             {
@@ -405,7 +405,9 @@ class TestMonitoringStack:
             },
         )
 
-    def test_monitoring_with_log_metric_filter(self, app, deployment_config, workload_config):
+    def test_monitoring_with_log_metric_filter(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring stack with log metric filter"""
         stack_config = StackConfig(
             {
@@ -468,8 +470,10 @@ class TestMonitoringStack:
                             "name": "export-topic",
                         }
                     ],
-                    "ssm_exports": {
-                        "sns_topic_export-topic": "/test/monitoring/topic-arn",
+                    "ssm": {
+                        "exports": {
+                            "sns_topic_export-topic": "/test/monitoring/topic-arn",
+                        },
                     },
                 }
             },
@@ -497,7 +501,9 @@ class TestMonitoringStack:
             },
         )
 
-    def test_monitoring_alarm_with_datapoints_to_alarm(self, app, deployment_config, workload_config):
+    def test_monitoring_alarm_with_datapoints_to_alarm(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring alarm with datapoints_to_alarm configuration"""
         stack_config = StackConfig(
             {
@@ -541,7 +547,9 @@ class TestMonitoringStack:
             },
         )
 
-    def test_monitoring_alarm_with_ok_actions(self, app, deployment_config, workload_config):
+    def test_monitoring_alarm_with_ok_actions(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring alarm with OK actions"""
         stack_config = StackConfig(
             {
@@ -591,7 +599,9 @@ class TestMonitoringStack:
             },
         )
 
-    def test_monitoring_with_multiple_sns_subscriptions(self, app, deployment_config, workload_config):
+    def test_monitoring_with_multiple_sns_subscriptions(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring with multiple SNS subscriptions"""
         stack_config = StackConfig(
             {
@@ -630,7 +640,9 @@ class TestMonitoringStack:
         # Verify 2 subscriptions exist
         template.resource_count_is("AWS::SNS::Subscription", 2)
 
-    def test_monitoring_dashboard_with_multiple_widgets(self, app, deployment_config, workload_config):
+    def test_monitoring_dashboard_with_multiple_widgets(
+        self, app, deployment_config, workload_config
+    ):
         """Test Monitoring dashboard with multiple widget types"""
         stack_config = StackConfig(
             {

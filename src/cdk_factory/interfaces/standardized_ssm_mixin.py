@@ -431,40 +431,7 @@ class StandardizedSsmMixin:
         """
         return self._ssm_exported_values.copy()
     
-    # Backward compatibility methods
     
-    def process_ssm_imports(self, config: Any, deployment: DeploymentConfig, resource_type: str = "resource") -> None:
-        """
-        Backward compatibility method for existing modules.
-        
-        This method adapts the old interface to the new standardized approach.
-        """
-        # Extract SSM configuration from old format
-        if hasattr(config, 'ssm_imports'):
-            # Convert old ssm_imports format to new format
-            old_imports = config.ssm_imports
-            new_imports = {}
-            
-            for key, value in old_imports.items():
-                # Resolve template variables using old method
-                if isinstance(value, str) and not value.startswith('/'):
-                    value = f"/{deployment.environment}/{deployment.workload_name}/{value}"
-                new_imports[key] = value
-            
-            # Update SSM config
-            self.ssm_config = {"imports": new_imports}
-        
-        # Process imports using standardized method
-        self.process_standardized_ssm_imports()
-    
-    def auto_export_resources(self, resource_values: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, str]:
-        """
-        Backward compatibility method for existing modules.
-        
-        This method adapts the old interface to the new standardized approach.
-        """
-        return self.export_standardized_ssm_parameters(resource_values)
-
 
 class ValidationResult:
     """Result of configuration validation."""

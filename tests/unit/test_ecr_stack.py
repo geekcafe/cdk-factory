@@ -201,9 +201,7 @@ class TestECRStack:
             {
                 "LifecyclePolicy": Match.object_like(
                     {
-                        "LifecyclePolicyText": Match.string_like_regexp(
-                            ".*untagged.*"
-                        ),
+                        "LifecyclePolicyText": Match.string_like_regexp(".*untagged.*"),
                     }
                 ),
             },
@@ -253,9 +251,7 @@ class TestECRStack:
                                     ),
                                     "Effect": "Allow",
                                     "Principal": Match.object_like(
-                                        {
-                                            "AWS": Match.any_value()
-                                        }
+                                        {"AWS": Match.any_value()}
                                     ),
                                 }
                             )
@@ -304,7 +300,7 @@ class TestECRStack:
 
         # Verify repository exists but has no inline policy (no RepositoryPolicyText)
         template.resource_count_is("AWS::ECR::Repository", 1)
-        
+
         # Check the repository doesn't have a RepositoryPolicyText
         template_dict = template.to_json()
         ecr_repos = [
@@ -356,7 +352,9 @@ class TestECRStack:
         # Verify no SSM parameters without explicit configuration
         template.resource_count_is("AWS::SSM::Parameter", 0)
 
-    def test_ecr_repository_requires_name(self, app, deployment_config, workload_config):
+    def test_ecr_repository_requires_name(
+        self, app, deployment_config, workload_config
+    ):
         """Test that ECR stack raises error when repository name is missing"""
         stack_config = StackConfig(
             {
@@ -391,10 +389,12 @@ class TestECRStack:
                         "name": "ssm-test-repo",
                         "image_scan_on_push": "false",
                         "empty_on_delete": "false",
-                        "ssm_exports": {
-                            "name": "/test/ecr/ssm-test-repo/name",
-                            "uri": "/test/ecr/ssm-test-repo/uri",
-                            "arn": "/test/ecr/ssm-test-repo/arn",
+                        "ssm": {
+                            "exports": {
+                                "name": "/test/ecr/ssm-test-repo/name",
+                                "uri": "/test/ecr/ssm-test-repo/uri",
+                                "arn": "/test/ecr/ssm-test-repo/arn",
+                            },
                         },
                     }
                 ],

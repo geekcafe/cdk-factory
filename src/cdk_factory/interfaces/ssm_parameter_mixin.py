@@ -78,15 +78,13 @@ class SsmParameterMixin:
         the results for easy access via get_ssm_imported_value().
         
         Args:
-            config: The configuration object with ssm_imports property
+            config: The configuration object with ssm.imports property
             deployment: The deployment configuration for path resolution
             resource_type: Type of resource for logging purposes
         """
-        if not hasattr(config, 'ssm_imports'):
-            logger.debug(f"No ssm_imports property found on config for {resource_type}")
-            return
-            
-        ssm_imports = config.ssm_imports
+        # Get SSM configuration from new pattern
+        ssm_config = getattr(config, 'ssm', {})
+        ssm_imports = ssm_config.get('imports', {})
         
         if not ssm_imports:
             logger.debug(f"No SSM imports configured for {resource_type}")
@@ -392,13 +390,13 @@ class SsmParameterMixin:
         Import resource attributes from SSM Parameter Store based on configuration.
 
         This is a higher-level method that makes it clear we're importing values.
-        It first tries to use the ssm_imports property, then falls back to ssm_parameters.
+        Uses the new ssm.imports pattern.
         
         Enhanced to also cache results for easy access via get_ssm_imported_value().
 
         Args:
             scope: The CDK construct scope
-            config: Configuration object with ssm_imports or ssm_parameters
+            config: Configuration object with ssm.imports
             resource_name: Name of the resource (used as prefix for parameter IDs)
             resource_type: Type of the resource (e.g., 'vpc', 'security-group')
             context: Additional context variables for template formatting
@@ -406,18 +404,15 @@ class SsmParameterMixin:
         Returns:
             Dictionary of imported SSM parameter values
         """
-        # First try the new ssm_imports property
-        ssm_config = getattr(config, "ssm_imports", {})
-
-        # If empty, fall back to the legacy ssm_parameters for backward compatibility
-        if not ssm_config:
-            ssm_config = getattr(config, "ssm_parameters", {})
+        # Get SSM configuration from new pattern
+        ssm_config = getattr(config, "ssm", {})
+        ssm_imports = ssm_config.get("imports", {})
 
         imported_values = {}
 
-        if ssm_config:
-            logger.info(f"Importing resources from SSM: {list(ssm_config.keys())}")
-            for key, path in ssm_config.items():
+        if ssm_imports:
+            logger.info(f"Importing resources from SSM: {list(ssm_imports.keys())}")
+            for key, path in ssm_imports.items():
                 if not path:
                     continue
 

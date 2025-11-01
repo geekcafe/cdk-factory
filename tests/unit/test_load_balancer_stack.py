@@ -314,10 +314,12 @@ class TestLoadBalancerStack(unittest.TestCase):
                     "target_groups": [
                         {"name": "web-servers", "port": 80, "protocol": "HTTP"}
                     ],
-                    "ssm_exports": {
-                        "alb_dns_name": "/my-app/alb/dns-name",
-                        "alb_arn": "/my-app/alb/arn",
-                        "target_group_web-servers_arn": "/my-app/alb/web-servers-arn",
+                    "ssm": {
+                        "exports": {
+                            "alb_dns_name": "/my-app/alb/dns-name",
+                            "alb_arn": "/my-app/alb/arn",
+                            "target_group_web-servers_arn": "/my-app/alb/web-servers-arn",
+                        },
                     },
                 }
             },

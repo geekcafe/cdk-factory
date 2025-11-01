@@ -103,7 +103,7 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         self._configure_gsi()
         # add replicas if configured
         self._configure_replicas()
-        
+
         # Export SSM parameters
         self._export_ssm_parameters()
 
@@ -148,34 +148,38 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         """Export DynamoDB resources to SSM using enhanced SSM parameter mixin"""
         if not self.table:
             return
-            
+
         # Setup enhanced SSM integration with proper resource type and name
         # Use "app-table" as resource identifier for SSM paths, not the full table name
-        
+
         self.setup_standardized_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("dynamodb", {}),
             resource_type="dynamodb",
-            resource_name="app-table"
+            resource_name="app-table",
         )
-        
+
         # Prepare resource values for export
         resource_values = {
             "table_name": self.table.table_name,
             "table_arn": self.table.table_arn,
-            "table_stream_arn": self.table.table_stream_arn if hasattr(self.table, 'table_stream_arn') else None,
+            "table_stream_arn": (
+                self.table.table_stream_arn
+                if hasattr(self.table, "table_stream_arn")
+                else None
+            ),
         }
-        
+
         # Add GSI names if available
-        if hasattr(self, '_gsi_names') and self._gsi_names:
+        if hasattr(self, "_gsi_names") and self._gsi_names:
             resource_values["gsi_names"] = ",".join(self._gsi_names)
-        
+
         # Filter out None values
         resource_values = {k: v for k, v in resource_values.items() if v is not None}
-        
+
         # Use enhanced SSM parameter export
-        exported_params = self.auto_export_resources(resource_values)
-        
+        exported_params = self.export_standardized_ssm_parameters(resource_values)
+
         if exported_params:
             logger.info(f"Exported {len(exported_params)} DynamoDB parameters to SSM")
         else:

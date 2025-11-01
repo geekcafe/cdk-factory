@@ -51,12 +51,14 @@
           "create_cognito_user_pool": false,
           "excluded_pages": ["/admin/*", "/internal/*"],
           "favorite_pages": ["/", "/dashboard", "/profile"],
-          "ssm_exports": {
-            "app_monitor_name": "/{{WORKLOAD_NAME}}/rum/app-monitor-name",
-            "app_monitor_id": "/{{WORKLOAD_NAME}}/rum/app-monitor-id"
-          },
-          "ssm_imports": {
-            "cognito_identity_pool_id": "auto"
+          "ssm": {
+            "exports": {
+              "app_monitor_name": "/{{WORKLOAD_NAME}}/rum/app-monitor-name",
+              "app_monitor_id": "/{{WORKLOAD_NAME}}/rum/app-monitor-id"
+            },
+            "imports": {
+              "cognito_identity_pool_id": "auto"
+            }
           },
           "tags": {
             "Environment": "{{ENVIRONMENT}}",

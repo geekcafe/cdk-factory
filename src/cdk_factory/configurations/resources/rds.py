@@ -262,20 +262,19 @@ class RdsConfig(EnhancedBaseConfig):
         self.__config["vpc_id"] = value
 
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """SSM configuration"""
+        return self.__config.get("ssm", {})
+
+    @property
     def ssm_imports(self) -> Dict[str, str]:
         """SSM parameter imports for the RDS instance"""
-        # Check both nested and flat structures for backwards compatibility
-        if "ssm" in self.__config and "imports" in self.__config["ssm"]:
-            return self.__config["ssm"]["imports"]
-        return self.__config.get("ssm_imports", {})
+        return self.ssm.get("imports", {})
 
     @property
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter exports for the RDS instance"""
-        # Check both nested and flat structures for backwards compatibility
-        if "ssm" in self.__config and "exports" in self.__config["ssm"]:
-            return self.__config["ssm"]["exports"]
-        return self.__config.get("ssm_exports", {})
+        return self.ssm.get("exports", {})
     
     def _sanitize_database_name(self, name: str) -> str:
         """

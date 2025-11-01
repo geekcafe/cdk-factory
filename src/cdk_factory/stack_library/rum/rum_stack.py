@@ -51,12 +51,12 @@ class RumStack(IStack, StandardizedSsmMixin):
         self.stack_config = stack_config
         self.deployment = deployment
         self.rum_config = RumConfig(stack_config.dictionary.get("rum", {}))
-        
+
         logger.info(f"Building RUM stack: {self.rum_config.name}")
 
         # Setup enhanced SSM integration
         rum_config = stack_config.dictionary.get("rum", {}).copy()
-        
+
         # Configure SSM imports for cognito resources if needed
         if not self.rum_config.cognito_identity_pool_id:
             # Add explicit import path for cognito identity pool using new pattern
@@ -64,13 +64,15 @@ class RumStack(IStack, StandardizedSsmMixin):
                 rum_config["ssm"] = {}
             if "imports" not in rum_config["ssm"]:
                 rum_config["ssm"]["imports"] = {}
-            rum_config["ssm"]["imports"]["cognito_identity_pool_id"] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
-        
+            rum_config["ssm"]["imports"][
+                "cognito_identity_pool_id"
+            ] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
+
         self.setup_standardized_ssm_integration(
             scope=self,
             config=rum_config,
             resource_type="rum",
-            resource_name=self.rum_config.name
+            resource_name=self.rum_config.name,
         )
 
         # Import or create Cognito resources
@@ -96,11 +98,15 @@ class RumStack(IStack, StandardizedSsmMixin):
             logger.info(f"Using existing Cognito Identity Pool: {identity_pool_id}")
         else:
             # Try to import from SSM using new standardized pattern
-            cognito_identity_pool_id = self.get_ssm_imported_value("cognito_identity_pool_id")
-            
+            cognito_identity_pool_id = self.get_ssm_imported_value(
+                "cognito_identity_pool_id"
+            )
+
             if cognito_identity_pool_id:
                 identity_pool_id = cognito_identity_pool_id
-                logger.info(f"Imported Cognito Identity Pool from SSM: {identity_pool_id}")
+                logger.info(
+                    f"Imported Cognito Identity Pool from SSM: {identity_pool_id}"
+                )
 
         # If no existing identity pool found, create new Cognito resources
         if not identity_pool_id and self.rum_config.create_cognito_identity_pool:
@@ -130,7 +136,7 @@ class RumStack(IStack, StandardizedSsmMixin):
                 self_sign_up_enabled=True,
                 sign_in_aliases=cognito.SignInAliases(email=True),
                 auto_verify=cognito.AutoVerifiedAttrs(email=True),
-                removal_policy=cdk.RemovalPolicy.DESTROY
+                removal_policy=cdk.RemovalPolicy.DESTROY,
             )
             user_pool_id = self.user_pool.user_pool_id
             logger.info(f"Created Cognito User Pool: {user_pool_id}")
@@ -144,24 +150,25 @@ class RumStack(IStack, StandardizedSsmMixin):
                 id=_resource_name("user-pool-client"),
                 user_pool=self.user_pool,
                 generate_secret=False,
-                auth_flows=cognito.AuthFlow(
-                    user_srp=True,
-                    user_password=True
-                )
+                auth_flows=cognito.AuthFlow(user_srp=True, user_password=True),
             )
-            
-            identity_pool_providers.append({
-                "providerName": f"cognito-idp.{self.region}.amazonaws.com/{user_pool_id}",
-                "providerType": "COGNITO_USER_POOLS",
-                "clientId": user_pool_client.user_pool_client_id
-            })
+
+            identity_pool_providers.append(
+                {
+                    "providerName": f"cognito-idp.{self.region}.amazonaws.com/{user_pool_id}",
+                    "providerType": "COGNITO_USER_POOLS",
+                    "clientId": user_pool_client.user_pool_client_id,
+                }
+            )
 
         self.identity_pool = cognito.CfnIdentityPool(
             self,
             id=_resource_name("identity-pool"),
             identity_pool_name=self.rum_config.cognito_identity_pool_name,
             allow_unauthenticated_identities=True,
-            cognito_identity_providers=identity_pool_providers if identity_pool_providers else None
+            cognito_identity_providers=(
+                identity_pool_providers if identity_pool_providers else None
+            ),
         )
 
         # Create IAM role for unauthenticated users (guest role)
@@ -176,22 +183,22 @@ class RumStack(IStack, StandardizedSsmMixin):
                     },
                     "ForAnyValue:StringLike": {
                         "cognito-identity.amazonaws.com:amr": "unauthenticated"
-                    }
-                }
+                    },
+                },
             ),
             inline_policies={
                 "RUMPolicy": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
-                            actions=[
-                                "rum:PutRumEvents"
+                            actions=["rum:PutRumEvents"],
+                            resources=[
+                                f"arn:aws:rum:{self.region}:{self.account}:appmonitor/{self.rum_config.name}"
                             ],
-                            resources=[f"arn:aws:rum:{self.region}:{self.account}:appmonitor/{self.rum_config.name}"]
                         )
                     ]
                 )
-            }
+            },
         )
 
         # Attach the role to the identity pool
@@ -199,9 +206,7 @@ class RumStack(IStack, StandardizedSsmMixin):
             self,
             id=_resource_name("role-attachment"),
             identity_pool_id=self.identity_pool.ref,
-            roles={
-                "unauthenticated": guest_role.role_arn
-            }
+            roles={"unauthenticated": guest_role.role_arn},
         )
 
         logger.info(f"Created Cognito Identity Pool: {self.identity_pool.ref}")
@@ -220,7 +225,7 @@ class RumStack(IStack, StandardizedSsmMixin):
             self,
             id=_resource_name("minimal-identity-pool"),
             identity_pool_name=f"{self.rum_config.name}_minimal_identity_pool",
-            allow_unauthenticated_identities=True
+            allow_unauthenticated_identities=True,
         )
 
         # Create minimal IAM role for unauthenticated users
@@ -235,22 +240,22 @@ class RumStack(IStack, StandardizedSsmMixin):
                     },
                     "ForAnyValue:StringLike": {
                         "cognito-identity.amazonaws.com:amr": "unauthenticated"
-                    }
-                }
+                    },
+                },
             ),
             inline_policies={
                 "RUMPolicy": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
-                            actions=[
-                                "rum:PutRumEvents"
+                            actions=["rum:PutRumEvents"],
+                            resources=[
+                                f"arn:aws:rum:{self.region}:{self.account}:appmonitor/{self.rum_config.name}"
                             ],
-                            resources=[f"arn:aws:rum:{self.region}:{self.account}:appmonitor/{self.rum_config.name}"]
                         )
                     ]
                 )
-            }
+            },
         )
 
         # Attach the role to the identity pool
@@ -258,14 +263,14 @@ class RumStack(IStack, StandardizedSsmMixin):
             self,
             id=_resource_name("minimal-role-attachment"),
             identity_pool_id=self.identity_pool.ref,
-            roles={
-                "unauthenticated": guest_role.role_arn
-            }
+            roles={"unauthenticated": guest_role.role_arn},
         )
 
         return self.identity_pool.ref, guest_role.role_arn
 
-    def _create_app_monitor(self, identity_pool_id: str, guest_role_arn: Optional[str]) -> None:
+    def _create_app_monitor(
+        self, identity_pool_id: str, guest_role_arn: Optional[str]
+    ) -> None:
         """Create the CloudWatch RUM app monitor"""
         logger.info("Creating CloudWatch RUM app monitor")
 
@@ -281,7 +286,7 @@ class RumStack(IStack, StandardizedSsmMixin):
             guest_role_arn=guest_role_arn,
             identity_pool_id=identity_pool_id,
             session_sample_rate=self.rum_config.session_sample_rate,
-            telemetries=self.rum_config.telemetries
+            telemetries=self.rum_config.telemetries,
         )
 
         self.app_monitor = rum.CfnAppMonitor(
@@ -290,7 +295,7 @@ class RumStack(IStack, StandardizedSsmMixin):
             name=self.rum_config.name,
             domain=self.rum_config.domain,
             app_monitor_configuration=app_monitor_config,
-            cw_log_enabled=self.rum_config.cw_log_enabled
+            cw_log_enabled=self.rum_config.cw_log_enabled,
         )
 
         logger.info(f"Created CloudWatch RUM app monitor: {self.rum_config.name}")
@@ -298,9 +303,7 @@ class RumStack(IStack, StandardizedSsmMixin):
         # Create custom events configuration if enabled
         custom_events = None
         if self.rum_config.custom_events_enabled:
-            custom_events = rum.CfnAppMonitor.CustomEventsProperty(
-                status="ENABLED"
-            )
+            custom_events = rum.CfnAppMonitor.CustomEventsProperty(status="ENABLED")
 
         # Update the app monitor with additional properties
         # (Note: some properties like custom_events need to be set during creation)
@@ -333,8 +336,8 @@ class RumStack(IStack, StandardizedSsmMixin):
             resource_values["user_pool_id"] = self.user_pool.user_pool_id
 
         # Use enhanced SSM parameter export
-        exported_params = self.auto_export_resources(resource_values)
-        
+        exported_params = self.export_standardized_ssm_parameters(resource_values)
+
         if exported_params:
             logger.info(f"Exported {len(exported_params)} RUM parameters to SSM")
         else:

@@ -305,15 +305,14 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         """Setup Cognito authorizer if configured AND if any routes need it"""
         if not self.api_config.cognito_authorizer:
             return None
-        
+
         # Check if any routes actually need the authorizer
         # Don't create it if all routes are public (authorization_type: NONE)
         routes = self.api_config.routes or []
         needs_authorizer = any(
-            route.get("authorization_type") != "NONE" 
-            for route in routes
+            route.get("authorization_type") != "NONE" for route in routes
         )
-        
+
         # If we're not creating an authorizer but Cognito is configured,
         # inform the integration utility so it can still perform security validations
         if not needs_authorizer:
@@ -342,17 +341,19 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             method = route.get("method", "GET").upper()
             path_suffix = route["path"].strip("/").replace("/", "-") or "health"
             return f"{method.lower()}-{path_suffix}"
-    
+
     def _setup_lambda_routes(self, api_gateway, api_id, routes, authorizer):
         """Setup Lambda routes and integrations"""
         for route in routes:
             # Check if this route references an existing Lambda via SSM
             lambda_arn_ssm_path = route.get("lambda_arn_ssm_path")
             lambda_name_ref = route.get("lambda_name")
-            
+
             if lambda_arn_ssm_path or lambda_name_ref:
                 # Import existing Lambda from SSM
-                self._setup_existing_lambda_route(api_gateway, api_id, route, authorizer)
+                self._setup_existing_lambda_route(
+                    api_gateway, api_id, route, authorizer
+                )
             else:
                 # Create new Lambda (legacy pattern)
                 self._setup_single_lambda_route(api_gateway, api_id, route, authorizer)
@@ -364,28 +365,30 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         """
         route_path = route["path"]
         method = route.get("method", "GET").upper()
-        suffix = self._get_route_suffix(route)  # Use shared method for consistent suffix calculation
-        
+        suffix = self._get_route_suffix(
+            route
+        )  # Use shared method for consistent suffix calculation
+
         # Get Lambda ARN from SSM Parameter Store
         lambda_arn = self._get_lambda_arn_from_ssm(route)
-        
+
         if not lambda_arn:
             raise ValueError(
                 f"Could not resolve Lambda ARN for route {route_path}. "
                 f"Ensure Lambda stack has deployed and exported ARN to SSM."
             )
-        
+
         # Import Lambda function from ARN using fromFunctionAttributes
         # This allows us to add permissions even for imported functions
         lambda_fn = _lambda.Function.from_function_attributes(
             self,
             f"{api_id}-imported-lambda-{suffix}",
             function_arn=lambda_arn,
-            same_environment=True  # Allow permission grants for same-account imports
+            same_environment=True,  # Allow permission grants for same-account imports
         )
-        
+
         logger.info(f"Imported Lambda for route {route_path}: {lambda_arn}")
-        
+
         # Add explicit resource-based permission for this specific API Gateway
         # This is CRITICAL for cross-stack Lambda integrations
         _lambda.CfnPermission(
@@ -394,26 +397,26 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             action="lambda:InvokeFunction",
             function_name=lambda_fn.function_arn,
             principal="apigateway.amazonaws.com",
-            source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{method}{route_path}"
+            source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{method}{route_path}",
         )
-        
+
         logger.info(f"Granted API Gateway invoke permissions for Lambda: {lambda_arn}")
-        
+
         # Setup API Gateway resource
         resource = (
             api_gateway.root.resource_for_path(route_path)
             if route_path != "/"
             else api_gateway.root
         )
-        
+
         # Setup Lambda integration
         self._setup_lambda_integration(
             api_gateway, api_id, route, lambda_fn, authorizer, suffix
         )
-        
+
         # Setup CORS using centralized utility
         self.integration_utility.setup_route_cors(resource, route_path, route)
-    
+
     def _get_lambda_arn_from_ssm(self, route: dict) -> str:
         """
         Get Lambda ARN from SSM Parameter Store.
@@ -427,44 +430,57 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 param = ssm.StringParameter.from_string_parameter_name(
                     self,
                     f"lambda-arn-param-{hash(lambda_arn_ssm_path) % 10000}",
-                    lambda_arn_ssm_path
+                    lambda_arn_ssm_path,
                 )
                 return param.string_value
             except Exception as e:
-                logger.error(f"Failed to retrieve Lambda ARN from SSM path {lambda_arn_ssm_path}: {e}")
+                logger.error(
+                    f"Failed to retrieve Lambda ARN from SSM path {lambda_arn_ssm_path}: {e}"
+                )
                 raise
-        
+
         # Option 2: Auto-discovery via lambda_name
         lambda_name = route.get("lambda_name")
         if lambda_name:
             # Build SSM path using convention from lambda_stack
-            ssm_imports_config = self.stack_config.dictionary.get("api_gateway", {}).get("ssm", {}).get("imports", {})
+            ssm_imports_config = (
+                self.stack_config.dictionary.get("api_gateway", {})
+                .get("ssm", {})
+                .get("imports", {})
+            )
             # Try 'workload' first, fall back to 'organization' for backward compatibility
-            workload = ssm_imports_config.get("workload", ssm_imports_config.get("organization", self.deployment.workload_name))
-            environment = ssm_imports_config.get("environment", self.deployment.environment)
-            
+            workload = ssm_imports_config.get(
+                "workload",
+                ssm_imports_config.get("organization", self.deployment.workload_name),
+            )
+            environment = ssm_imports_config.get(
+                "environment", self.deployment.environment
+            )
+
             ssm_path = f"/{workload}/{environment}/lambda/{lambda_name}/arn"
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
-            
+
             try:
                 param = ssm.StringParameter.from_string_parameter_name(
-                    self,
-                    f"lambda-arn-{lambda_name}-param",
-                    ssm_path
+                    self, f"lambda-arn-{lambda_name}-param", ssm_path
                 )
                 return param.string_value
             except Exception as e:
-                logger.error(f"Failed to auto-discover Lambda ARN for '{lambda_name}' from {ssm_path}: {e}")
+                logger.error(
+                    f"Failed to auto-discover Lambda ARN for '{lambda_name}' from {ssm_path}: {e}"
+                )
                 raise ValueError(
                     f"Lambda ARN not found in SSM for '{lambda_name}'. "
                     f"Ensure the Lambda stack has deployed and exported the ARN to: {ssm_path}"
                 )
-        
+
         return None
 
     def _setup_single_lambda_route(self, api_gateway, api_id, route, authorizer):
         """Setup a single Lambda route with integration and CORS"""
-        suffix = self._get_route_suffix(route)  # Use shared method for consistent suffix calculation
+        suffix = self._get_route_suffix(
+            route
+        )  # Use shared method for consistent suffix calculation
         src = route.get("src")
         handler = route.get("handler")
 
@@ -494,7 +510,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
     def _validate_authorization_configuration(self, route, has_cognito_authorizer):
         """
         Validate authorization configuration using the shared utility method.
-        
+
         This delegates to the ApiGatewayIntegrationUtility for consistent validation
         across both API Gateway stack and Lambda stack patterns.
         """
@@ -503,14 +519,16 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         route_config_dict = dict(route)  # Create a copy
         if "path" in route_config_dict:
             route_config_dict["route"] = route_config_dict["path"]
-        
+
         api_route_config = ApiGatewayConfigRouteConfig(route_config_dict)
-        
+
         # Use the utility's enhanced validation method
-        validated_config = self.integration_utility._validate_and_adjust_authorization_configuration(
-            api_route_config, has_cognito_authorizer
+        validated_config = (
+            self.integration_utility._validate_and_adjust_authorization_configuration(
+                api_route_config, has_cognito_authorizer
+            )
         )
-        
+
         # Return the validated authorization type for use in the stack
         return validated_config.authorization_type
 
@@ -519,10 +537,10 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
     ):
         """Setup Lambda integration for a route"""
         route_path = route["path"]
-        
+
         # Handle authorization type fallback logic before validation
         authorization_type = route.get("authorization_type", "COGNITO")
-        
+
         # If no Cognito authorizer available and default COGNITO, fall back to NONE
         if (
             not authorizer
@@ -531,19 +549,22 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         ):
             authorization_type = "NONE"
             import logging
+
             logger = logging.getLogger(__name__)
             logger.info(
                 f"No Cognito authorizer available for route {route_path} ({route.get('method', 'unknown')}), "
                 f"defaulting to public access (NONE authorization)"
             )
-        
+
         # Create a route config with the resolved authorization type for validation
         route_for_validation = dict(route)
         route_for_validation["authorization_type"] = authorization_type
-        
+
         # Validate authorization configuration using the utility
-        validated_authorization_type = self._validate_authorization_configuration(route_for_validation, authorizer is not None)
-        
+        validated_authorization_type = self._validate_authorization_configuration(
+            route_for_validation, authorizer is not None
+        )
+
         # Use the validated authorization type
         authorization_type = validated_authorization_type
 
@@ -585,10 +606,10 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
     ):
         """Setup fallback Lambda integration for routes without src"""
         route_path = route["path"]
-        
+
         # Handle authorization type fallback logic before validation
         authorization_type = route.get("authorization_type", "COGNITO")
-        
+
         # If no Cognito authorizer available and default COGNITO, fall back to NONE
         if (
             not authorizer
@@ -597,19 +618,22 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         ):
             authorization_type = "NONE"
             import logging
+
             logger = logging.getLogger(__name__)
             logger.info(
                 f"No Cognito authorizer available for route {route_path} ({route.get('method', 'unknown')}), "
                 f"defaulting to public access (NONE authorization)"
             )
-        
+
         # Create a route config with the resolved authorization type for validation
         route_for_validation = dict(route)
         route_for_validation["authorization_type"] = authorization_type
-        
+
         # Validate authorization configuration using the utility
-        validated_authorization_type = self._validate_authorization_configuration(route_for_validation, authorizer is not None)
-        
+        validated_authorization_type = self._validate_authorization_configuration(
+            route_for_validation, authorizer is not None
+        )
+
         # Use the validated authorization type
         authorization_type = validated_authorization_type
 
@@ -751,7 +775,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             resource_values["authorizer_id"] = authorizer.authorizer_id
 
         # Use enhanced SSM parameter export
-        exported_params = self.auto_export_resources(resource_values)
+        exported_params = self.export_standardized_ssm_parameters(resource_values)
 
         if exported_params:
             logger.info(

@@ -18,7 +18,7 @@ class MonitoringConfig(EnhancedBaseConfig):
         super().__init__(
             config or {},
             resource_type="monitoring",
-            resource_name=config.get("name", "monitoring") if config else "monitoring"
+            resource_name=config.get("name", "monitoring") if config else "monitoring",
         )
         self._config = config or {}
         self._deployment = deployment
@@ -64,11 +64,16 @@ class MonitoringConfig(EnhancedBaseConfig):
         return self._config.get("tags", {})
 
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """SSM configuration"""
+        return self._config.get("ssm", {})
+
+    @property
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter exports"""
-        return self._config.get("ssm_exports", {})
+        return self.ssm.get("exports", {})
 
     @property
     def ssm_imports(self) -> Dict[str, str]:
         """SSM parameter imports for resource ARNs"""
-        return self._config.get("ssm_imports", {})
+        return self.ssm.get("imports", {})

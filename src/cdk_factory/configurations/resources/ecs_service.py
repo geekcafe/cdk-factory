@@ -124,9 +124,14 @@ class EcsServiceConfig:
         return self._config.get("tags", {})
 
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """SSM configuration"""
+        return self._config.get("ssm", {})
+
+    @property
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter exports"""
-        return self._config.get("ssm_exports", {})
+        return self.ssm.get("exports", {})
 
     @property
     def ssm_imports(self) -> Dict[str, Any]:
@@ -134,7 +139,7 @@ class EcsServiceConfig:
         # Check both nested and flat structures for backwards compatibility
         if "ssm" in self._config and "imports" in self._config["ssm"]:
             return self._config["ssm"]["imports"]
-        return self._config.get("ssm_imports", {})
+        return self.ssm.get("imports", {})
 
     @property
     def deployment_type(self) -> str:

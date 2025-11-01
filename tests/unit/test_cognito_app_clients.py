@@ -21,14 +21,9 @@ def app():
 @pytest.fixture
 def workload_config():
     """Create a workload configuration"""
-    return WorkloadConfig({
-        "workload": {
-            "name": "test-workload",
-            "devops": {
-                "name": "test-devops"
-            }
-        }
-    })
+    return WorkloadConfig(
+        {"workload": {"name": "test-workload", "devops": {"name": "test-devops"}}}
+    )
 
 
 @pytest.fixture
@@ -41,18 +36,20 @@ def deployment_config(workload_config):
             "account": "123456789012",
             "region": "us-east-1",
             "environment": "test",
-        }
+        },
     )
 
 
 class TestCognitoAppClients:
     """Test suite for Cognito app client functionality"""
-    
+
     def _create_stack_config(self, config_dict, workload_config):
         """Helper to create StackConfig with workload"""
         return StackConfig(config_dict, workload=workload_config.dictionary)
 
-    def test_single_app_client_with_srp_auth(self, app, deployment_config, workload_config):
+    def test_single_app_client_with_srp_auth(
+        self, app, deployment_config, workload_config
+    ):
         """Test creating a single app client with USER_SRP_AUTH flow"""
         stack_config = self._create_stack_config(
             {
@@ -70,7 +67,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -87,14 +84,15 @@ class TestCognitoAppClients:
             {
                 "ClientName": "web-app",
                 "GenerateSecret": False,
-                "ExplicitAuthFlows": Match.array_with([
-                    "ALLOW_USER_SRP_AUTH",
-                    "ALLOW_REFRESH_TOKEN_AUTH"
-                ]),
+                "ExplicitAuthFlows": Match.array_with(
+                    ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+                ),
             },
         )
 
-    def test_app_client_with_multiple_auth_flows(self, app, deployment_config, workload_config):
+    def test_app_client_with_multiple_auth_flows(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with multiple authentication flows enabled"""
         stack_config = self._create_stack_config(
             {
@@ -115,7 +113,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -128,11 +126,13 @@ class TestCognitoAppClients:
         template_json = template.to_json()
         dev_client = None
         for resource in template_json.get("Resources", {}).values():
-            if (resource.get("Type") == "AWS::Cognito::UserPoolClient" and 
-                resource.get("Properties", {}).get("ClientName") == "dev-client"):
+            if (
+                resource.get("Type") == "AWS::Cognito::UserPoolClient"
+                and resource.get("Properties", {}).get("ClientName") == "dev-client"
+            ):
                 dev_client = resource
                 break
-        
+
         assert dev_client is not None, "Dev client not found"
         explicit_flows = set(dev_client["Properties"]["ExplicitAuthFlows"])
         expected_flows = {
@@ -142,9 +142,13 @@ class TestCognitoAppClients:
             "ALLOW_ADMIN_USER_PASSWORD_AUTH",
             "ALLOW_REFRESH_TOKEN_AUTH",
         }
-        assert explicit_flows == expected_flows, f"Expected {expected_flows}, got {explicit_flows}"
+        assert (
+            explicit_flows == expected_flows
+        ), f"Expected {expected_flows}, got {explicit_flows}"
 
-    def test_app_client_with_oauth_configuration(self, app, deployment_config, workload_config):
+    def test_app_client_with_oauth_configuration(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with OAuth flows and callback URLs"""
         stack_config = self._create_stack_config(
             {
@@ -172,7 +176,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -192,7 +196,9 @@ class TestCognitoAppClients:
             },
         )
 
-    def test_app_client_with_client_secret(self, app, deployment_config, workload_config):
+    def test_app_client_with_client_secret(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with client secret generation and Secrets Manager storage"""
         stack_config = self._create_stack_config(
             {
@@ -210,7 +216,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -242,7 +248,9 @@ class TestCognitoAppClients:
             },
         )
 
-    def test_app_client_with_token_validity(self, app, deployment_config, workload_config):
+    def test_app_client_with_token_validity(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with custom token validity settings"""
         stack_config = self._create_stack_config(
             {
@@ -263,7 +271,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -315,7 +323,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -360,11 +368,11 @@ class TestCognitoAppClients:
                         "environment": "prod",
                         "exports": {
                             "user_pool_id": "/my-app/prod/cognito/user-pool/user-pool-id"
-                        }
+                        },
                     },
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -383,10 +391,12 @@ class TestCognitoAppClients:
         )
 
         # Note: App client ID export is done through enhanced SSM mixin
-        # which uses auto_export_resources, so we check that the client was created
+        # which uses export_standardized_ssm_parameters, so we check that the client was created
         template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
 
-    def test_app_client_secret_ssm_arn_export(self, app, deployment_config, workload_config):
+    def test_app_client_secret_ssm_arn_export(
+        self, app, deployment_config, workload_config
+    ):
         """Test SSM parameter export for Secrets Manager ARN"""
         stack_config = self._create_stack_config(
             {
@@ -407,7 +417,7 @@ class TestCognitoAppClients:
                     },
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -425,7 +435,9 @@ class TestCognitoAppClients:
             },
         )
 
-    def test_app_client_with_identity_providers(self, app, deployment_config, workload_config):
+    def test_app_client_with_identity_providers(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with supported identity providers"""
         stack_config = self._create_stack_config(
             {
@@ -437,12 +449,16 @@ class TestCognitoAppClients:
                             "name": "social-app",
                             "generate_secret": False,
                             "auth_flows": {"user_srp": True},
-                            "supported_identity_providers": ["COGNITO", "Google", "Facebook"],
+                            "supported_identity_providers": [
+                                "COGNITO",
+                                "Google",
+                                "Facebook",
+                            ],
                         }
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -455,11 +471,15 @@ class TestCognitoAppClients:
             "AWS::Cognito::UserPoolClient",
             {
                 "ClientName": "social-app",
-                "SupportedIdentityProviders": Match.array_with(["COGNITO", "Google", "Facebook"]),
+                "SupportedIdentityProviders": Match.array_with(
+                    ["COGNITO", "Google", "Facebook"]
+                ),
             },
         )
 
-    def test_app_client_with_read_write_attributes(self, app, deployment_config, workload_config):
+    def test_app_client_with_read_write_attributes(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with read and write attribute permissions"""
         stack_config = self._create_stack_config(
             {
@@ -477,7 +497,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -495,7 +515,9 @@ class TestCognitoAppClients:
             },
         )
 
-    def test_app_client_prevent_user_existence_errors(self, app, deployment_config, workload_config):
+    def test_app_client_prevent_user_existence_errors(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with prevent user existence errors enabled"""
         stack_config = self._create_stack_config(
             {
@@ -513,7 +535,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -531,7 +553,9 @@ class TestCognitoAppClients:
             },
         )
 
-    def test_app_client_with_client_credentials_oauth(self, app, deployment_config, workload_config):
+    def test_app_client_with_client_credentials_oauth(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with client credentials OAuth flow"""
         stack_config = self._create_stack_config(
             {
@@ -551,7 +575,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -586,7 +610,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -601,17 +625,18 @@ class TestCognitoAppClients:
             {
                 "ClientName": "amplify-web-app",
                 "GenerateSecret": False,
-                "ExplicitAuthFlows": Match.array_with([
-                    "ALLOW_USER_SRP_AUTH",
-                    "ALLOW_REFRESH_TOKEN_AUTH"
-                ]),
+                "ExplicitAuthFlows": Match.array_with(
+                    ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+                ),
             },
         )
-        
+
         # Verify the app client exists and is configured correctly
         template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
 
-    def test_custom_auth_flow_configuration(self, app, deployment_config, workload_config):
+    def test_custom_auth_flow_configuration(
+        self, app, deployment_config, workload_config
+    ):
         """Test app client with custom authentication flow"""
         stack_config = self._create_stack_config(
             {
@@ -627,7 +652,7 @@ class TestCognitoAppClients:
                     ],
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -640,11 +665,13 @@ class TestCognitoAppClients:
             "AWS::Cognito::UserPoolClient",
             {
                 "ClientName": "passwordless-app",
-                "ExplicitAuthFlows": Match.array_with([
-                    "ALLOW_CUSTOM_AUTH",
-                    "ALLOW_USER_SRP_AUTH",
-                    "ALLOW_REFRESH_TOKEN_AUTH",
-                ]),
+                "ExplicitAuthFlows": Match.array_with(
+                    [
+                        "ALLOW_CUSTOM_AUTH",
+                        "ALLOW_USER_SRP_AUTH",
+                        "ALLOW_REFRESH_TOKEN_AUTH",
+                    ]
+                ),
             },
         )
 
@@ -658,7 +685,7 @@ class TestCognitoAppClients:
                     # No app_clients configured
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -670,7 +697,9 @@ class TestCognitoAppClients:
         template.resource_count_is("AWS::Cognito::UserPool", 1)
         template.resource_count_is("AWS::Cognito::UserPoolClient", 0)
 
-    def test_app_client_name_sanitization_for_ssm(self, app, deployment_config, workload_config):
+    def test_app_client_name_sanitization_for_ssm(
+        self, app, deployment_config, workload_config
+    ):
         """Test that app client names with hyphens/spaces are sanitized for SSM paths"""
         stack_config = self._create_stack_config(
             {
@@ -691,7 +720,7 @@ class TestCognitoAppClients:
                     },
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -707,7 +736,9 @@ class TestCognitoAppClients:
             },
         )
 
-    def test_complete_production_configuration(self, app, deployment_config, workload_config):
+    def test_complete_production_configuration(
+        self, app, deployment_config, workload_config
+    ):
         """Test a complete production-ready configuration with multiple client types"""
         stack_config = self._create_stack_config(
             {
@@ -752,11 +783,11 @@ class TestCognitoAppClients:
                         "environment": "prod",
                         "exports": {
                             "user_pool_id": "/prod-app/prod/cognito/user-pool/user-pool-id"
-                        }
+                        },
                     },
                 },
             },
-            workload_config
+            workload_config,
         )
 
         stack = CognitoStack(app, "TestStack")
@@ -767,10 +798,12 @@ class TestCognitoAppClients:
         # Verify all components created
         template.resource_count_is("AWS::Cognito::UserPool", 1)
         template.resource_count_is("AWS::Cognito::UserPoolClient", 3)
-        
+
         # Verify Secrets Manager for backend service
-        template.resource_count_is("AWS::SecretsManager::Secret", 2)  # 2 secrets for backend-api
-        
+        template.resource_count_is(
+            "AWS::SecretsManager::Secret", 2
+        )  # 2 secrets for backend-api
+
         # Verify SSM parameters (enhanced SSM uses hyphens)
         template.has_resource_properties(
             "AWS::SSM::Parameter",
@@ -778,5 +811,7 @@ class TestCognitoAppClients:
         )
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/prod-app/prod/cognito/user-pool/app_client_backend_api_secret_arn"},
+            {
+                "Name": "/prod-app/prod/cognito/user-pool/app_client_backend_api_secret_arn"
+            },
         )

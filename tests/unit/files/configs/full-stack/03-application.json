@@ -307,12 +307,14 @@
               "Application": "abc-workload",
               "ManagedBy": "CDK-Factory"
             },
-            "ssm_exports": {
-              "asg_name": "/dev/abc-workload/auto-scaling/name",
-              "asg_arn": "/dev/abc-workload/auto-scaling/arn"
-            },
-            "ssm_imports": {
-              "target_group_acme-inc_dev_tg_arn": "dev/abc-workload/tg/arn"
+            "ssm": {
+              "exports": {
+                "asg_name": "/dev/abc-workload/auto-scaling/name",
+                "asg_arn": "/dev/abc-workload/auto-scaling/arn"
+              },
+              "imports": {
+                "target_group_acme-inc_dev_tg_arn": "dev/abc-workload/tg/arn"
+              }
             }
           }
         }

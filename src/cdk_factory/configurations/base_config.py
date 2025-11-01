@@ -17,14 +17,19 @@ class BaseConfig:
     SSM parameter paths can be customized with prefixes and templates at different levels:
     1. Global level: In the workload or deployment config
     2. Stack level: In the stack config
-    3. Resource level: In the resource config (ssm_exports/ssm_imports)
+    3. Resource level: In the resource config (ssm.exports/ssm.imports)
     
     Example configurations:
     ```json
     {
-        "ssm_prefix_template": "/{environment}/{resource_type}/{attribute}",
-        "ssm_exports": {
-            "vpc_id_path": "my-vpc-id"
+        "ssm": {
+            "prefix_template": "/{environment}/{resource_type}/{attribute}",
+            "exports": {
+                "vpc_id": "my-vpc-id"
+            },
+            "imports": {
+                "security_group_id": "/my-app/security-group/id"
+            }
         }
     }
     ```
@@ -58,6 +63,16 @@ class BaseConfig:
         return self.__config
         
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """
+        Get the SSM configuration for this resource.
+        
+        Returns:
+            Dictionary containing SSM configuration with imports/exports
+        """
+        return self.__config.get("ssm", {})
+        
+    @property
     def ssm_prefix_template(self) -> str:
         """
         Get the SSM parameter prefix template for this configuration.
@@ -68,7 +83,7 @@ class BaseConfig:
         Returns:
             The SSM parameter prefix template string
         """
-        return self.__config.get("ssm_prefix_template", "/{deployment_name}/{resource_type}/{attribute}")
+        return self.ssm.get("prefix_template", "/{deployment_name}/{resource_type}/{attribute}")
     
     @property
     def ssm_exports(self) -> Dict[str, str]:
@@ -87,7 +102,7 @@ class BaseConfig:
         Returns:
             Dictionary mapping attribute names to SSM parameter paths for export
         """
-        return self.__config.get("ssm_exports", {})
+        return self.ssm.get("exports", {})
     
     @property
     def ssm_imports(self) -> Dict[str, str]:
@@ -106,25 +121,9 @@ class BaseConfig:
         Returns:
             Dictionary mapping attribute names to SSM parameter paths for import
         """
-        return self.__config.get("ssm_imports", {})
+        return self.ssm.get("imports", {})
         
-    @property
-    def ssm_parameters(self) -> Dict[str, str]:
-        """
-        Get all SSM parameter path mappings (both exports and imports).
-        
-        This is provided for backward compatibility.
-        New code should use ssm_exports and ssm_imports instead.
-        
-        Returns:
-            Dictionary mapping attribute names to SSM parameter paths
-        """
-        # Merge exports and imports, with exports taking precedence
-        combined = {**self.ssm_imports, **self.ssm_exports}
-        # Also include any parameters directly under ssm_parameters for backward compatibility
-        combined.update(self.__config.get("ssm_parameters", {}))
-        return combined
-        
+            
     def get(self, key: str, default: Any = None) -> Any:
         """
         Get a configuration value by key.

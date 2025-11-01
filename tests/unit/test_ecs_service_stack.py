@@ -132,10 +132,7 @@ class TestEcsServiceStack:
                     "auto_scaling_target_cpu": 75,
                     "auto_scaling_target_memory": 85,
                     "enable_execute_command": True,
-                    "deployment_circuit_breaker": {
-                        "enable": True,
-                        "rollback": True
-                    },
+                    "deployment_circuit_breaker": {"enable": True, "rollback": True},
                     "task_definition": {
                         "cpu": "1024",
                         "memory": "2048",
@@ -149,7 +146,10 @@ class TestEcsServiceStack:
                                 "port_mappings": [{"container_port": 8080}],
                                 "environment": {"ENV": "production"},
                                 "health_check": {
-                                    "command": ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
+                                    "command": [
+                                        "CMD-SHELL",
+                                        "curl -f http://localhost:8080/health || exit 1",
+                                    ],
                                     "interval": 30,
                                     "timeout": 5,
                                     "retries": 3,
@@ -159,9 +159,11 @@ class TestEcsServiceStack:
                         ],
                     },
                     "security_group_ids": ["sg-12345678"],
-                    "ssm_exports": {
-                        "service_name": "/production/test-workload/ecs/service-name",
-                        "service_arn": "/production/test-workload/ecs/service-arn",
+                    "ssm": {
+                        "exports": {
+                            "service_name": "/production/test-workload/ecs/service-name",
+                            "service_arn": "/production/test-workload/ecs/service-arn",
+                        },
                     },
                 }
             },
@@ -198,7 +200,9 @@ class TestEcsServiceStack:
         assert stack.ecs_config.enable_auto_scaling is True
         assert stack.ecs_config.auto_scaling_target_cpu == 75
 
-    def test_service_without_auto_scaling(self, app, deployment_config, workload_config):
+    def test_service_without_auto_scaling(
+        self, app, deployment_config, workload_config
+    ):
         """Test service with auto-scaling disabled"""
         stack_config = StackConfig(
             {
@@ -210,9 +214,7 @@ class TestEcsServiceStack:
                     "task_definition": {
                         "cpu": "512",
                         "memory": "1024",
-                        "containers": [
-                            {"name": "app", "image": "myapp:latest"}
-                        ],
+                        "containers": [{"name": "app", "image": "myapp:latest"}],
                     },
                     "security_group_ids": ["sg-12345678"],
                 }
@@ -279,14 +281,24 @@ class TestEcsServiceStack:
                 "DesiredCount": 3,
                 "HealthCheckGracePeriodSeconds": 300,
                 "LoadBalancers": Match.array_with(
-                    [Match.object_like({"TargetGroupArn": Match.string_like_regexp(".*targetgroup.*")})]
+                    [
+                        Match.object_like(
+                            {
+                                "TargetGroupArn": Match.string_like_regexp(
+                                    ".*targetgroup.*"
+                                )
+                            }
+                        )
+                    ]
                 ),
             },
         )
 
         assert stack.ecs_config.health_check_grace_period == 300
 
-    def test_service_with_multiple_containers(self, app, deployment_config, workload_config):
+    def test_service_with_multiple_containers(
+        self, app, deployment_config, workload_config
+    ):
         """Test service with multiple containers"""
         stack_config = StackConfig(
             {

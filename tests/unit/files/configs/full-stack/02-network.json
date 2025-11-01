@@ -117,11 +117,13 @@
               "Application": "abc-workload",
               "Environment": "dev"
             },
-            "ssm_imports": {
-              "vpc_id": "dev/abc-workload/vpc/id"
-            },
-            "ssm_exports": {
-              "security_group_id": "dev/abc-workload/sg/<type>/id"
+            "ssm": {
+              "imports": {
+                "vpc_id": "dev/abc-workload/vpc/id"
+              },
+              "exports": {
+                "security_group_id": "dev/abc-workload/sg/<type>/id"
+              }
             }
           }
         }

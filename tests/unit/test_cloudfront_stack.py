@@ -47,7 +47,9 @@ class TestCloudFrontStack:
             },
         )
 
-    def test_minimal_cloudfront_distribution(self, app, deployment_config, workload_config):
+    def test_minimal_cloudfront_distribution(
+        self, app, deployment_config, workload_config
+    ):
         """Test CloudFront distribution with minimal configuration"""
         stack_config = StackConfig(
             {
@@ -126,7 +128,9 @@ class TestCloudFrontStack:
         assert stack.cf_config.name == "test-distribution"
         assert stack.distribution is not None
 
-    def test_cloudfront_with_custom_origin(self, app, deployment_config, workload_config):
+    def test_cloudfront_with_custom_origin(
+        self, app, deployment_config, workload_config
+    ):
         """Test CloudFront with custom origin configuration"""
         stack_config = StackConfig(
             {
@@ -140,15 +144,21 @@ class TestCloudFrontStack:
                             "protocol_policy": "https-only",
                             "https_port": 443,
                             "origin_ssl_protocols": ["TLSv1.2"],
-                            "custom_headers": {
-                                "X-Custom-Header": "custom-value"
-                            },
+                            "custom_headers": {"X-Custom-Header": "custom-value"},
                         }
                     ],
                     "default_cache_behavior": {
                         "target_origin_id": "api-origin",
                         "viewer_protocol_policy": "https-only",
-                        "allowed_methods": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+                        "allowed_methods": [
+                            "GET",
+                            "HEAD",
+                            "OPTIONS",
+                            "PUT",
+                            "POST",
+                            "PATCH",
+                            "DELETE",
+                        ],
                     },
                 }
             },
@@ -193,7 +203,9 @@ class TestCloudFrontStack:
             },
         )
 
-    def test_cloudfront_with_aliases_and_certificate(self, app, deployment_config, workload_config):
+    def test_cloudfront_with_aliases_and_certificate(
+        self, app, deployment_config, workload_config
+    ):
         """Test CloudFront with domain aliases and certificate"""
         stack_config = StackConfig(
             {
@@ -260,7 +272,9 @@ class TestCloudFrontStack:
 
         assert stack.certificate is not None
 
-    def test_cloudfront_with_cache_policy(self, app, deployment_config, workload_config):
+    def test_cloudfront_with_cache_policy(
+        self, app, deployment_config, workload_config
+    ):
         """Test CloudFront with custom cache policy"""
         stack_config = StackConfig(
             {
@@ -275,9 +289,7 @@ class TestCloudFrontStack:
                     ],
                     "default_cache_behavior": {
                         "target_origin_id": "cached-origin",
-                        "cache_policy": {
-                            "name": "CachingDisabled"
-                        },
+                        "cache_policy": {"name": "CachingDisabled"},
                     },
                 }
             },
@@ -315,7 +327,7 @@ class TestCloudFrontStack:
     def test_cloudfront_with_lambda_edge(self, app, deployment_config, workload_config):
         """
         Test CloudFront with Lambda@Edge associations
-        
+
         This test validates that Lambda@Edge functions can be attached to CloudFront distributions.
         This is the underlying functionality used by the `enable_ip_gating` convenience flag in
         CloudFrontDistributionConstruct (used by StaticWebsiteStack).
@@ -383,7 +395,9 @@ class TestCloudFrontStack:
             },
         )
 
-    def test_cloudfront_with_error_responses(self, app, deployment_config, workload_config):
+    def test_cloudfront_with_error_responses(
+        self, app, deployment_config, workload_config
+    ):
         """Test CloudFront with custom error responses"""
         stack_config = StackConfig(
             {
@@ -466,9 +480,11 @@ class TestCloudFrontStack:
                     "default_cache_behavior": {
                         "target_origin_id": "ssm-origin",
                     },
-                    "ssm_exports": {
-                        "distribution_id": "/test/cloudfront/distribution-id",
-                        "distribution_domain": "/test/cloudfront/domain",
+                    "ssm": {
+                        "exports": {
+                            "distribution_id": "/test/cloudfront/distribution-id",
+                            "distribution_domain": "/test/cloudfront/domain",
+                        },
                     },
                 }
             },
@@ -577,7 +593,9 @@ class TestCloudFrontStack:
             },
         )
 
-    def test_cloudfront_with_http_version(self, app, deployment_config, workload_config):
+    def test_cloudfront_with_http_version(
+        self, app, deployment_config, workload_config
+    ):
         """Test CloudFront with HTTP version configuration"""
         stack_config = StackConfig(
             {

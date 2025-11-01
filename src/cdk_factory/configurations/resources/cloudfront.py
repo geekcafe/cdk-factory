@@ -103,14 +103,19 @@ class CloudFrontConfig(EnhancedBaseConfig):
         return self._config.get("tags", {})
 
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """SSM configuration"""
+        return self._config.get("ssm", {})
+
+    @property
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter exports"""
-        return self._config.get("ssm_exports", {})
+        return self.ssm.get("exports", {})
 
     @property
     def ssm_imports(self) -> Dict[str, str]:
         """SSM parameter imports"""
-        return self._config.get("ssm_imports", {})
+        return self.ssm.get("imports", {})
 
     @property
     def hosted_zone_id(self) -> str:
