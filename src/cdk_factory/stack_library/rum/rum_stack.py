@@ -59,14 +59,18 @@ class RumStack(IStack, StandardizedSsmMixin):
 
         # Configure SSM imports for cognito resources if needed
         if not self.rum_config.cognito_identity_pool_id:
-            # Add explicit import path for cognito identity pool using new pattern
-            if "ssm" not in rum_config:
-                rum_config["ssm"] = {}
-            if "imports" not in rum_config["ssm"]:
-                rum_config["ssm"]["imports"] = {}
-            rum_config["ssm"]["imports"][
-                "cognito_identity_pool_id"
-            ] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
+            # Only add SSM imports if we have the required template variables
+            # Check if deployment has organization info for template resolution
+            if (hasattr(deployment, 'organization') and deployment.organization and
+                hasattr(deployment, 'environment') and deployment.environment):
+                # Add explicit import path for cognito identity pool using new pattern
+                if "ssm" not in rum_config:
+                    rum_config["ssm"] = {}
+                if "imports" not in rum_config["ssm"]:
+                    rum_config["ssm"]["imports"] = {}
+                rum_config["ssm"]["imports"][
+                    "cognito_identity_pool_id"
+                ] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
 
         self.setup_standardized_ssm_integration(
             scope=self,
@@ -74,6 +78,9 @@ class RumStack(IStack, StandardizedSsmMixin):
             resource_type="rum",
             resource_name=self.rum_config.name,
         )
+
+        # Process SSM imports using standardized method
+        self.process_standardized_ssm_imports()
 
         # Import or create Cognito resources
         identity_pool_id, guest_role_arn = self._setup_cognito_integration()
@@ -97,9 +104,8 @@ class RumStack(IStack, StandardizedSsmMixin):
             identity_pool_id = self.rum_config.cognito_identity_pool_id
             logger.info(f"Using existing Cognito Identity Pool: {identity_pool_id}")
         else:
-            # Try to import from SSM using new pattern - read directly from config
-            ssm_imports = self.rum_config.ssm_imports
-            cognito_identity_pool_id = ssm_imports.get("cognito_identity_pool_id")
+            # Try to import from SSM using standardized approach
+            cognito_identity_pool_id = self.get_ssm_imported_value("cognito_identity_pool_id")
 
             if cognito_identity_pool_id:
                 identity_pool_id = cognito_identity_pool_id

@@ -6,7 +6,7 @@ MIT License. See Project Root for license information.
 
 from typing import Optional, List, Any
 from aws_lambda_powertools import Logger
-from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ec2 as ec2, aws_ssm as ssm
 from constructs import Construct
 
 logger = Logger(__name__)
@@ -113,16 +113,26 @@ class VPCProviderMixin:
         Create VPC reference from SSM imported VPC ID.
         
         Args:
-            vpc_id: The VPC ID from SSM
+            vpc_id: The VPC ID from SSM (can be SSM path or actual VPC ID)
             availability_zones: List of availability zones
             subnet_ids: Optional list of subnet IDs from SSM
             
         Returns:
             VPC reference created from attributes
         """
+        # Check if vpc_id is an SSM path (starts with /) or actual VPC ID
+        if vpc_id.startswith('/'):
+            # Create CDK token for VPC ID from SSM parameter
+            vpc_id_token = ssm.StringParameter.from_string_parameter_name(
+                self, f"{self.stack_name}-VPC-ID-Token", vpc_id
+            ).string_value
+        else:
+            # Use the VPC ID directly (for testing or direct configuration)
+            vpc_id_token = vpc_id
+        
         # Build VPC attributes
         vpc_attrs = {
-            "vpc_id": vpc_id,
+            "vpc_id": vpc_id_token,
             "availability_zones": availability_zones,
         }
         

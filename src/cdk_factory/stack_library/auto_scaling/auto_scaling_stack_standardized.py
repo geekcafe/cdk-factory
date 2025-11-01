@@ -137,8 +137,8 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         logger.info(f"Auto Scaling Group {asg_name} built successfully")
 
     def _get_ssm_imports(self) -> Dict[str, Any]:
-        """Get SSM imports from configuration"""
-        return self.asg_config.ssm_imports
+        """Get SSM imports from standardized mixin processing"""
+        return self.get_all_ssm_imports()
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """
