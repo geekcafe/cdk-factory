@@ -111,6 +111,23 @@ class VpcStack(IStack, StandardizedSsmMixin):
         # Configure NAT gateways
         nat_gateway_count = self.vpc_config.nat_gateways.get("count", 1)
 
+        # Get explicit availability zones to avoid dummy AZs in pipeline synthesis
+        # When CDK synthesizes in a pipeline context, it doesn't have access to real AZs
+        # So we explicitly specify them based on the deployment region
+        availability_zones = None
+        if self.deployment:
+            region = self.deployment.region or "us-east-1"
+            # Explicitly list AZs for the region to avoid dummy values
+            max_azs = self.vpc_config.max_azs or 2
+            if region == "us-east-1":
+                availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"][:max_azs]
+            elif region == "us-east-2":
+                availability_zones = ["us-east-2a", "us-east-2b", "us-east-2c"][:max_azs]
+            elif region == "us-west-1":
+                availability_zones = ["us-west-1a", "us-west-1c"][:max_azs]
+            elif region == "us-west-2":
+                availability_zones = ["us-west-2a", "us-west-2b", "us-west-2c"][:max_azs]
+
         # Build VPC properties
         vpc_props = {
             "vpc_name": vpc_name,
@@ -119,7 +136,8 @@ class VpcStack(IStack, StandardizedSsmMixin):
             "subnet_configuration": subnet_configuration,
             "enable_dns_hostnames": self.vpc_config.enable_dns_hostnames,
             "enable_dns_support": self.vpc_config.enable_dns_support,
-            "max_azs": self.vpc_config.max_azs,  # Use max_azs instead of explicit availability_zones
+            "max_azs": self.vpc_config.max_azs if not availability_zones else None,
+            "availability_zones": availability_zones,  # Use explicit AZs when available
             "gateway_endpoints": (
                 {
                     "S3": ec2.GatewayVpcEndpointOptions(

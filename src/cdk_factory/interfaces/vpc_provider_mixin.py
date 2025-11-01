@@ -136,13 +136,10 @@ class VPCProviderMixin:
             "availability_zones": availability_zones,
         }
         
-        # If we have subnet_ids from SSM, use the actual subnet IDs
+        # If we have subnet_ids from SSM, add them to the attributes
         if subnet_ids:
             # Use the actual subnet IDs from SSM
             vpc_attrs["public_subnet_ids"] = subnet_ids
-        else:
-            # Fallback to dummy subnets if no valid subnet IDs
-            vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
         
         # Use from_vpc_attributes() for SSM tokens with unique construct name
         self._vpc = ec2.Vpc.from_vpc_attributes(self, f"{self.stack_name}-VPC", **vpc_attrs)
