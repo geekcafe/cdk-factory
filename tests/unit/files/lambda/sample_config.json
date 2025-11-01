@@ -190,8 +190,8 @@
                         "workload": "factory-lambda",
                         "environment": "dev",
                         "imports": {
-                          "workload": "factory-lambda",
-                          "environment": "dev"
+                          "workload": "/factory-lambda/dev/lambda",
+                          "environment": "/factory-lambda/dev/environment"
                         }
                       },
                       "routes": [

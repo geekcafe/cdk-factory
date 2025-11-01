@@ -12,17 +12,17 @@ from aws_cdk import aws_ssm as ssm
 from cdk_factory.utilities.api_gateway_integration_utility import ApiGatewayIntegrationUtility
 from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 from cdk_factory.configurations.resources.apigateway_route_config import ApiGatewayConfigRouteConfig
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 
 
-class MockApiGatewayStack(Stack, EnhancedSsmParameterMixin):
+class MockApiGatewayStack(Stack, StandardizedSsmMixin):
     """Mock API Gateway stack for testing authorizer SSM integration"""
     
     def __init__(self, scope, construct_id: str, config: dict):
         super().__init__(scope, construct_id)
         
-        # Setup enhanced SSM config
-        self.enhanced_ssm_config = self.setup_enhanced_ssm_integration(
+        # Setup standardized SSM config
+        self.enhanced_ssm_config = self.setup_standardized_ssm_integration(
             scope=self,
             config=config.get("api_gateway", {}),
             resource_type="api-gateway",
@@ -33,14 +33,14 @@ class MockApiGatewayStack(Stack, EnhancedSsmParameterMixin):
         self.integration_utility = ApiGatewayIntegrationUtility(scope=self)
 
 
-class MockCognitoStack(Stack, EnhancedSsmParameterMixin):
+class MockCognitoStack(Stack, StandardizedSsmMixin):
     """Mock Cognito stack that exports authorizer ID"""
     
     def __init__(self, scope, construct_id: str, config: dict):
         super().__init__(scope, construct_id)
         
-        # Setup enhanced SSM config
-        self.enhanced_ssm_config = self.setup_enhanced_ssm_integration(
+        # Setup standardized SSM config
+        self.enhanced_ssm_config = self.setup_standardized_ssm_integration(
             scope=self,
             config=config.get("cognito", {}),
             resource_type="cognito",
@@ -251,7 +251,7 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
                     "organization": "test-app",
                     "environment": "dev",
                     "imports": {
-                        "authorizer_id": "auto"
+                        "authorizer_id": "/test-app/dev/cognito/user-pool/authorizer-id"
                     }
                 }
             }

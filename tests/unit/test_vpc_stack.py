@@ -44,7 +44,12 @@ def test_vpc_stack_minimal():
 
     # Instead of mocking the ec2.Vpc class, we'll mock the _create_vpc method
     # to return a value we can control without JSII compatibility issues
-    mock_vpc = object()
+    mock_vpc = MagicMock()
+    mock_vpc.vpc_id = "vpc-12345678"
+    mock_vpc.public_subnets = [MagicMock(subnet_id="subnet-public-1"), MagicMock(subnet_id="subnet-public-2")]
+    mock_vpc.private_subnets = [MagicMock(subnet_id="subnet-private-1"), MagicMock(subnet_id="subnet-private-2")]
+    mock_vpc.isolated_subnets = [MagicMock(subnet_id="subnet-isolated-1")]
+    mock_vpc.vpc_cidr_block = "10.0.0.0/16"
 
     # Mock the _create_vpc method to return our controlled object
     with patch.object(
@@ -123,8 +128,13 @@ def test_vpc_stack_full_config():
 
             def mock_create_vpc_impl(*args, **kwargs):
                 nonlocal mock_vpc
-                # Create a simple object to represent the VPC
-                mock_vpc = object()
+                # Create a mock object to represent the VPC with required attributes
+                mock_vpc = MagicMock()
+                mock_vpc.vpc_id = "vpc-12345678"
+                mock_vpc.public_subnets = [MagicMock(subnet_id="subnet-public-1"), MagicMock(subnet_id="subnet-public-2")]
+                mock_vpc.private_subnets = [MagicMock(subnet_id="subnet-private-1"), MagicMock(subnet_id="subnet-private-2")]
+                mock_vpc.isolated_subnets = [MagicMock(subnet_id="subnet-isolated-1")]
+                mock_vpc.vpc_cidr_block = "172.16.0.0/16"
                 return mock_vpc
 
             with patch.object(

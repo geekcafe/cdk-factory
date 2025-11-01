@@ -40,6 +40,14 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         self.user_pool: cognito.UserPool | None = None
         self.app_clients: dict = {}  # Store created app clients by name
 
+    def _build_resource_name(self, name: str) -> str:
+        """Build resource name using deployment configuration"""
+        if self.deployment:
+            return self.deployment.build_resource_name(name)
+        else:
+            # Fallback naming pattern
+            return f"{self.cognito_config.user_pool_name or 'cognito'}-{name}"
+
     def build(
         self,
         stack_config: StackConfig,
@@ -151,7 +159,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
 
         self.user_pool = cognito.UserPool(
             self,
-            id=self.deployment.build_resource_name(
+            id=self._build_resource_name(
                 self.cognito_config.user_pool_name
                 or self.cognito_config.user_pool_id
                 or "user-pool"
@@ -206,7 +214,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             # Create the app client
             app_client = cognito.UserPoolClient(
                 self,
-                id=self.deployment.build_resource_name(f"{client_name}-client"),
+                id=self._build_resource_name(f"{client_name}-client"),
                 **client_kwargs,
             )
             
@@ -455,7 +463,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         secret = secretsmanager.Secret(
             self,
             f"{client_name}-client-secret",
-            secret_name=self.deployment.build_resource_name(
+            secret_name=self._build_resource_name(
                 f"cognito/{client_name}/client-secret"
             ),
             description=f"Cognito app client secret for {client_name}",
@@ -466,7 +474,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         secret_with_metadata = secretsmanager.Secret(
             self,
             f"{client_name}-client-credentials",
-            secret_name=self.deployment.build_resource_name(
+            secret_name=self._build_resource_name(
                 f"cognito/{client_name}/credentials"
             ),
             description=f"Cognito app client credentials for {client_name}",
@@ -506,7 +514,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # Setup enhanced SSM integration with proper resource type and name
         # Use "user-pool" as resource identifier for SSM paths, not the full pool name
         
-        self.setup_enhanced_ssm_integration(
+        self.setup_standardized_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("cognito", {}),
             resource_type="cognito",

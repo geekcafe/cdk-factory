@@ -10,10 +10,10 @@ from aws_cdk.assertions import Template
 from constructs import Construct
 
 from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 
 
-class MockCognitoStack(Stack, EnhancedSsmParameterMixin):
+class MockCognitoStack(Stack, StandardizedSsmMixin):
     """Mock Cognito stack that exports user pool parameters"""
     
     def __init__(self, scope: Construct, construct_id: str, config: dict):
@@ -38,7 +38,7 @@ class MockCognitoStack(Stack, EnhancedSsmParameterMixin):
             self.auto_export_resources(self.resource_values)
 
 
-class MockApiGatewayStack(Stack, EnhancedSsmParameterMixin):
+class MockApiGatewayStack(Stack, StandardizedSsmMixin):
     """Mock API Gateway stack that imports user pool parameters"""
     
     def __init__(self, scope: Construct, construct_id: str, config: dict):

@@ -110,11 +110,14 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Create IAM role for instances
         self.instance_role = self._create_instance_role(asg_name)
 
-        # Create user data
-        self.user_data = self._create_user_data()
+        # Create VPC once to be reused by both ECS cluster and ASG
+        self._vpc = None  # Store VPC for reuse
 
         # Create ECS cluster if ECS configuration is detected
         self.ecs_cluster = self._create_ecs_cluster_if_needed()
+
+        # Create user data (after ECS cluster so it can reference it)
+        self.user_data = self._create_user_data()
 
         # Create launch template
         self.launch_template = self._create_launch_template(asg_name)
@@ -256,34 +259,90 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Add user data commands from configuration
         if self.asg_config.user_data_commands:
-            user_data.add_commands(*self.asg_config.user_data_commands)
-            self.user_data_commands = self.asg_config.user_data_commands
+            # Process template variables in user data commands
+            processed_commands = []
+            for command in self.asg_config.user_data_commands:
+                processed_command = command
+                # Substitute SSM-imported values
+                if self.has_ssm_import("ecs_cluster_name") and "{{ecs_cluster_name}}" in command:
+                    cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
+                    processed_command = command.replace("{{ecs_cluster_name}}", cluster_name)
+                processed_commands.append(processed_command)
+            
+            user_data.add_commands(*processed_commands)
+            self.user_data_commands = processed_commands
 
         # Add ECS cluster configuration if needed
         if self.ecs_cluster:
-            ecs_commands = [
-                "echo 'ECS_CLUSTER={}{}' >> /etc/ecs/ecs.config".format(
-                    self.deployment.workload_name, self.deployment.environment
-                ),
-                "systemctl restart ecs"
-            ]
+            # Use the SSM-imported cluster name if available, otherwise fallback to default format
+            if self.has_ssm_import("ecs_cluster_name"):
+                cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
+                ecs_commands = [
+                    f"echo 'ECS_CLUSTER={cluster_name}' >> /etc/ecs/ecs.config",
+                    "systemctl restart ecs"
+                ]
+            else:
+                # Fallback to default naming pattern
+                ecs_commands = [
+                    "echo 'ECS_CLUSTER={}{}' >> /etc/ecs/ecs.config".format(
+                        self.deployment.workload_name, self.deployment.environment
+                    ),
+                    "systemctl restart ecs"
+                ]
             user_data.add_commands(*ecs_commands)
 
         logger.info(f"Created user data with {len(self.user_data_commands)} custom commands")
         return user_data
 
+    def _get_or_create_vpc(self) -> ec2.Vpc:
+        """Get or create VPC for reuse across the stack"""
+        if self._vpc is None:
+            vpc_id = self._get_vpc_id()
+            subnet_ids = self._get_subnet_ids()
+            
+            # Create VPC and subnets from imported values
+            self._vpc = ec2.Vpc.from_vpc_attributes(
+                self, "ImportedVPC",
+                vpc_id=vpc_id,
+                availability_zones=["us-east-1a", "us-east-1b"]  # Add required availability zones
+            )
+            
+            # Create and store subnets if we have subnet IDs
+            self._subnets = []
+            if subnet_ids:
+                for i, subnet_id in enumerate(subnet_ids):
+                    subnet = ec2.Subnet.from_subnet_id(
+                        self, f"ImportedSubnet-{i}", subnet_id
+                    )
+                    self._subnets.append(subnet)
+            else:
+                # Use default subnets from VPC
+                self._subnets = self._vpc.public_subnets
+        
+        return self._vpc
+
+    def _get_subnets(self) -> List[ec2.Subnet]:
+        """Get the subnets from the shared VPC"""
+        return getattr(self, '_subnets', [])
+
     def _create_ecs_cluster_if_needed(self) -> Optional[ecs.Cluster]:
         """Create ECS cluster if ECS configuration is detected"""
-        # Check if user data contains ECS configuration
-        ecs_detected = any("ECS_CLUSTER" in cmd for cmd in self.user_data_commands)
+        # Check if user data contains ECS configuration (use raw config since user_data_commands might not be set yet)
+        ecs_detected = False
+        if self.asg_config.user_data_commands:
+            ecs_detected = any("ECS_CLUSTER" in cmd for cmd in self.asg_config.user_data_commands)
         
         if ecs_detected and self.has_ssm_import("ecs_cluster_name"):
             cluster_name = self.get_ssm_imported_value("ecs_cluster_name")
+            
+            # Use the shared VPC
+            vpc = self._get_or_create_vpc()
+            
             self.ecs_cluster = ecs.Cluster.from_cluster_attributes(
                 self,
                 "ImportedECSCluster",
                 cluster_name=cluster_name,
-                vpc=self._get_vpc_from_provider() if hasattr(self, '_get_vpc_from_provider') else None
+                vpc=vpc
             )
             logger.info(f"Connected to existing ECS cluster: {cluster_name}")
         
@@ -341,27 +400,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _create_auto_scaling_group(self, asg_name: str) -> autoscaling.AutoScalingGroup:
         """Create Auto Scaling Group"""
-        vpc_id = self._get_vpc_id()
-        subnet_ids = self._get_subnet_ids()
-        
-        # Create VPC and subnets from imported values
-        vpc = ec2.Vpc.from_vpc_attributes(
-            self, "ImportedVPC",
-            vpc_id=vpc_id,
-            availability_zones=["us-east-1a", "us-east-1b"]  # Add required availability zones
-        )
-        
-        # Create subnets if we have subnet IDs
-        subnets = []
-        if subnet_ids:
-            for i, subnet_id in enumerate(subnet_ids):
-                subnet = ec2.Subnet.from_subnet_id(
-                    self, f"ImportedSubnet-{i}", subnet_id
-                )
-                subnets.append(subnet)
-        else:
-            # Use default subnets from VPC
-            subnets = vpc.public_subnets
+        # Use the shared VPC and subnets
+        vpc = self._get_or_create_vpc()
+        subnets = self._get_subnets()
 
         auto_scaling_group = autoscaling.AutoScalingGroup(
             self,

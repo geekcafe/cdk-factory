@@ -358,6 +358,9 @@ class TestCognitoAppClients:
                         "enabled": True,
                         "organization": "my-app",
                         "environment": "prod",
+                        "exports": {
+                            "user_pool_id": "/my-app/prod/cognito/user-pool/user-pool-id"
+                        }
                     },
                 },
             },
@@ -747,6 +750,9 @@ class TestCognitoAppClients:
                         "enabled": True,
                         "organization": "prod-app",
                         "environment": "prod",
+                        "exports": {
+                            "user_pool_id": "/prod-app/prod/cognito/user-pool/user-pool-id"
+                        }
                     },
                 },
             },

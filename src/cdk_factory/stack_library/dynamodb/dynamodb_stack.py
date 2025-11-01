@@ -152,7 +152,7 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         # Setup enhanced SSM integration with proper resource type and name
         # Use "app-table" as resource identifier for SSM paths, not the full table name
         
-        self.setup_enhanced_ssm_integration(
+        self.setup_standardized_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("dynamodb", {}),
             resource_type="dynamodb",

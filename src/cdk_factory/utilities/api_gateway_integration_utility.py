@@ -545,26 +545,33 @@ class ApiGatewayIntegrationUtility:
 
                     # Setup enhanced SSM integration for auto-import
                     # Use "user-pool" as resource identifier for SSM paths to match cognito exports
-                    ssm_mixin.setup_enhanced_ssm_integration(
+                    api_gateway_config = stack_config.dictionary.get("api_gateway", {}).copy()
+                    
+                    # Configure SSM imports for auto-discovery
+                    if ssm_path == "auto":
+                        if "ssm" not in api_gateway_config:
+                            api_gateway_config["ssm"] = {}
+                        if "imports" not in api_gateway_config["ssm"]:
+                            api_gateway_config["ssm"]["imports"] = {}
+                        api_gateway_config["ssm"]["imports"]["user_pool_arn"] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/arn"
+                    
+                    ssm_mixin.setup_standardized_ssm_integration(
                         scope=self.scope,
-                        config=stack_config.dictionary.get("api_gateway", {}),
+                        config=api_gateway_config,
                         resource_type="cognito",
                         resource_name="user-pool",
                     )
 
-                    # If ssm_path is "auto", use auto-import mechanism
+                    # Get user pool ARN using new standardized pattern
                     if ssm_path == "auto":
                         logger.info("Using auto-import for user pool ARN")
-                        imported_values = ssm_mixin.auto_import_resources()
-                        user_pool_arn = imported_values.get("user_pool_arn")
+                        user_pool_arn = ssm_mixin.get_ssm_imported_value("user_pool_arn")
                     else:
                         # Use direct parameter import for specific SSM path
                         logger.info(
                             f"Looking up user pool ARN from SSM parameter: {ssm_path}"
                         )
-                        user_pool_arn = ssm_mixin._import_enhanced_ssm_parameter(
-                            ssm_path, "user_pool_arn"
-                        )
+                        user_pool_arn = ssm_mixin._resolve_single_ssm_import(ssm_path, "user_pool_arn")
 
             # Extract user pool ID from ARN if we have it
             if user_pool_arn and not user_pool_id:
@@ -874,7 +881,7 @@ class ApiGatewayIntegrationUtility:
 
                 # Setup enhanced SSM integration for auto-import
                 # Use consistent resource name for cross-stack compatibility
-                ssm_mixin.setup_enhanced_ssm_integration(
+                ssm_mixin.setup_standardized_ssm_integration(
                     scope=self.scope,
                     config=api_gateway_config,
                     resource_type="api-gateway",
@@ -900,7 +907,7 @@ class ApiGatewayIntegrationUtility:
                         logger.info(
                             f"Looking up authorizer ID from SSM parameter: {import_value}"
                         )
-                        authorizer_id = ssm_mixin._import_enhanced_ssm_parameter(
+                        authorizer_id = ssm_mixin._resolve_single_ssm_import(
                             import_value, "authorizer_id"
                         )
                         if authorizer_id:

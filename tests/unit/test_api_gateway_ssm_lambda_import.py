@@ -75,8 +75,8 @@ class TestApiGatewaySSMLambdaImport:
                     "organization": "test-workload",
                     "environment": "test",
                     "imports": {
-                        "organization": "test-workload",
-                        "environment": "test",
+                        "organization": "/test-workload/test/organization",
+                        "environment": "/test-workload/test/environment",
                     },
                 },
                 "routes": [
@@ -277,8 +277,8 @@ class TestApiGatewaySSMLambdaImport:
                 "ssm": {
                     "enabled": True,
                     "imports": {
-                        "organization": "test-workload",
-                        "environment": "test",
+                        "organization": "/test-workload/test/organization",
+                        "environment": "/test-workload/test/environment",
                     },
                 },
                 "routes": [

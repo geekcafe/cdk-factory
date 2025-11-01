@@ -9,10 +9,10 @@ from aws_cdk import App
 from constructs import Construct
 
 from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig
-from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 
 
-class MockConstruct(Construct, EnhancedSsmParameterMixin):
+class MockConstruct(Construct, StandardizedSsmMixin):
     """Mock construct for testing SSM parameter operations"""
     pass
 

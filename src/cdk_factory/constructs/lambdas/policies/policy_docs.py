@@ -46,7 +46,7 @@ class ResourceResolver:
                 ssm_config = lambda_dict.get("ssm", {})
 
                 if ssm_config.get("enabled", False):
-                    self._ssm_mixin.setup_enhanced_ssm_integration(
+                    self._ssm_mixin.setup_standardized_ssm_integration(
                         scope=self.scope,
                         config=lambda_dict,
                         resource_type="lambda",

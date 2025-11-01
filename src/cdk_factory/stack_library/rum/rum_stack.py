@@ -55,9 +55,20 @@ class RumStack(IStack, StandardizedSsmMixin):
         logger.info(f"Building RUM stack: {self.rum_config.name}")
 
         # Setup enhanced SSM integration
-        self.setup_enhanced_ssm_integration(
+        rum_config = stack_config.dictionary.get("rum", {}).copy()
+        
+        # Configure SSM imports for cognito resources if needed
+        if not self.rum_config.cognito_identity_pool_id:
+            # Add explicit import path for cognito identity pool using new pattern
+            if "ssm" not in rum_config:
+                rum_config["ssm"] = {}
+            if "imports" not in rum_config["ssm"]:
+                rum_config["ssm"]["imports"] = {}
+            rum_config["ssm"]["imports"]["cognito_identity_pool_id"] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
+        
+        self.setup_standardized_ssm_integration(
             scope=self,
-            config=stack_config.dictionary.get("rum", {}),
+            config=rum_config,
             resource_type="rum",
             resource_name=self.rum_config.name
         )
@@ -84,13 +95,11 @@ class RumStack(IStack, StandardizedSsmMixin):
             identity_pool_id = self.rum_config.cognito_identity_pool_id
             logger.info(f"Using existing Cognito Identity Pool: {identity_pool_id}")
         else:
-            # Try to import from SSM using enhanced SSM pattern
-            imported_values = self.auto_import_resources({
-                "cognito_identity_pool_id": "auto"
-            })
+            # Try to import from SSM using new standardized pattern
+            cognito_identity_pool_id = self.get_ssm_imported_value("cognito_identity_pool_id")
             
-            if imported_values.get("cognito_identity_pool_id"):
-                identity_pool_id = imported_values["cognito_identity_pool_id"]
+            if cognito_identity_pool_id:
+                identity_pool_id = cognito_identity_pool_id
                 logger.info(f"Imported Cognito Identity Pool from SSM: {identity_pool_id}")
 
         # If no existing identity pool found, create new Cognito resources
@@ -107,12 +116,16 @@ class RumStack(IStack, StandardizedSsmMixin):
         """Create new Cognito User Pool and Identity Pool for RUM"""
         logger.info("Creating new Cognito resources for RUM")
 
+        def _resource_name(name: str) -> str:
+            """Helper to generate resource names"""
+            return f"{self.rum_config.name}-{name}"
+
         # Create User Pool if needed
         user_pool_id = self.rum_config.cognito_user_pool_id
         if not user_pool_id and self.rum_config.create_cognito_user_pool:
             self.user_pool = cognito.UserPool(
                 self,
-                id=self.deployment.build_resource_name(f"{self.rum_config.name}-user-pool"),
+                id=_resource_name("user-pool"),
                 user_pool_name=self.rum_config.cognito_user_pool_name,
                 self_sign_up_enabled=True,
                 sign_in_aliases=cognito.SignInAliases(email=True),
@@ -128,7 +141,7 @@ class RumStack(IStack, StandardizedSsmMixin):
             # Create User Pool Client for Identity Pool integration
             user_pool_client = cognito.UserPoolClient(
                 self,
-                id=self.deployment.build_resource_name(f"{self.rum_config.name}-user-pool-client"),
+                id=_resource_name("user-pool-client"),
                 user_pool=self.user_pool,
                 generate_secret=False,
                 auth_flows=cognito.AuthFlow(
@@ -145,7 +158,7 @@ class RumStack(IStack, StandardizedSsmMixin):
 
         self.identity_pool = cognito.CfnIdentityPool(
             self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-identity-pool"),
+            id=_resource_name("identity-pool"),
             identity_pool_name=self.rum_config.cognito_identity_pool_name,
             allow_unauthenticated_identities=True,
             cognito_identity_providers=identity_pool_providers if identity_pool_providers else None
@@ -154,7 +167,7 @@ class RumStack(IStack, StandardizedSsmMixin):
         # Create IAM role for unauthenticated users (guest role)
         guest_role = iam.Role(
             self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-guest-role"),
+            id=_resource_name("guest-role"),
             assumed_by=iam.FederatedPrincipal(
                 "cognito-identity.amazonaws.com",
                 conditions={
@@ -184,7 +197,7 @@ class RumStack(IStack, StandardizedSsmMixin):
         # Attach the role to the identity pool
         cognito.CfnIdentityPoolRoleAttachment(
             self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-role-attachment"),
+            id=_resource_name("role-attachment"),
             identity_pool_id=self.identity_pool.ref,
             roles={
                 "unauthenticated": guest_role.role_arn
@@ -195,12 +208,17 @@ class RumStack(IStack, StandardizedSsmMixin):
         return self.identity_pool.ref, guest_role.role_arn
 
     def _create_minimal_identity_pool(self) -> tuple[str, str]:
-        """Create a minimal identity pool for RUM when no Cognito resources are provided"""
+        """Create a minimal Identity Pool with just a guest role for RUM"""
         logger.info("Creating minimal Cognito Identity Pool for RUM")
 
-        self.identity_pool = cognito.CfnIdentityPool(
+        def _resource_name(name: str) -> str:
+            """Helper to generate resource names"""
+            return f"{self.rum_config.name}-{name}"
+
+        # Create minimal Identity Pool
+        minimal_identity_pool = cognito.CfnIdentityPool(
             self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-minimal-identity-pool"),
+            id=_resource_name("minimal-identity-pool"),
             identity_pool_name=f"{self.rum_config.name}_minimal_identity_pool",
             allow_unauthenticated_identities=True
         )
@@ -208,7 +226,7 @@ class RumStack(IStack, StandardizedSsmMixin):
         # Create minimal IAM role for unauthenticated users
         guest_role = iam.Role(
             self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-minimal-guest-role"),
+            id=_resource_name("minimal-guest-role"),
             assumed_by=iam.FederatedPrincipal(
                 "cognito-identity.amazonaws.com",
                 conditions={
@@ -238,7 +256,7 @@ class RumStack(IStack, StandardizedSsmMixin):
         # Attach the role to the identity pool
         cognito.CfnIdentityPoolRoleAttachment(
             self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-minimal-role-attachment"),
+            id=_resource_name("minimal-role-attachment"),
             identity_pool_id=self.identity_pool.ref,
             roles={
                 "unauthenticated": guest_role.role_arn
@@ -249,33 +267,33 @@ class RumStack(IStack, StandardizedSsmMixin):
 
     def _create_app_monitor(self, identity_pool_id: str, guest_role_arn: Optional[str]) -> None:
         """Create the CloudWatch RUM app monitor"""
-        logger.info(f"Creating RUM app monitor: {self.rum_config.name}")
+        logger.info("Creating CloudWatch RUM app monitor")
 
-        # Build app monitor configuration
+        def _resource_name(name: str) -> str:
+            """Helper to generate resource names"""
+            return f"{self.rum_config.name}-{name}"
+
+        # Create app monitor configuration
         app_monitor_config = rum.CfnAppMonitor.AppMonitorConfigurationProperty(
-            identity_pool_id=identity_pool_id,
-            guest_role_arn=guest_role_arn,
             allow_cookies=self.rum_config.allow_cookies,
             enable_x_ray=self.rum_config.enable_xray,
+            favorite_pages=self.rum_config.favorite_pages,
+            guest_role_arn=guest_role_arn,
+            identity_pool_id=identity_pool_id,
             session_sample_rate=self.rum_config.session_sample_rate,
             telemetries=self.rum_config.telemetries
         )
 
-        # Add optional properties
-        if self.rum_config.excluded_pages:
-            app_monitor_config.excluded_pages = self.rum_config.excluded_pages
-        
-        if self.rum_config.included_pages:
-            app_monitor_config.included_pages = self.rum_config.included_pages
-            
-        if self.rum_config.favorite_pages:
-            app_monitor_config.favorite_pages = self.rum_config.favorite_pages
+        self.app_monitor = rum.CfnAppMonitor(
+            self,
+            id=_resource_name("app-monitor"),
+            name=self.rum_config.name,
+            domain=self.rum_config.domain,
+            app_monitor_configuration=app_monitor_config,
+            cw_log_enabled=self.rum_config.cw_log_enabled
+        )
 
-        if self.rum_config.metric_destinations:
-            app_monitor_config.metric_destinations = [
-                rum.CfnAppMonitor.MetricDestinationProperty(**dest)
-                for dest in self.rum_config.metric_destinations
-            ]
+        logger.info(f"Created CloudWatch RUM app monitor: {self.rum_config.name}")
 
         # Create custom events configuration if enabled
         custom_events = None
@@ -284,17 +302,8 @@ class RumStack(IStack, StandardizedSsmMixin):
                 status="ENABLED"
             )
 
-        # Create the app monitor
-        self.app_monitor = rum.CfnAppMonitor(
-            self,
-            id=self.deployment.build_resource_name(f"{self.rum_config.name}-app-monitor"),
-            name=self.rum_config.name,
-            app_monitor_configuration=app_monitor_config,
-            domain=self.rum_config.domain,
-            domain_list=self.rum_config.domain_list,
-            cw_log_enabled=self.rum_config.cw_log_enabled,
-            custom_events=custom_events
-        )
+        # Update the app monitor with additional properties
+        # (Note: some properties like custom_events need to be set during creation)
 
         # Add tags if specified
         if self.rum_config.tags:

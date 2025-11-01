@@ -176,7 +176,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             public_config = self.vpc_config.subnets["public"]
             subnet_configs.append(
                 ec2.SubnetConfiguration(
-                    name="public",
+                    name=self.vpc_config.public_subnet_name,
                     subnet_type=ec2.SubnetType.PUBLIC,
                     cidr_mask=public_config.get("cidr_mask", 24),
                     map_public_ip_on_launch=public_config.get("map_public_ip", True),
@@ -188,7 +188,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             private_config = self.vpc_config.subnets["private"]
             subnet_configs.append(
                 ec2.SubnetConfiguration(
-                    name="private",
+                    name=self.vpc_config.private_subnet_name,
                     subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
                     cidr_mask=private_config.get("cidr_mask", 24),
                 )
@@ -199,7 +199,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             isolated_config = self.vpc_config.subnets["isolated"]
             subnet_configs.append(
                 ec2.SubnetConfiguration(
-                    name="isolated",
+                    name=self.vpc_config.isolated_subnet_name,
                     subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
                     cidr_mask=isolated_config.get("cidr_mask", 24),
                 )

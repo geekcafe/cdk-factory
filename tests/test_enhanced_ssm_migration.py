@@ -143,29 +143,29 @@ def test_backward_compatibility():
     
     print("  ✓ Backward compatibility tests passed")
 
-def test_enhanced_ssm_mixin():
-    """Test the EnhancedSsmParameterMixin functionality"""
-    print("Testing EnhancedSsmParameterMixin...")
+def test_standardized_ssm_mixin():
+    """Test the StandardizedSsmMixin functionality"""
+    print("Testing StandardizedSsmMixin...")
     
-    from cdk_factory.interfaces.enhanced_ssm_parameter_mixin import EnhancedSsmParameterMixin
+    from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
     from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
     
     # Create a mock scope for testing
     class MockScope:
         def __init__(self):
-            self.constructs = {}
+            pass
     
-    # Create test configuration
+    # Test configuration
     config = {
-        "name": "test-resource",
         "ssm": {
             "enabled": True,
-            "organization": "test-org",
-            "environment": "dev",
             "auto_export": True,
+            "auto_import": True,
             "exports": {
-                "resource_id_path": "auto",
-                "custom_value_path": "/custom/path"
+                "test_param": "test_value"
+            },
+            "imports": {
+                "imported_param": "/test/path"
             }
         }
     }
@@ -173,7 +173,7 @@ def test_enhanced_ssm_mixin():
     enhanced_config = EnhancedBaseConfig(config, resource_type="test", resource_name="test-resource")
     
     # Create mixin instance
-    mixin = EnhancedSsmParameterMixin()
+    mixin = StandardizedSsmMixin()
     mock_scope = MockScope()
     
     # Test setup
@@ -181,7 +181,7 @@ def test_enhanced_ssm_mixin():
     assert hasattr(mixin, 'enhanced_ssm_config')
     assert mixin.enhanced_ssm_config == enhanced_config
     
-    print("  ✓ EnhancedSsmParameterMixin tests passed")
+    print("  ✓ StandardizedSsmMixin tests passed")
 
 def test_environment_variable_support():
     """Test environment variable support in SSM patterns"""
@@ -253,7 +253,7 @@ def main():
         test_vpc_config_migration()
         test_ecr_config_migration()
         test_backward_compatibility()
-        test_enhanced_ssm_mixin()
+        test_standardized_ssm_mixin()
         test_environment_variable_support()
         test_custom_patterns()
         

@@ -73,10 +73,10 @@ class TestApiGatewayLambdaPermission:
                 "ssm": {
                     "enabled": True,
                     "organization": "test-workload",
-                    "environment": "test",
+                    "environment": "/test-workload/test/environment",
                     "imports": {
-                        "organization": "test-workload",
-                        "environment": "test",
+                        "organization": "/test-workload/test/organization",
+                        "environment": "/test-workload/test/environment",
                     },
                 },
                 "routes": [
@@ -119,7 +119,7 @@ class TestApiGatewayLambdaPermission:
                 "Principal": "apigateway.amazonaws.com",
             },
         )
-        
+
         # Additionally verify the path appears in the template somewhere
         template_json = template.to_json()
         found_permission_with_path = False
@@ -132,8 +132,10 @@ class TestApiGatewayLambdaPermission:
                     if any("/*/GET/api/users" in str(part) for part in join_parts):
                         found_permission_with_path = True
                         break
-        
-        assert found_permission_with_path, "Expected to find Lambda permission with path /*/GET/api/users"
+
+        assert (
+            found_permission_with_path
+        ), "Expected to find Lambda permission with path /*/GET/api/users"
 
         # Also verify the API Gateway method was created
         template.has_resource_properties(
@@ -201,7 +203,7 @@ class TestApiGatewayLambdaPermission:
                 "Principal": "apigateway.amazonaws.com",
             },
         )
-        
+
         # Additionally verify the path appears in the template
         template_json = template.to_json()
         found_permission_with_path = False
@@ -214,8 +216,10 @@ class TestApiGatewayLambdaPermission:
                     if any("/*/POST/api/orders" in str(part) for part in join_parts):
                         found_permission_with_path = True
                         break
-        
-        assert found_permission_with_path, "Expected to find Lambda permission with path /*/POST/api/orders"
+
+        assert (
+            found_permission_with_path
+        ), "Expected to find Lambda permission with path /*/POST/api/orders"
 
     def test_multiple_routes_create_multiple_permissions(
         self, app, deployment_config, workload_config
@@ -239,8 +243,8 @@ class TestApiGatewayLambdaPermission:
                 "ssm": {
                     "enabled": True,
                     "imports": {
-                        "organization": "test-workload",
-                        "environment": "test",
+                        "organization": "/test-workload/test/organization",
+                        "environment": "/test-workload/test/environment",
                     },
                 },
                 "routes": [
