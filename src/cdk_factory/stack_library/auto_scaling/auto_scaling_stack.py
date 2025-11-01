@@ -167,23 +167,50 @@ class AutoScalingStack(IStack, VPCProviderMixin):
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the Auto Scaling Group"""
         security_groups = []
-        for sg_id in self.asg_config.security_group_ids:
-            # if the security group id contains a comma, it is a list of security group ids
-            if "," in sg_id:
-                blocks = sg_id.split(",")
-                for block in blocks:
+        
+        # Check if we have SSM imports for security groups using enhanced mixin
+        if self.has_ssm_import("security_group_ids"):
+            imported_sg_ids = self.get_ssm_imported_value("security_group_ids", [])
+            if isinstance(imported_sg_ids, list):
+                for idx, sg_id in enumerate(imported_sg_ids):
                     security_groups.append(
                         ec2.SecurityGroup.from_security_group_id(
-                            self, f"SecurityGroup-{block}", block
+                            self, f"SecurityGroup-SSM-{idx}", sg_id
                         )
                     )
+                logger.info(f"Added {len(imported_sg_ids)} security groups from SSM imports")
             else:
-                # TODO: add some additional checks to make it more robust
                 security_groups.append(
                     ec2.SecurityGroup.from_security_group_id(
-                        self, f"SecurityGroup-{sg_id}", sg_id
+                        self, f"SecurityGroup-SSM-0", imported_sg_ids
                     )
                 )
+                logger.info(f"Added security group from SSM imports")
+        
+        # Also check if we have any directly defined in the config
+        if self.asg_config.security_group_ids:
+            for idx, sg_id in enumerate(self.asg_config.security_group_ids):
+                logger.info(f"Adding security group from direct config: {sg_id}")
+                # if the security group id contains a comma, it is a list of security group ids
+                if "," in sg_id:
+                    blocks = sg_id.split(",")
+                    for block_idx, block in enumerate(blocks):
+                        security_groups.append(
+                            ec2.SecurityGroup.from_security_group_id(
+                                self, f"SecurityGroup-Direct-{idx}-{block_idx}", block
+                            )
+                        )
+                else:
+                    # TODO: add some additional checks to make it more robust
+                    security_groups.append(
+                        ec2.SecurityGroup.from_security_group_id(
+                            self, f"SecurityGroup-Direct-{idx}", sg_id
+                        )
+                    )
+        
+        if not security_groups:
+            logger.warning("No security groups found from SSM imports or direct configuration")
+        
         return security_groups
 
     def _create_instance_role(self, asg_name: str) -> iam.Role:
