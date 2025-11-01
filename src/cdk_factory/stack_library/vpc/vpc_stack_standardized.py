@@ -111,25 +111,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
         # Configure NAT gateways
         nat_gateway_count = self.vpc_config.nat_gateways.get("count", 1)
 
-        # Get explicit availability zones to avoid dummy AZs in pipeline synthesis
-        # When CDK synthesizes in a pipeline context, it doesn't have access to real AZs
-        # So we explicitly specify them based on the deployment region
-        availability_zones = None
-        if self.deployment:
-            region = self.deployment.region or "us-east-1"
-            # Explicitly list AZs for the region to avoid dummy values
-            max_azs = self.vpc_config.max_azs or 2
-            if region == "us-east-1":
-                availability_zones = [f"us-east-1{chr(97+i)}" for i in range(max_azs)]  # us-east-1a, us-east-1b, etc.
-            elif region == "us-east-2":
-                availability_zones = [f"us-east-2{chr(97+i)}" for i in range(max_azs)]
-            elif region == "us-west-1":
-                availability_zones = [f"us-west-1{chr(97+i)}" for i in range(max_azs)]
-            elif region == "us-west-2":
-                availability_zones = [f"us-west-2{chr(97+i)}" for i in range(max_azs)]
-        
         # Build VPC properties
-        # Note: CDK doesn't allow both 'availability_zones' and 'max_azs' - use one or the other
         vpc_props = {
             "vpc_name": vpc_name,
             "cidr": self.vpc_config.cidr,
@@ -137,6 +119,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             "subnet_configuration": subnet_configuration,
             "enable_dns_hostnames": self.vpc_config.enable_dns_hostnames,
             "enable_dns_support": self.vpc_config.enable_dns_support,
+            "max_azs": self.vpc_config.max_azs,  # Use max_azs instead of explicit availability_zones
             "gateway_endpoints": (
                 {
                     "S3": ec2.GatewayVpcEndpointOptions(
@@ -147,12 +130,6 @@ class VpcStack(IStack, StandardizedSsmMixin):
                 else None
             ),
         }
-        
-        # Use either availability_zones or max_azs, not both
-        if availability_zones:
-            vpc_props["availability_zones"] = availability_zones
-        else:
-            vpc_props["max_azs"] = self.vpc_config.max_azs
         
         # Create the VPC
         vpc = ec2.Vpc(self, vpc_name, **vpc_props)
@@ -350,9 +327,9 @@ class VpcStack(IStack, StandardizedSsmMixin):
         # Prepare resource values for export
         resource_values = {
             "vpc_id": self.vpc.vpc_id,
-            "public_subnet_ids": [subnet.subnet_id for subnet in self.vpc.public_subnets],
-            "private_subnet_ids": [subnet.subnet_id for subnet in self.vpc.private_subnets],
-            "isolated_subnet_ids": [subnet.subnet_id for subnet in self.vpc.isolated_subnets],
+            "public_subnet_ids": ",".join([subnet.subnet_id for subnet in self.vpc.public_subnets]) if self.vpc.public_subnets else "",
+            "private_subnet_ids": ",".join([subnet.subnet_id for subnet in self.vpc.private_subnets]) if self.vpc.private_subnets else "",
+            "isolated_subnet_ids": ",".join([subnet.subnet_id for subnet in self.vpc.isolated_subnets]) if self.vpc.isolated_subnets else "",
         }
         
         # Add route table IDs if available - commented out due to CDK API issues
@@ -386,7 +363,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
                     if hasattr(child, 'nat_gateway_id') and child.nat_gateway_id:
                         nat_gateway_ids.append(child.nat_gateway_id)
         if nat_gateway_ids:
-            resource_values["nat_gateway_ids"] = nat_gateway_ids
+            resource_values["nat_gateway_ids"] = ",".join(nat_gateway_ids)
         
         # Add Internet Gateway ID if available
         if hasattr(self.vpc, 'internet_gateway_id') and self.vpc.internet_gateway_id:
