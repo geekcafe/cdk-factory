@@ -405,7 +405,7 @@ class TestEcsServiceStack:
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
 
-        with pytest.raises(ValueError, match="VPC ID is required for ECS service"):
+        with pytest.raises(ValueError, match="VPC is not defined in the configuration"):
             stack.build(stack_config, deployment_config, workload_config)
 
     def test_service_requires_container_definitions(

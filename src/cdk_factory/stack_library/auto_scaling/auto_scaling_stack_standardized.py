@@ -196,22 +196,15 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _get_vpc_id(self) -> str:
         """
-        Get VPC ID using standardized SSM approach.
+        Get VPC ID using the centralized VPC provider mixin.
         """
-        # Primary method: Use standardized SSM imports
-        ssm_imports = self._get_ssm_imports()
-        if "vpc_id" in ssm_imports:
-            return ssm_imports["vpc_id"]
-        
-        # Fallback: Use VPC provider mixin (backward compatibility)
-        elif hasattr(self, '_get_vpc_from_provider'):
-            return self._get_vpc_from_provider()
-        
-        # Fallback: Use direct configuration
-        elif hasattr(self.asg_config, 'vpc_id') and self.asg_config.vpc_id:
-            return self.asg_config.vpc_id
-        
-        raise ValueError("VPC ID not found in SSM imports or configuration")
+        # Use the centralized VPC resolution from VPCProviderMixin
+        vpc = self.resolve_vpc(
+            config=self.asg_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
+        return vpc.vpc_id
 
     def _get_subnet_ids(self) -> List[str]:
         """

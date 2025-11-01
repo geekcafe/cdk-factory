@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any
 
 from aws_cdk import (
     aws_ecs as ecs,
+    aws_ec2 as ec2,
     aws_iam as iam,
     CfnOutput,
 )
@@ -162,34 +163,14 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _get_vpc(self):
         """
-        Get VPC using standardized SSM approach.
+        Get VPC using the centralized VPC provider mixin.
         """
-        # Primary method: Use standardized SSM imports
-        ssm_imports = self.ecs_config.ssm_imports
-        if "vpc_id" in ssm_imports:
-            vpc_id = ssm_imports["vpc_id"]
-            return ecs.Vpc.from_vpc_attributes(
-                self, "ImportedVPC",
-                vpc_id=vpc_id
-            )
-        
-        # Fallback: Use VPC provider mixin (backward compatibility)
-        elif hasattr(self, 'resolve_vpc'):
-            return self.resolve_vpc(
-                config=self.ecs_config,
-                deployment=self.deployment,
-                workload=self.workload
-            )
-        
-        # Final fallback: Direct configuration
-        elif hasattr(self.ecs_config, 'vpc_id') and self.ecs_config.vpc_id:
-            return ecs.Vpc.from_vpc_attributes(
-                self, "DirectVPC",
-                vpc_id=self.ecs_config.vpc_id
-            )
-        
-        else:
-            raise ValueError("VPC not found in SSM imports, VPC provider, or direct configuration")
+        # Use the centralized VPC resolution from VPCProviderMixin
+        return self.resolve_vpc(
+            config=self.ecs_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
 
     def _create_iam_roles(self):
         """Create IAM roles for the ECS cluster if configured."""

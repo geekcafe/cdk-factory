@@ -19,6 +19,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.load_balancer import LoadBalancerConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.vpc_provider_mixin import VPCProviderMixin
 from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
@@ -30,7 +31,7 @@ logger = Logger(service="LoadBalancerStack")
 @register_stack("alb_stack")
 @register_stack("load_balancer_library_module")
 @register_stack("load_balancer_stack")
-class LoadBalancerStack(IStack, StandardizedSsmMixin):
+class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     Reusable stack for AWS Load Balancers.
     Supports creating Application and Network Load Balancers with customizable configurations.
@@ -174,41 +175,16 @@ class LoadBalancerStack(IStack, StandardizedSsmMixin):
 
     @property
     def vpc(self) -> ec2.IVpc:
-        """Get the VPC for the Load Balancer"""
+        """Get the VPC for the Load Balancer using centralized VPC provider mixin."""
         if self._vpc:
             return self._vpc
-
-        # Check SSM imported values first (tokens from SSM parameters)
-        if "vpc_id" in self.ssm_imported_values:
-            vpc_id = self.ssm_imported_values["vpc_id"]
-            
-            # Build VPC attributes
-            vpc_attrs = {
-                "vpc_id": vpc_id,
-                "availability_zones": ["us-east-1a", "us-east-1b"],
-            }
-            
-            # If we have subnet_ids from SSM, provide dummy public subnets
-            # The actual subnets will be set via CloudFormation escape hatch
-            if "subnet_ids" in self.ssm_imported_values:
-                # Provide dummy subnet IDs - these will be overridden by the escape hatch
-                # We need at least one dummy subnet per AZ to satisfy CDK's validation
-                vpc_attrs["public_subnet_ids"] = ["subnet-dummy1", "subnet-dummy2"]
-            
-            # Use from_vpc_attributes() instead of from_lookup() because SSM imports return tokens
-            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
-        elif self.lb_config.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.lb_config.vpc_id)
-        elif self.workload.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
-        else:
-            # Use default VPC if not provided
-            raise ValueError(
-                "VPC is not defined in the configuration.  "
-                "You can provide it a the load_balancer.vpc_id in the configuration "
-                "or a top level workload.vpc_id in the workload configuration."
-            )
-
+        
+        # Use the centralized VPC resolution from VPCProviderMixin
+        self._vpc = self.resolve_vpc(
+            config=self.lb_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
         return self._vpc
 
     def _process_ssm_imports(self) -> None:

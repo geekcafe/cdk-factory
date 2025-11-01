@@ -15,6 +15,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.security_group import SecurityGroupConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.vpc_provider_mixin import VPCProviderMixin
 from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
@@ -24,7 +25,7 @@ logger = Logger(service="SecurityGroupStack")
 
 @register_stack("security_group_library_module")
 @register_stack("security_group_stack")
-class SecurityGroupStack(IStack, StandardizedSsmMixin):
+class SecurityGroupStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     Reusable stack for AWS Security Groups.
     Supports creating security groups with customizable rules.
@@ -82,17 +83,16 @@ class SecurityGroupStack(IStack, StandardizedSsmMixin):
 
     @property
     def vpc(self) -> ec2.IVpc:
-        """Get the VPC for the Security Group"""
+        """Get the VPC for the Security Group using centralized VPC provider mixin."""
         if self._vpc:
             return self._vpc
-        if self.sg_config.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
-        elif self.workload.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
-
-        else:
-            raise ValueError("VPC ID is not defined in the configuration.")
-
+        
+        # Use the centralized VPC resolution from VPCProviderMixin
+        self._vpc = self.resolve_vpc(
+            config=self.sg_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
         return self._vpc
 
     def _create_security_group(self, sg_name: str) -> ec2.SecurityGroup:

@@ -18,6 +18,7 @@ from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.resources.rds import RdsConfig
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.vpc_provider_mixin import VPCProviderMixin
 from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
@@ -27,7 +28,7 @@ logger = Logger(service="RdsStack")
 
 @register_stack("rds_library_module")
 @register_stack("rds_stack")
-class RdsStack(IStack, StandardizedSsmMixin):
+class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     Reusable stack for AWS RDS.
     Supports creating RDS instances with customizable configurations.
@@ -115,34 +116,16 @@ class RdsStack(IStack, StandardizedSsmMixin):
 
     @property
     def vpc(self) -> ec2.IVpc:
-        """Get the VPC for the RDS instance"""
+        """Get the VPC for the RDS instance using centralized VPC provider mixin."""
         if self._vpc:
             return self._vpc
         
-        # Check SSM imported values first (tokens from SSM parameters)
-        if "vpc_id" in self.ssm_imported_values:
-            vpc_id = self.ssm_imported_values["vpc_id"]
-            
-            # When using tokens, we can't provide subnet lists to from_vpc_attributes
-            # because CDK validates subnet count against AZ count at synthesis time
-            # We'll create a DB subnet group separately instead
-            vpc_attrs = {
-                "vpc_id": vpc_id,
-                "availability_zones": ["us-east-1a", "us-east-1b"]
-            }
-            
-            # Use from_vpc_attributes() for SSM tokens
-            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
-        elif self.rds_config.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.rds_config.vpc_id)
-        elif self.workload.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
-        else:
-            raise ValueError(
-                "VPC is not defined in the configuration.  "
-                "You can provide it a the rds.vpc_id in the configuration "
-                "or a top level workload.vpc_id in the workload configuration."
-            )
+        # Use the centralized VPC resolution from VPCProviderMixin
+        self._vpc = self.resolve_vpc(
+            config=self.rds_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
         return self._vpc
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:

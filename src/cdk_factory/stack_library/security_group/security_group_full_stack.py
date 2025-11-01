@@ -11,6 +11,7 @@ from cdk_factory.configurations.resources.security_group_full_stack import (
     SecurityGroupFullStackConfig,
 )
 from cdk_factory.interfaces.istack import IStack
+from cdk_factory.interfaces.vpc_provider_mixin import VPCProviderMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
@@ -19,7 +20,7 @@ logger = Logger(service="SecurityGroupFullStack")
 
 @register_stack("security_group_full_stack_library_module")
 @register_stack("security_group_full_stack")
-class SecurityGroupsStack(IStack):
+class SecurityGroupsStack(IStack, VPCProviderMixin):
 
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
@@ -274,30 +275,16 @@ class SecurityGroupsStack(IStack):
 
     @property
     def vpc(self) -> ec2.IVpc:
-        """Get the VPC for the Security Group"""
+        """Get the VPC for the Security Group using centralized VPC provider mixin."""
         if self._vpc:
             return self._vpc
         
-        # Check SSM imported values first (tokens from SSM parameters)
-        if "vpc_id" in self.ssm_imported_values:
-            vpc_id = self.ssm_imported_values["vpc_id"]
-            
-            # Build VPC attributes
-            vpc_attrs = {
-                "vpc_id": vpc_id,
-                "availability_zones": ["us-east-1a", "us-east-1b"]
-            }
-            
-            # Use from_vpc_attributes() instead of from_lookup() because SSM imports return tokens
-            # from_lookup() requires concrete values and queries AWS during synthesis
-            self._vpc = ec2.Vpc.from_vpc_attributes(self, "VPC", **vpc_attrs)
-        elif self.sg_config.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.sg_config.vpc_id)
-        elif self.workload.vpc_id:
-            self._vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_id=self.workload.vpc_id)
-        else:
-            raise ValueError("VPC ID is not defined in the configuration or SSM imports.")
-
+        # Use the centralized VPC resolution from VPCProviderMixin
+        self._vpc = self.resolve_vpc(
+            config=self.sg_config,
+            deployment=self.deployment,
+            workload=self.workload
+        )
         return self._vpc
 
     def _export_ssm_parameters(self, security_groups_map: Dict[str, ec2.CfnSecurityGroup]) -> None:
