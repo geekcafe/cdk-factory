@@ -33,10 +33,10 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name",
-                        "ecs_cluster_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/arn",
-                        "ecs_cluster_security_group_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/security-group-id",
-                        "ecs_instance_profile_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/instance-profile/arn"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name",
+                        "cluster_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/arn",
+                        "cluster_security_group_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/security-group-id",
+                        "instance_profile_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/instance-profile/arn"
                     }
                 }
             }
@@ -108,7 +108,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
                     }
                 }
             }
@@ -142,7 +142,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
                     }
                 }
             }
@@ -222,7 +222,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
                     }
                 }
             }
@@ -255,7 +255,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name",
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name",
                         "ecs_cluster_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/arn"
                     }
                 }
@@ -279,7 +279,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "invalid-path-format"  # Missing leading slash
                     },
                     "exports": {
-                        "ecs_cluster_name": "another-invalid-path"  # Missing template variables
+                        "cluster_name": "another-invalid-path"  # Missing template variables
                     }
                 }
             }
@@ -382,7 +382,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
                     }
                 }
             }
@@ -413,7 +413,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
                     }
                 }
             }
@@ -460,7 +460,7 @@ class TestECSStandardized(SSMIntegrationTester):
                         "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
                     },
                     "exports": {
-                        "ecs_cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
+                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name"
                     }
                 }
             }

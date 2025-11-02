@@ -264,9 +264,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             for command in self.asg_config.user_data_commands:
                 processed_command = command
                 # Substitute SSM-imported values
-                if "ecs_cluster_name" in ssm_imports and "{{ecs_cluster_name}}" in command:
-                    cluster_name = ssm_imports["ecs_cluster_name"]
-                    processed_command = command.replace("{{ecs_cluster_name}}", cluster_name)
+                if "cluster_name" in ssm_imports and "{{cluster_name}}" in command:
+                    cluster_name = ssm_imports["cluster_name"]
+                    processed_command = command.replace("{{cluster_name}}", cluster_name)
                 processed_commands.append(processed_command)
             
             user_data.add_commands(*processed_commands)
@@ -276,8 +276,8 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if self.ecs_cluster:
             # Use the SSM-imported cluster name if available, otherwise fallback to default format
             ssm_imports = self._get_ssm_imports()
-            if "ecs_cluster_name" in ssm_imports:
-                cluster_name = ssm_imports["ecs_cluster_name"]
+            if "cluster_name" in ssm_imports:
+                cluster_name = ssm_imports["cluster_name"]
                 ecs_commands = [
                     f"echo 'ECS_CLUSTER={cluster_name}' >> /etc/ecs/ecs.config",
                     "systemctl restart ecs"
@@ -335,8 +335,8 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         
         if ecs_detected:
             ssm_imports = self._get_ssm_imports()
-            if "ecs_cluster_name" in ssm_imports:
-                cluster_name = ssm_imports["ecs_cluster_name"]
+            if "cluster_name" in ssm_imports:
+                cluster_name = ssm_imports["cluster_name"]
                 
                 # Use the shared VPC
                 vpc = self._get_or_create_vpc()

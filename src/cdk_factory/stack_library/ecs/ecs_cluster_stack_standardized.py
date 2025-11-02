@@ -260,19 +260,20 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Prepare resource values for export
         resource_values = {
-            "ecs_cluster_name": self.ecs_cluster.cluster_name,
-            "ecs_cluster_arn": self.ecs_cluster.cluster_arn,
+            "cluster_name": self.ecs_cluster.cluster_name,
+            "cluster_arn": self.ecs_cluster.cluster_arn,
+            "instance_role_arn": self.instance_role.role_arn,
         }
         
         # Add security group ID if available
         if hasattr(self.ecs_cluster, 'connections') and self.ecs_cluster.connections:
             security_groups = self.ecs_cluster.connections.security_groups
             if security_groups:
-                resource_values["ecs_cluster_security_group_id"] = security_groups[0].security_group_id
+                resource_values["security_group_id"] = security_groups[0].security_group_id
         
         # Add instance profile ARN if created
         if self.instance_profile:
-            resource_values["ecs_instance_profile_arn"] = self.instance_profile.attr_arn
+            resource_values["instance_profile_arn"] = self.instance_profile.attr_arn
 
         # Export using standardized SSM mixin
         exported_params = self.export_standardized_ssm_parameters(resource_values)

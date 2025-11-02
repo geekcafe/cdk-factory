@@ -247,12 +247,12 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
                         "vpc_id": "/test/vpc/id",
                         "subnet_ids": "/test/vpc/subnet-ids",
                         "security_group_ids": "/test/sg/ecs-id",
-                        "ecs_cluster_name": "/test/ecs/cluster/name"
+                        "cluster_name": "/test/ecs/cluster/name"
                     }
                 },
                 "user_data_commands": [
                     "#!/bin/bash",
-                    "echo ECS_CLUSTER={{ecs_cluster_name}} >> /etc/ecs/ecs.config"
+                    "echo ECS_CLUSTER={{cluster_name}} >> /etc/ecs/ecs.config"
                 ]
             }
         }, self.workload_config.dictionary)
@@ -261,9 +261,9 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
         try:
             stack.build(stack_config, self.deployment_config, self.workload_config)
             
-            # With the new architecture, ECS cluster SHOULD be created when ecs_cluster_name is imported
+            # With the new architecture, ECS cluster SHOULD be created when cluster_name is imported
             self.assertIsNotNone(stack.ecs_cluster, 
-                                 "ECS cluster should be created when ecs_cluster_name is imported")
+                                 "ECS cluster should be created when cluster_name is imported")
             
             # Verify the cluster name was injected into user data from SSM
             updated_commands = stack.user_data_commands
@@ -275,7 +275,7 @@ class TestAutoScalingStackIntegration(unittest.TestCase):
             
             self.assertIsNotNone(cluster_command, "Should have ECS cluster command in user data")
             # The template variable should be substituted (not in raw {{}} form)
-            self.assertNotIn("{{ecs_cluster_name}}", cluster_command,
+            self.assertNotIn("{{cluster_name}}", cluster_command,
                            "Should substitute template variable")
             # Should contain the ECS_CLUSTER setting (value may be token in test)
             self.assertIn("ECS_CLUSTER=", cluster_command,
