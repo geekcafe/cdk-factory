@@ -28,6 +28,18 @@ class DeploymentConfig:
         self.__load()
 
     def __load(self):
+        # Validate environment consistency
+        deployment_env = self.__deployment.get("environment")
+        workload_env = self.__workload.get("environment")
+        
+        if deployment_env and workload_env and deployment_env != workload_env:
+            from aws_lambda_powertools import Logger
+            logger = Logger()
+            logger.warning(
+                f"Environment mismatch: deployment.environment='{deployment_env}' != workload.environment='{workload_env}'. "
+                f"Using workload.environment for consistency."
+            )
+        
         self.__load_pipeline()
         self.__load_stacks()
 

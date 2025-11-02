@@ -14,7 +14,7 @@ from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.workload.workload_factory import WorkloadConfig, WorkloadFactory
 
 # Import individual stack library modules
-from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
 from cdk_factory.stack_library.security_group.security_group_stack import (
     SecurityGroupStack,
 )
@@ -52,11 +52,13 @@ class VpcOnlyStack(Stack):
             "private_subnets": True,
             "tags": {"Component": "VPC-Only", "Environment": deployment_name},
             # Define SSM parameters to export - simplified paths that will use the template
-            "ssm_exports": {
-                "vpc_id_path": "id",
-                "vpc_cidr_path": "cidr",
-                "public_subnet_ids_path": "public-subnet-ids",
-                "private_subnet_ids_path": "private-subnet-ids",
+            "ssm": {
+                "exports": {
+                    "vpc_id_path": "id",
+                    "vpc_cidr_path": "cidr",
+                    "public_subnet_ids_path": "public-subnet-ids",
+                    "private_subnet_ids_path": "private-subnet-ids",
+                },
             },
         }
         vpc_stack_config = StackConfig({"vpc": vpc_config})
@@ -188,10 +190,10 @@ class DatabaseOnlyStack(Stack):
                     "security_group_id_path": f"/{deployment_name}/security-groups/web-sg/id",  # From SG stack with custom prefix
                 },
                 "exports": {
-                    "db_instance_endpoint_path": "endpoint",
-                    "db_instance_id_path": "id",
-                    "db_secret_arn_path": "secret-arn",
-                    "db_name_path": "name",
+                    "db_instance_endpoint_path": f"/{deployment_name}/database/endpoint",
+                    "db_instance_id_path": f"/{deployment_name}/database/id",
+                    "db_secret_arn_path": f"/{deployment_name}/database/secret-arn",
+                    "db_name_path": f"/{deployment_name}/database/name",
                 }
             },
             # Override the resource type for this specific resource

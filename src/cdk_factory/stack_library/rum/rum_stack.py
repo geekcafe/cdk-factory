@@ -72,7 +72,7 @@ class RumStack(IStack, StandardizedSsmMixin):
                     "cognito_identity_pool_id"
                 ] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
 
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=rum_config,
             resource_type="rum",
@@ -80,7 +80,7 @@ class RumStack(IStack, StandardizedSsmMixin):
         )
 
         # Process SSM imports using standardized method
-        self.process_standardized_ssm_imports()
+        self.process_ssm_imports()
 
         # Import or create Cognito resources
         identity_pool_id, guest_role_arn = self._setup_cognito_integration()
@@ -341,7 +341,7 @@ class RumStack(IStack, StandardizedSsmMixin):
             resource_values["user_pool_id"] = self.user_pool.user_pool_id
 
         # Use enhanced SSM parameter export
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
+        exported_params = self.export_ssm_parameters(resource_values)
 
         if exported_params:
             logger.info(f"Exported {len(exported_params)} RUM parameters to SSM")

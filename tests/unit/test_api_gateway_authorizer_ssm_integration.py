@@ -26,7 +26,7 @@ class MockApiGatewayStack(Stack, StandardizedSsmMixin):
         super().__init__(scope, construct_id)
 
         # Setup standardized SSM config
-        self.enhanced_ssm_config = self.setup_standardized_ssm_integration(
+        self.enhanced_ssm_config = self.setup_ssm_integration(
             scope=self,
             config=config.get("api_gateway", {}),
             resource_type="api-gateway",
@@ -44,7 +44,7 @@ class MockCognitoStack(Stack, StandardizedSsmMixin):
         super().__init__(scope, construct_id)
 
         # Setup standardized SSM config
-        self.enhanced_ssm_config = self.setup_standardized_ssm_integration(
+        self.enhanced_ssm_config = self.setup_ssm_integration(
             scope=self,
             config=config.get("cognito", {}),
             resource_type="cognito",
@@ -60,7 +60,7 @@ class MockCognitoStack(Stack, StandardizedSsmMixin):
 
         # Auto-export resources including authorizer_id
         if self.enhanced_ssm_config.auto_export:
-            self.export_standardized_ssm_parameters(self.resource_values)
+            self.export_ssm_parameters(self.resource_values)
 
 
 class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):

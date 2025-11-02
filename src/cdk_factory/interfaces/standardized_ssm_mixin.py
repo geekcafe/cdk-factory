@@ -153,7 +153,7 @@ class StandardizedSsmMixin:
         normalized = normalized.strip('-')
         return normalized
 
-    def setup_standardized_ssm_integration(
+    def setup_ssm_integration(
         self,
         scope: Construct,
         config: Any,
@@ -202,7 +202,7 @@ class StandardizedSsmMixin:
         logger.info(f"SSM imports: {len(self.ssm_config.get('imports', {}))}")
         logger.info(f"SSM exports: {len(self.ssm_config.get('exports', {}))}")
     
-    def process_standardized_ssm_imports(self) -> None:
+    def process_ssm_imports(self) -> None:
         """
         Process SSM imports using standardized approach.
         
@@ -230,7 +230,7 @@ class StandardizedSsmMixin:
                 logger.error(error_msg)
                 raise ValueError(error_msg)
     
-    def export_standardized_ssm_parameters(self, resource_values: Dict[str, Any]) -> Dict[str, str]:
+    def export_ssm_parameters(self, resource_values: Dict[str, Any]) -> Dict[str, str]:
         """
         Export SSM parameters using standardized approach.
         
@@ -338,16 +338,18 @@ class StandardizedSsmMixin:
         # Prepare template variables
         variables = {}
         
-        if self.deployment:
+        # Always prioritize workload environment for consistency
+        if self.workload:
+            variables["ENVIRONMENT"] = self.workload.dictionary.get("environment", "test")
+            variables["WORKLOAD_NAME"] = self.workload.dictionary.get("name", "test-workload")
+            variables["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")
+        elif self.deployment:
+            # Fallback to deployment only if workload not available
             variables["ENVIRONMENT"] = self.deployment.environment
             variables["WORKLOAD_NAME"] = self.deployment.workload_name
             variables["AWS_REGION"] = getattr(self.deployment, 'region', None) or os.getenv("AWS_REGION", "us-east-1")
-        elif self.workload:
-            variables["ENVIRONMENT"] = getattr(self.workload, 'environment', 'test')
-            variables["WORKLOAD_NAME"] = getattr(self.workload, 'name', 'test-workload')
-            variables["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")
         else:
-            # Fallback to environment variables
+            # Final fallback to environment variables
             variables["ENVIRONMENT"] = os.getenv("ENVIRONMENT", "test")
             variables["WORKLOAD_NAME"] = os.getenv("WORKLOAD_NAME", "test-workload")
             variables["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")

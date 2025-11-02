@@ -173,9 +173,9 @@ class EnvironmentServices:
             environment = {}
         # more verbose
         environment["WORKLOAD_NAME"] = deployment.workload.get("name", "NA")
-        environment["ENVIRONMENT_NAME"] = deployment.environment
+        environment["ENVIRONMENT_NAME"] = deployment.workload.get("environment", deployment.environment)
         environment["DEPLOYMENT_NAME"] = deployment.name
-        environment["ENVIRONMENT"] = deployment.environment
+        environment["ENVIRONMENT"] = deployment.workload.get("environment", deployment.environment)
         environment["PIPELINE"] = deployment.pipeline.get("name", "NA")
         environment["ACCOUNT"] = deployment.account
         environment["DEPLOYMENT"] = deployment.name

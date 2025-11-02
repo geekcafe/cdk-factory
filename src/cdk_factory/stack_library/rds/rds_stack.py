@@ -70,7 +70,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         db_name = deployment.build_resource_name(self.rds_config.name)
 
         # Setup standardized SSM integration
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.rds_config,
             resource_type="rds",
@@ -80,7 +80,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
         
         # Process SSM imports
-        self.process_standardized_ssm_imports()
+        self.process_ssm_imports()
 
         # Get VPC and security groups
         self.security_groups = self._get_security_groups()

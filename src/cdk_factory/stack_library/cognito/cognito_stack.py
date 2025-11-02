@@ -564,7 +564,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # Setup enhanced SSM integration with proper resource type and name
         # Use "user-pool" as resource identifier for SSM paths, not the full pool name
 
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("cognito", {}),
             resource_type="cognito",
@@ -591,7 +591,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             # or retrieve via AWS Console/CLI if needed.
 
         # Use enhanced SSM parameter export
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
+        exported_params = self.export_ssm_parameters(resource_values)
 
         if exported_params:
             logger.info(f"Exported {len(exported_params)} Cognito parameters to SSM")

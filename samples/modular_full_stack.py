@@ -15,10 +15,10 @@ from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.workload.workload_factory import WorkloadConfig, WorkloadFactory
 
 # Import stack library modules
-from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
 from cdk_factory.stack_library.security_group.security_group_stack import SecurityGroupStack
 from cdk_factory.stack_library.rds.rds_stack import RdsStack
-from cdk_factory.stack_library.auto_scaling.auto_scaling_stack_standardized import AutoScalingStack
+from cdk_factory.stack_library.auto_scaling.auto_scaling_stack import AutoScalingStack
 from cdk_factory.stack_library.load_balancer.load_balancer_stack import LoadBalancerStack
 from cdk_factory.stack_library.route53.route53_stack import Route53Stack
 

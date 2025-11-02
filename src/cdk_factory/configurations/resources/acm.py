@@ -66,8 +66,10 @@ class AcmConfig:
         
         # Provide default SSM export path if not specified
         if not exports and self.__deployment:
+            workload_env = self.__deployment.workload.get("environment", self.__deployment.environment)
+            workload_name = self.__deployment.workload.get("name", self.__deployment.workload_name)
             exports = {
-                "certificate_arn": f"/{self.__deployment.environment}/{self.__deployment.workload_name}/certificate/arn"
+                "certificate_arn": f"/{workload_env}/{workload_name}/certificate/arn"
             }
         
         return exports

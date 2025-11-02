@@ -74,7 +74,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
         vpc_name = deployment.build_resource_name(self.vpc_config.name)
 
         # Setup standardized SSM integration
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.vpc_config,
             resource_type="vpc",
@@ -84,7 +84,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
         )
 
         # Process SSM imports using standardized method
-        self.process_standardized_ssm_imports()
+        self.process_ssm_imports()
 
         # Import any required resources from SSM
         imported_resources = self.get_all_ssm_imports()
@@ -245,12 +245,16 @@ class VpcStack(IStack, StandardizedSsmMixin):
             return
             
         # VPC outputs
+        # Use workload environment for consistency
+        workload_env = self.workload.dictionary.get("environment", self.deployment.environment)
+        workload_name = self.workload.dictionary.get("name", self.deployment.workload_name)
+        
         cdk.CfnOutput(
             self,
             f"{vpc_name}-VpcId",
             value=self.vpc.vpc_id,
             description=f"VPC ID for {vpc_name}",
-            export_name=f"{self.deployment.workload_name}-{self.deployment.environment}-vpc-id",
+            export_name=f"{workload_name}-{workload_env}-vpc-id",
         )
         
         # Subnet outputs
@@ -261,7 +265,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
                 f"{vpc_name}-PublicSubnetIds",
                 value=",".join(public_subnet_ids),
                 description=f"Public subnet IDs for {vpc_name}",
-                export_name=f"{self.deployment.workload_name}-{self.deployment.environment}-public-subnet-ids",
+                export_name=f"{workload_name}-{workload_env}-public-subnet-ids",
             )
         
         private_subnet_ids = [subnet.subnet_id for subnet in self.vpc.private_subnets]
@@ -271,7 +275,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
                 f"{vpc_name}-PrivateSubnetIds",
                 value=",".join(private_subnet_ids),
                 description=f"Private subnet IDs for {vpc_name}",
-                export_name=f"{self.deployment.workload_name}-{self.deployment.environment}-private-subnet-ids",
+                export_name=f"{workload_name}-{workload_env}-private-subnet-ids",
             )
         
         isolated_subnet_ids = [subnet.subnet_id for subnet in self.vpc.isolated_subnets]
@@ -281,7 +285,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
                 f"{vpc_name}-IsolatedSubnetIds",
                 value=",".join(isolated_subnet_ids),
                 description=f"Isolated subnet IDs for {vpc_name}",
-                export_name=f"{self.deployment.workload_name}-{self.deployment.environment}-isolated-subnet-ids",
+                export_name=f"{workload_name}-{workload_env}-isolated-subnet-ids",
             )
         
         # Route table outputs - simplified to avoid route table access issues
@@ -327,7 +331,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
                 f"{vpc_name}-InternetGatewayId",
                 value=self.vpc.internet_gateway_id,
                 description=f"Internet Gateway ID for {vpc_name}",
-                export_name=f"{self.deployment.workload_name}-{self.deployment.environment}-internet-gateway-id",
+                export_name=f"{workload_name}-{workload_env}-internet-gateway-id",
             )
         
         # NAT Gateway outputs - simplified to avoid None values
@@ -344,7 +348,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
                 f"{vpc_name}-NatGatewayIds",
                 value=",".join(nat_gateway_ids),
                 description=f"NAT Gateway IDs for {vpc_name}",
-                export_name=f"{self.deployment.workload_name}-{self.deployment.environment}-nat-gateway-ids",
+                export_name=f"{workload_name}-{workload_env}-nat-gateway-ids",
             )
 
     def _export_ssm_parameters(self) -> None:
@@ -399,7 +403,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             resource_values["internet_gateway_id"] = self.vpc.internet_gateway_id
 
         # Export using standardized SSM mixin
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
+        exported_params = self.export_ssm_parameters(resource_values)
         
         logger.info(f"Exported SSM parameters: {exported_params}")
 
@@ -431,7 +435,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
     # Backward compatibility methods
     def auto_export_resources(self, resource_values: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, str]:
         """Backward compatibility method for existing modules."""
-        return self.export_standardized_ssm_parameters(resource_values)
+        return self.export_ssm_parameters(resource_values)
 
     def auto_import_resources(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """Backward compatibility method for existing modules."""

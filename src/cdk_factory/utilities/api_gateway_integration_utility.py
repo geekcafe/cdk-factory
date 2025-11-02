@@ -555,7 +555,7 @@ class ApiGatewayIntegrationUtility:
                             api_gateway_config["ssm"]["imports"] = {}
                         api_gateway_config["ssm"]["imports"]["user_pool_arn"] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/arn"
                     
-                    ssm_mixin.setup_standardized_ssm_integration(
+                    ssm_mixin.setup_ssm_integration(
                         scope=self.scope,
                         config=api_gateway_config,
                         resource_type="cognito",
@@ -882,7 +882,7 @@ class ApiGatewayIntegrationUtility:
 
                 # Setup enhanced SSM integration for auto-import
                 # Use consistent resource name for cross-stack compatibility
-                ssm_mixin.setup_standardized_ssm_integration(
+                ssm_mixin.setup_ssm_integration(
                     scope=self.scope,
                     config=api_gateway_config,
                     resource_type="api-gateway",

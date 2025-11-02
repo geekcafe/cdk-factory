@@ -152,7 +152,7 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         # Setup enhanced SSM integration with proper resource type and name
         # Use "app-table" as resource identifier for SSM paths, not the full table name
 
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("dynamodb", {}),
             resource_type="dynamodb",
@@ -178,7 +178,7 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         resource_values = {k: v for k, v in resource_values.items() if v is not None}
 
         # Use enhanced SSM parameter export
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
+        exported_params = self.export_ssm_parameters(resource_values)
 
         if exported_params:
             logger.info(f"Exported {len(exported_params)} DynamoDB parameters to SSM")

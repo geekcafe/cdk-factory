@@ -744,7 +744,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # Setup enhanced SSM integration with proper resource type and name
         api_name = self.api_config.name or "api-gateway"
 
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary.get("api_gateway", {}),
             resource_type="api-gateway",
@@ -775,7 +775,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             resource_values["authorizer_id"] = authorizer.authorizer_id
 
         # Use enhanced SSM parameter export
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
+        exported_params = self.export_ssm_parameters(resource_values)
 
         if exported_params:
             logger.info(

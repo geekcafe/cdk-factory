@@ -26,7 +26,7 @@ class NetworkedStackMixin(StandardizedSsmMixin, VPCProviderMixin):
                 # SSM initialization is handled automatically by StandardizedSsmMixin.__init__
                 
             def _build(self, stack_config, deployment, workload):
-                self.setup_standardized_ssm_integration(scope=self, config=stack_config.dictionary, resource_type="my-resource", resource_name="my-name")
+                self.setup_ssm_integration(scope=self, config=stack_config.dictionary, resource_type="my-resource", resource_name="my-name")
                 self.vpc = self.resolve_vpc(stack_config, deployment, workload)
     """
     

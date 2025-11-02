@@ -33,7 +33,7 @@ class MockCognitoStack(Stack, StandardizedSsmMixin):
 
         # Auto-export resources
         if self.enhanced_ssm_config.auto_export:
-            self.export_standardized_ssm_parameters(self.resource_values)
+            self.export_ssm_parameters(self.resource_values)
 
 
 class MockApiGatewayStack(Stack, StandardizedSsmMixin):

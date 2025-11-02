@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 
 @register_stack("ecs_cluster_stack")
+@register_stack("ecs_service_stack")
+@register_stack("fargate_service_stack")
 class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     A dedicated stack for creating and managing ECS clusters with standardized SSM integration.
@@ -96,7 +98,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         logger.info(f"Creating ECS Cluster stack: {cluster_name}")
         
         # Setup standardized SSM integration
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.ecs_config,
             resource_type="ecs_cluster",
@@ -106,7 +108,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
 
         # Process SSM imports using standardized method
-        self.process_standardized_ssm_imports()
+        self.process_ssm_imports()
         
         # Create the ECS cluster
         self._create_ecs_cluster()
@@ -302,33 +304,11 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             logger.info(f"  {key}: {value}")
             
         try:
-            exported_params = self.export_standardized_ssm_parameters(resource_values)
+            exported_params = self.export_ssm_parameters(resource_values)
             logger.info(f"Successfully exported SSM parameters: {exported_params}")
         except Exception as e:
             logger.error(f"Failed to export SSM parameters: {str(e)}")
             raise
 
-    # Backward compatibility methods
-    def process_ssm_imports(self, config: Any, deployment: DeploymentConfig, resource_type: str = "resource") -> None:
-        """Backward compatibility method for existing modules."""
-        # Extract SSM configuration from old format
-        if hasattr(config, 'ssm_imports'):
-            # Convert old ssm_imports format to new format
-            old_imports = config.ssm_imports
-            new_imports = {}
-            
-            for key, value in old_imports.items():
-                # Resolve template variables using old method
-                if isinstance(value, str) and not value.startswith('/'):
-                    value = f"/{deployment.environment}/{deployment.workload_name}/{value}"
-                new_imports[key] = value
-            
-            # Update SSM config
-            self.ssm_config = {"imports": new_imports}
-        
-        # Process imports using standardized method
-        self.process_standardized_ssm_imports()
-
-
-# Backward compatibility alias
+    # Backward compatibility alias
 EcsClusterStackStandardized = EcsClusterStack

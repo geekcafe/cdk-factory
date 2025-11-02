@@ -13,7 +13,7 @@ Tests the VPC module with standardized SSM integration to ensure:
 import pytest
 from typing import Dict, Any
 
-from cdk_factory.stack_library.vpc.vpc_stack_standardized import VpcStack
+from cdk_factory.stack_library.vpc.vpc_stack import VpcStack
 from tests.framework.ssm_integration_tester import SSMIntegrationTester
 
 

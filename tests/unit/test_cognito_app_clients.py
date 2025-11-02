@@ -391,7 +391,7 @@ class TestCognitoAppClients:
         )
 
         # Note: App client ID export is done through enhanced SSM mixin
-        # which uses export_standardized_ssm_parameters, so we check that the client was created
+        # which uses export_ssm_parameters, so we check that the client was created
         template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
 
     def test_app_client_secret_ssm_arn_export(

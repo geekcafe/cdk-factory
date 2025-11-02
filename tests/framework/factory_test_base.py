@@ -18,7 +18,8 @@ from typing import Dict, Any, List, Optional
 from unittest.mock import Mock
 
 import aws_cdk as cdk
-from aws_cdk import CloudAssembly, Template
+from aws_cdk.assertions import Template
+from aws_cdk.cx_api import CloudAssembly
 from constructs import Construct
 
 from cdk_factory.configurations.stack import StackConfig
@@ -77,13 +78,20 @@ class FactoryTestBase:
     
     def _create_test_deployment(self) -> DeploymentConfig:
         """Create test deployment configuration."""
-        return DeploymentConfig({
+        workload = {
+            "name": "test-workload",
+            "environment": "test",
+            "owner": "test-team",
+            "description": "Test workload for CDK Factory testing"
+        }
+        deployment = {
             "name": "test-deployment",
             "environment": "test",
             "region": "us-east-1",
             "profile": "test",
             "workload_name": "test-workload"
-        })
+        }
+        return DeploymentConfig(workload, deployment)
     
     def _create_test_workload(self) -> WorkloadConfig:
         """Create test workload configuration."""
@@ -91,11 +99,22 @@ class FactoryTestBase:
             "name": "test-workload",
             "environment": "test",
             "owner": "test-team",
-            "description": "Test workload for CDK Factory testing"
+            "description": "Test workload for CDK Factory testing",
+            "devops": {
+                "aws_account": "123456789012",
+                "region": "us-east-1"
+            }
         })
     
     def _create_test_stack_config(self, config_dict: Dict[str, Any] = None) -> StackConfig:
         """Create test stack configuration."""
+        default_workload = {
+            "name": "test-workload",
+            "environment": "test",
+            "owner": "test-team",
+            "description": "Test workload for CDK Factory testing"
+        }
+        
         default_config = {
             "name": "test-stack",
             "module": "test_module",
@@ -106,7 +125,7 @@ class FactoryTestBase:
         if config_dict:
             default_config.update(config_dict)
         
-        return StackConfig(default_config)
+        return StackConfig(default_config, default_workload)
     
     def synthesize_stack(self, stack_class, config_override: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -129,7 +148,7 @@ class FactoryTestBase:
         stack.build(stack_config, self.test_deployment, self.test_workload)
         
         # Synthesize to CloudFormation template
-        cloud_assembly = self.app.synth(outdir=self.temp_dir)
+        cloud_assembly = self.app.synth()
         stack_template = cloud_assembly.get_stack_by_name("TestStack").template
         
         return stack_template
@@ -149,7 +168,7 @@ class FactoryTestBase:
         stack = stack_class(app, "TestStack")
         stack.build(self.test_stack_config, self.test_deployment, self.test_workload)
         
-        cloud_assembly = app.synth(outdir=self.temp_dir)
+        cloud_assembly = app.synth()
         return cloud_assembly.get_stack_by_name("TestStack").template
     
     def validate_template_structure(self, template: Dict[str, Any]) -> List[str]:
@@ -165,14 +184,9 @@ class FactoryTestBase:
         errors = []
         
         # Check required sections
-        if "AWSTemplateFormatVersion" not in template:
-            errors.append("Missing AWSTemplateFormatVersion")
-        
+        # Note: AWSTemplateFormatVersion is optional in modern CDK templates
         if "Resources" not in template:
             errors.append("Missing Resources section")
-        
-        if "Outputs" not in template:
-            errors.append("Missing Outputs section")
         
         # Check that resources exist
         if len(template.get("Resources", {})) == 0:

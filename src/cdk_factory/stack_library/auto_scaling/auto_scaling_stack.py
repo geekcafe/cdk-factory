@@ -92,7 +92,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         asg_name = deployment.build_resource_name(self.asg_config.name)
 
         # Setup standardized SSM integration
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.asg_config,
             resource_type="auto_scaling",
@@ -102,7 +102,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
 
         # Process SSM imports using standardized method
-        self.process_standardized_ssm_imports()
+        self.process_ssm_imports()
 
         # Get security groups using standardized approach
         self.security_groups = self._get_security_groups()
@@ -519,7 +519,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         }
 
         # Export using standardized SSM mixin
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
+        exported_params = self.export_ssm_parameters(resource_values)
         
         logger.info(f"Exported SSM parameters: {exported_params}")
 

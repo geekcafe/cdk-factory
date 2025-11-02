@@ -13,16 +13,20 @@ Tests the ECS module with standardized SSM integration to ensure:
 import pytest
 from typing import Dict, Any
 
-from cdk_factory.stack_library.ecs.ecs_cluster_stack_standardized import EcsClusterStack
+from cdk_factory.stack_library.ecs.ecs_cluster_stack import EcsClusterStack
 from tests.framework.ssm_integration_tester import SSMIntegrationTester
 
 
 class TestECSStandardized(SSMIntegrationTester):
     
+    def setup_method(self):
+        """Setup test environment."""
+        self.setUp()
+    
     def test_ecs_complete_ssm_integration(self):
         """Test complete SSM integration for ECS module"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "test-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster",
@@ -30,13 +34,13 @@ class TestECSStandardized(SSMIntegrationTester):
                 "create_instance_role": True,
                 "ssm": {
                     "imports": {
-                        "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
+                        "vpc_id": "/test/environment/vpc/id"
                     },
                     "exports": {
-                        "cluster_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/name",
-                        "cluster_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/arn",
-                        "cluster_security_group_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/cluster/security-group-id",
-                        "instance_profile_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ecs/instance-profile/arn"
+                        "cluster_name": "/test/environment/ecs/cluster/name",
+                        "cluster_arn": "/test/environment/ecs/cluster/arn",
+                        "cluster_security_group_id": "/test/environment/ecs/cluster/security-group-id",
+                        "instance_profile_arn": "/test/environment/ecs/instance-profile/arn"
                     }
                 }
             }

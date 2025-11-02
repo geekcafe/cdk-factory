@@ -78,7 +78,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         lb_name = deployment.build_resource_name(self.lb_config.name)
 
         # Setup standardized SSM integration
-        self.setup_standardized_ssm_integration(
+        self.setup_ssm_integration(
             scope=self,
             config=self.lb_config,
             resource_type="load_balancer",
@@ -88,7 +88,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
         
         # Process SSM imports
-        self.process_standardized_ssm_imports()
+        self.process_ssm_imports()
 
         self._prep_dns()
 

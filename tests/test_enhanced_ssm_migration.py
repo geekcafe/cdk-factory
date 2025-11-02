@@ -143,7 +143,7 @@ def test_backward_compatibility():
     
     print("  ✓ Backward compatibility tests passed")
 
-def test_standardized_ssm_mixin():
+def test_ssm_mixin():
     """Test the StandardizedSsmMixin functionality"""
     print("Testing StandardizedSsmMixin...")
     
@@ -253,7 +253,7 @@ def main():
         test_vpc_config_migration()
         test_ecr_config_migration()
         test_backward_compatibility()
-        test_standardized_ssm_mixin()
+        test_ssm_mixin()
         test_environment_variable_support()
         test_custom_patterns()
         

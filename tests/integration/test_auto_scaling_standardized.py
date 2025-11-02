@@ -12,7 +12,7 @@ Tests the Auto Scaling module with standardized SSM integration to ensure:
 import pytest
 from typing import Dict, Any
 
-from cdk_factory.stack_library.auto_scaling.auto_scaling_stack_standardized import AutoScalingStack
+from cdk_factory.stack_library.auto_scaling.auto_scaling_stack import AutoScalingStack
 from tests.framework.ssm_integration_tester import SSMIntegrationTester
 
 
