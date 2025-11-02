@@ -225,7 +225,7 @@ class StaticWebSiteStack(IStack):
             bucket: The S3 bucket
             cloudfront_distribution: The CloudFront distribution construct
         """
-        ssm_exports = stack_config.dictionary.get("ssm_exports", {})
+        ssm_exports = stack_config.dictionary.get("ssm", {}).get("exports", {})
         
         if not ssm_exports:
             logger.debug("No SSM exports configured for this stack")
