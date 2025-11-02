@@ -77,8 +77,18 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
         lb_name = deployment.build_resource_name(self.lb_config.name)
 
-        # Process SSM imports first
-        self._process_ssm_imports()
+        # Setup standardized SSM integration
+        self.setup_standardized_ssm_integration(
+            scope=self,
+            config=self.lb_config,
+            resource_type="load_balancer",
+            resource_name=self.lb_config.name,
+            deployment=deployment,
+            workload=workload
+        )
+        
+        # Process SSM imports
+        self.process_standardized_ssm_imports()
 
         self._prep_dns()
 
@@ -375,6 +385,11 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 if protocol.upper() == "HTTPS":
                     certificates = self._get_certificates()
 
+                if not certificates and protocol.upper() == "HTTPS":
+                    message = "No certificates found for HTTPS listener. Please attach a certificate or create a certificate stack."
+                    logger.warning(message)
+                    raise ValueError(message)
+
                 listener = elbv2.ApplicationListener(
                     self,
                     listener_id,
@@ -427,8 +442,9 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         certificates = []
         
         # Check SSM imported values first (takes priority)
-        if "certificate_arns" in self.ssm_imported_values:
-            cert_arns = self.ssm_imported_values["certificate_arns"]
+        ssm_imports = self.get_all_ssm_imports()
+        if "certificate_arns" in ssm_imports:
+            cert_arns = ssm_imports["certificate_arns"]
             if not isinstance(cert_arns, list):
                 cert_arns = [cert_arns]
             for cert_arn in cert_arns:
