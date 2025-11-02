@@ -54,6 +54,11 @@ class StackStandards:
         git_hash = GitUtilities.get_git_commit_hash()
         if git_hash:
             aws_cdk.Tags.of(scope).add("ApplicationGitHash", git_hash)
+        
+        # Add CDK Factory version for tracking and debugging
+        from cdk_factory.version import __version__
+        aws_cdk.Tags.of(scope).add("CdkFactoryVersion", __version__)
+        
         aws_cdk.Tags.of(scope).add(
             "DeploymentDateUTC", str(datetime.datetime.now(datetime.UTC))
         )
