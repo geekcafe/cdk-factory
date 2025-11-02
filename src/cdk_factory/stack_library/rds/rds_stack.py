@@ -69,8 +69,18 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.rds_config = RdsConfig(stack_config.dictionary.get("rds", {}), deployment)
         db_name = deployment.build_resource_name(self.rds_config.name)
 
-        # Process SSM imports first
-        self._process_ssm_imports()
+        # Setup standardized SSM integration
+        self.setup_standardized_ssm_integration(
+            scope=self,
+            config=self.rds_config,
+            resource_type="rds",
+            resource_name=self.rds_config.name,
+            deployment=deployment,
+            workload=workload
+        )
+        
+        # Process SSM imports
+        self.process_standardized_ssm_imports()
 
         # Get VPC and security groups
         self.security_groups = self._get_security_groups()
@@ -87,40 +97,13 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Export to SSM Parameter Store
         self._export_ssm_parameters(db_name)
 
-    def _process_ssm_imports(self) -> None:
-        """Process SSM imports from configuration"""
-        ssm_imports = self.rds_config.ssm_imports
-        
-        if not ssm_imports:
-            logger.debug("No SSM imports configured for RDS")
-            return
-        
-        logger.info(f"Processing {len(ssm_imports)} SSM imports for RDS")
-        
-        for param_key, param_path in ssm_imports.items():
-            try:
-                if not param_path.startswith('/'):
-                    param_path = f"/{param_path}"
-                
-                construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
-                param = ssm.StringParameter.from_string_parameter_name(
-                    self, construct_id, param_path
-                )
-                
-                self.ssm_imported_values[param_key] = param.string_value
-                logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
-                
-            except Exception as e:
-                logger.error(f"Failed to import SSM parameter {param_key} from {param_path}: {e}")
-                raise
-
     @property
     def vpc(self) -> ec2.IVpc:
         """Get the VPC for the RDS instance using centralized VPC provider mixin."""
-        if self._vpc:
+        if hasattr(self, '_vpc') and self._vpc:
             return self._vpc
         
-        # Use the centralized VPC resolution from VPCProviderMixin
+        # Resolve VPC using the centralized VPC provider mixin
         self._vpc = self.resolve_vpc(
             config=self.rds_config,
             deployment=self.deployment,
@@ -133,8 +116,9 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         security_groups = []
         
         # Check SSM imports first for security group ID
-        if "security_group_rds_id" in self.ssm_imported_values:
-            sg_id = self.ssm_imported_values["security_group_rds_id"]
+        ssm_imports = self.get_all_ssm_imports()
+        if "security_group_rds_id" in ssm_imports:
+            sg_id = ssm_imports["security_group_rds_id"]
             security_groups.append(
                 ec2.SecurityGroup.from_security_group_id(
                     self, "RDSSecurityGroup", sg_id
@@ -151,27 +135,60 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         
         return security_groups
 
+    def _get_subnet_selection(self) -> ec2.SubnetSelection:
+        """
+        Get subnet selection based on available subnet types in the VPC.
+        
+        RDS instances require private subnets for security, but we'll fall back
+        to available subnets if the preferred types aren't available.
+        """
+        vpc = self.vpc
+        
+        # Check for isolated subnets first (most secure for RDS)
+        if vpc.isolated_subnets:
+            logger.info("Using isolated subnets for RDS instance")
+            return ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED)
+        
+        # Check for private subnets next
+        elif vpc.private_subnets:
+            logger.info("Using private subnets for RDS instance")
+            return ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS)
+        
+        # Fall back to public subnets (not recommended for production)
+        elif vpc.public_subnets:
+            logger.warning("Using public subnets for RDS instance - not recommended for production")
+            return ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC)
+        
+        else:
+            raise ValueError("No subnets available in VPC for RDS instance")
+
     def _create_db_instance(self, db_name: str) -> rds.DatabaseInstance:
         """Create a new RDS instance"""
         # Configure subnet group
         # If we have subnet IDs from SSM, create a DB subnet group explicitly
         db_subnet_group = None
-        if "subnet_ids" in self.ssm_imported_values:
-            subnet_ids_str = self.ssm_imported_values["subnet_ids"]
-            # Split the comma-separated token into a list
-            subnet_ids_list = cdk.Fn.split(",", subnet_ids_str)
-            
-            # Create DB subnet group with the token-based subnet list
-            db_subnet_group = rds.CfnDBSubnetGroup(
-                self,
-                "DBSubnetGroup",
-                db_subnet_group_description=f"Subnet group for {db_name}",
-                subnet_ids=subnet_ids_list,
-                db_subnet_group_name=f"{db_name}-subnet-group"
-            )
+        subnet_ids = self.get_subnet_ids(self.rds_config)
+        
+        if subnet_ids:
+            # For CloudFormation token resolution, we need to get the raw SSM value
+            # Use the standardized SSM imports
+            ssm_imports = self.get_all_ssm_imports()
+            if "subnet_ids" in ssm_imports:
+                subnet_ids_str = ssm_imports["subnet_ids"]
+                # Split the comma-separated token into a list for CloudFormation
+                subnet_ids_list = cdk.Fn.split(",", subnet_ids_str)
+                
+                # Create DB subnet group with the token-based subnet list
+                db_subnet_group = rds.CfnDBSubnetGroup(
+                    self,
+                    "DBSubnetGroup",
+                    db_subnet_group_description=f"Subnet group for {db_name}",
+                    subnet_ids=subnet_ids_list,
+                    db_subnet_group_name=f"{db_name}-subnet-group"
+                )
         
         # Configure subnet selection for VPC (when not using SSM imports)
-        subnets = None if db_subnet_group else ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED)
+        subnets = None if db_subnet_group else self._get_subnet_selection()
 
         # Configure engine
         engine_version = None

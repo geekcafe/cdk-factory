@@ -211,33 +211,12 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         Get subnet IDs using standardized SSM approach.
         """
         # Primary method: Use standardized SSM imports
-        ssm_imports = self._get_ssm_imports()
+        # ssm_imports = self._get_ssm_imports()
+
+        subnet_ids = self.get_subnet_ids(self.asg_config)
         
-        if "subnet_ids" in ssm_imports:
-            subnet_ids = ssm_imports["subnet_ids"]
-            
-            # Handle comma-separated string or list
-            if isinstance(subnet_ids, str):
-                # Split comma-separated string
-                parsed_ids = [sid.strip() for sid in subnet_ids.split(',') if sid.strip()]
-                return parsed_ids
-            elif isinstance(subnet_ids, list):
-                return subnet_ids
-            else:
-                logger.warning(f"Unexpected subnet_ids type: {type(subnet_ids)}")
-                return []
-        
-        # Fallback: Use VPC provider mixin (backward compatibility)
-        elif hasattr(self, '_get_subnets_from_provider'):
-            return self._get_subnets_from_provider()
-        
-        # Final fallback: Direct configuration
-        elif hasattr(self.asg_config, 'subnet_ids') and self.asg_config.subnet_ids:
-            return self.asg_config.subnet_ids
-        
-        else:
-            logger.warning("No subnet IDs found, using default behavior")
-            return []
+        return subnet_ids
+       
 
     def _create_instance_role(self, asg_name: str) -> iam.Role:
         """Create IAM role for EC2 instances"""

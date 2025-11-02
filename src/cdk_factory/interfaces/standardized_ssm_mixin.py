@@ -24,6 +24,8 @@ import os
 import re
 from typing import Dict, Any, Optional, List, Union
 from aws_cdk import aws_ssm as ssm
+from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ecs as ecs
 from constructs import Construct
 from aws_lambda_powertools import Logger
 from cdk_factory.configurations.deployment import DeploymentConfig
@@ -529,6 +531,44 @@ class StandardizedSsmMixin:
         return self._ssm_exported_values.copy()
     
     
+    def get_subnet_ids(self, config) -> List[str]:
+        """
+        Helper function to parse subnet IDs from SSM imports.
+        
+        This common pattern handles:
+        1. Comma-separated subnet ID strings from SSM
+        2. List of subnet IDs from SSM
+        3. Fallback to config attributes
+        
+        Args:
+            config: Configuration object that might have subnet_ids attribute
+            
+        Returns:
+            List of subnet IDs (empty list if not found or invalid format)
+        """
+        # Use the standardized SSM imports
+        ssm_imports = self.get_all_ssm_imports()
+        if "subnet_ids" in ssm_imports:
+            subnet_ids = ssm_imports["subnet_ids"]
+            
+            # Handle comma-separated string or list
+            if isinstance(subnet_ids, str):
+                # Split comma-separated string
+                parsed_ids = [sid.strip() for sid in subnet_ids.split(',') if sid.strip()]
+                return parsed_ids
+            elif isinstance(subnet_ids, list):
+                return subnet_ids
+            else:
+                logger.warning(f"Unexpected subnet_ids type: {type(subnet_ids)}")
+                return []
+        
+        # Fallback: Check config attributes
+        elif hasattr(config, 'subnet_ids') and config.subnet_ids:
+            return config.subnet_ids
+        
+        else:
+            logger.warning("No subnet IDs found, using default behavior")
+            return []
 
 class ValidationResult:
     """Result of configuration validation."""
@@ -610,3 +650,6 @@ class SsmStandardValidator:
                 errors.append(f"{context}: SSM path should use template variables: {path}")
         
         return errors
+    
+        
+    

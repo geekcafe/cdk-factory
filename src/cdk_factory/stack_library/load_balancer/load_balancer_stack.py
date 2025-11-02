@@ -156,16 +156,22 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # If subnets is None, check if we have SSM-imported subnet_ids as a token
         # We need to use Fn.Split to convert the comma-separated string to an array
-        if subnets is None and "subnet_ids" in self.ssm_imported_values:
-            subnet_ids_value = self.ssm_imported_values["subnet_ids"]
-            if cdk.Token.is_unresolved(subnet_ids_value):
-                logger.info("Using Fn.Split to convert comma-separated subnet IDs token to array")
-                # Use CloudFormation escape hatch to set Subnets property with Fn.Split
-                cfn_lb = load_balancer.node.default_child
-                cfn_lb.add_property_override(
-                    "Subnets",
-                    cdk.Fn.split(",", subnet_ids_value)
-                )
+        if subnets is None:
+            subnet_ids = self.get_subnet_ids(self.lb_config)
+            if subnet_ids:
+                # For CloudFormation token resolution, we still need Fn.split
+                # but we use the helper to determine if subnet IDs are available
+                ssm_imports = self.get_all_ssm_imports()
+                if "subnet_ids" in ssm_imports:
+                    subnet_ids_value = ssm_imports["subnet_ids"]
+                    if cdk.Token.is_unresolved(subnet_ids_value):
+                        logger.info("Using Fn.Split to convert comma-separated subnet IDs token to array")
+                        # Use CloudFormation escape hatch to set Subnets property with Fn.Split
+                        cfn_lb = load_balancer.node.default_child
+                        cfn_lb.add_property_override(
+                            "Subnets",
+                            cdk.Fn.split(",", subnet_ids_value)
+                        )
 
         # Add tags
         for key, value in self.lb_config.tags.items():
@@ -261,9 +267,16 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """Get subnets for the Load Balancer"""
         subnets = []
         
-        # Check SSM imported values first
-        if "subnet_ids" in self.ssm_imported_values:
-            subnet_ids_value = self.ssm_imported_values["subnet_ids"]
+        # Use the standardized helper function to get subnet IDs
+        subnet_ids = self.get_subnet_ids(self.lb_config)
+        
+        if not subnet_ids:
+            return None
+        
+        # Check if we have unresolved tokens from SSM
+        ssm_imports = self.get_all_ssm_imports()
+        if "subnet_ids" in ssm_imports:
+            subnet_ids_value = ssm_imports["subnet_ids"]
             
             # Check if this is a CDK token (unresolved SSM parameter)
             if cdk.Token.is_unresolved(subnet_ids_value):
@@ -272,19 +285,8 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 # The ALB construct will handle the token-based subnet IDs
                 logger.info("Subnet IDs are unresolved tokens, will use vpc_subnets with token resolution")
                 return None
-            elif isinstance(subnet_ids_value, str):
-                # If it's a resolved string, split it
-                subnet_ids = [s.strip() for s in subnet_ids_value.split(',')]
-            elif isinstance(subnet_ids_value, list):
-                subnet_ids = subnet_ids_value
-            else:
-                subnet_ids = [subnet_ids_value]
-        else:
-            subnet_ids = self.lb_config.subnets
-        
-        if not subnet_ids:
-            return None
             
+        # Convert subnet IDs to subnet objects
         for idx, subnet_id in enumerate(subnet_ids):
             subnets.append(
                 ec2.Subnet.from_subnet_id(self, f"Subnet-{idx}", subnet_id)
