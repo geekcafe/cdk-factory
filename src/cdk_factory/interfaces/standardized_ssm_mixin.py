@@ -400,7 +400,7 @@ class StandardizedSsmMixin:
             resource_type = segments[3]
             
             # Check for valid environment patterns
-            if environment not in ["dev", "staging", "prod", "test"]:
+            if environment not in ["dev", "staging", "prod", "test", "alpha", "beta", "sandbox"]:
                 logger.warning(f"{context}: Unusual environment segment: {environment}")
             
             # Check for valid resource type patterns
