@@ -138,6 +138,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             "enable_dns_support": self.vpc_config.enable_dns_support,
             "max_azs": self.vpc_config.max_azs if not availability_zones else None,
             "availability_zones": availability_zones,  # Use explicit AZs when available
+            "restrict_default_security_group": self.vpc_config.get("restrict_default_security_group", False),
             "gateway_endpoints": (
                 {
                     "S3": ec2.GatewayVpcEndpointOptions(
@@ -151,6 +152,10 @@ class VpcStack(IStack, StandardizedSsmMixin):
         
         # Create the VPC
         vpc = ec2.Vpc(self, vpc_name, **vpc_props)
+
+        # Add IAM permissions for default security group restriction if enabled
+        if self.vpc_config.get("restrict_default_security_group", False):
+            self._add_default_sg_restriction_permissions(vpc)
 
         # Add interface endpoints if specified
         if self.vpc_config.enable_interface_endpoints:
@@ -391,6 +396,31 @@ class VpcStack(IStack, StandardizedSsmMixin):
         exported_params = self.export_standardized_ssm_parameters(resource_values)
         
         logger.info(f"Exported SSM parameters: {exported_params}")
+
+    def _add_default_sg_restriction_permissions(self, vpc: ec2.Vpc) -> None:
+        """
+        Add IAM permissions required for default security group restriction.
+        
+        CDK creates a custom resource that needs ec2:AuthorizeSecurityGroupIngress
+        permission to restrict the default security group.
+        """
+        from aws_cdk import aws_iam as iam
+        
+        # Find the custom resource role that CDK creates for default SG restriction
+        # The role follows a naming pattern: {VpcName}-CustomVpcRestrictDefaultSGCustomResource*
+        
+        # Grant the required permissions to all roles in this stack that might need it
+        # This is a broad approach since we can't easily predict the exact role name
+        for child in self.node.children:
+            if hasattr(child, 'role') and hasattr(child.role, 'add_to_policy'):
+                child.role.add_to_policy(iam.PolicyStatement(
+                    actions=[
+                        "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:RevokeSecurityGroupIngress", 
+                        "ec2:UpdateSecurityGroupRuleDescriptionsIngress"
+                    ],
+                    resources=[vpc.vpc_default_security_group.security_group_arn]
+                ))
 
     # Backward compatibility methods
     def auto_export_resources(self, resource_values: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, str]:
