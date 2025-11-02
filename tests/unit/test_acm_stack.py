@@ -125,8 +125,10 @@ class TestAcmStack(unittest.TestCase):
                     "name": "test-cert",
                     "domain_name": "example.com",
                     "hosted_zone_id": "Z1234567890ABC",
-                    "ssm_exports": {
-                        "certificate_arn": "/test/app/certificate/arn"
+                    "ssm": {
+                        "exports": {
+                            "certificate_arn": "/test/app/certificate/arn"
+                        }
                     },
                 }
             },

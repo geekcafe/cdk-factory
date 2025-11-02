@@ -119,10 +119,10 @@
             },
             "ssm": {
               "imports": {
-                "vpc_id": "dev/abc-workload/vpc/id"
+                "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id"
               },
               "exports": {
-                "security_group_id": "dev/abc-workload/sg/<type>/id"
+                "security_group_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/sg/<type>/id"
               }
             }
           }

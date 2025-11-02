@@ -203,8 +203,10 @@ class TestAcmConfig(unittest.TestCase):
         config = AcmConfig(
             {
                 "domain_name": "example.com",
-                "ssm_exports": {
-                    "certificate_arn": "/custom/path/cert/arn"
+                "ssm": {
+                    "exports": {
+                        "certificate_arn": "/custom/path/cert/arn"
+                    }
                 },
             },
             self.deployment
@@ -283,8 +285,10 @@ class TestAcmConfig(unittest.TestCase):
             "hosted_zone_name": "example.com",
             "validation_method": "DNS",
             "certificate_transparency_logging_preference": "ENABLED",
-            "ssm_exports": {
-                "certificate_arn": "/prod/app/cert/arn"
+            "ssm": {
+                "exports": {
+                    "certificate_arn": "/prod/app/cert/arn"
+                }
             },
             "tags": {
                 "Environment": "production",

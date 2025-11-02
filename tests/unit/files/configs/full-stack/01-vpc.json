@@ -112,12 +112,14 @@
             "Application": "abc-workload",
             "Environment": "dev"
           },
-          "ssm_exports": {
-            "vpc_id": "dev/abc-workload/vpc/id",
-            "vpc_cidr": "dev/abc-workload/vpc/cidr",
-            "public_subnet_ids": "dev/abc-workload/vpc/public-subnet-ids",
-            "private_subnet_ids": "dev/abc-workload/vpc/private-subnet-ids",
-            "isolated_subnet_ids": "dev/abc-workload/vpc/isolated-subnet-ids"
+          "ssm": {
+            "exports": {
+              "vpc_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/id",
+              "vpc_cidr": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/cidr",
+              "public_subnet_ids": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/public-subnet-ids",
+              "private_subnet_ids": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/private-subnet-ids",
+              "isolated_subnet_ids": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/vpc/isolated-subnet-ids"
+            }
           }
         }
       }

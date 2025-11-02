@@ -181,11 +181,13 @@
                 "www.tt.dev.geekcafe.com"
               ]
             },
-            "ssm_exports": {
-              "alb_arn": "dev/abc-workload/alb/arn",
-              "alb_dns_name": "dev/abc-workload/alb/dns-name",
-              "alb_zone_id": "dev/abc-workload/alb/zone-id",
-              "target_group_acme-inc-dev-tg_arn": "dev/abc-workload/tg/arn"
+            "ssm": {
+              "exports": {
+                "alb_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/alb/arn",
+                "alb_dns_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/alb/dns-name",
+                "alb_zone_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/alb/zone-id",
+                "target_group_acme-inc-dev-tg_arn": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/tg/arn"
+              }
             }
           }
         },
