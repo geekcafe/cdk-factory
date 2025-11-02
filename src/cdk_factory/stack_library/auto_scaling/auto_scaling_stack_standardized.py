@@ -212,8 +212,20 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """
         # Primary method: Use standardized SSM imports
         ssm_imports = self._get_ssm_imports()
+        
         if "subnet_ids" in ssm_imports:
-            return ssm_imports["subnet_ids"]
+            subnet_ids = ssm_imports["subnet_ids"]
+            
+            # Handle comma-separated string or list
+            if isinstance(subnet_ids, str):
+                # Split comma-separated string
+                parsed_ids = [sid.strip() for sid in subnet_ids.split(',') if sid.strip()]
+                return parsed_ids
+            elif isinstance(subnet_ids, list):
+                return subnet_ids
+            else:
+                logger.warning(f"Unexpected subnet_ids type: {type(subnet_ids)}")
+                return []
         
         # Fallback: Use VPC provider mixin (backward compatibility)
         elif hasattr(self, '_get_subnets_from_provider'):
@@ -497,18 +509,21 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Get the underlying CloudFormation resource to add update policy
         cfn_asg = self.auto_scaling_group.node.default_child
         
-        # Get existing update policy or create new one
-        existing_policy = getattr(cfn_asg, 'update_policy', {})
+        # Get CDK's default policy first (if any)
+        default_policy = getattr(cfn_asg, 'update_policy', {})
         
-        # Merge rolling update policy with existing policy
-        existing_policy["AutoScalingRollingUpdate"] = {
-            "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
-            "MaxBatchSize": update_policy.get("max_batch_size", 1),
-            "PauseTime": f"PT{update_policy.get('pause_time', 300)}S"
+        # Merge with defaults, then use the robust add_override method
+        merged_policy = {
+            **default_policy,  # Preserve CDK defaults
+            "AutoScalingRollingUpdate": {
+                "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
+                "MaxBatchSize": update_policy.get("max_batch_size", 1),
+                "PauseTime": f"PT{update_policy.get('pause_time', 300)}S"
+            }
         }
         
-        # Set the merged policy
-        cfn_asg.update_policy = existing_policy
+        # Use the robust CDK-documented approach
+        cfn_asg.add_override("UpdatePolicy", merged_policy)
         
         logger.info("Added rolling update policy to Auto Scaling Group")
 
