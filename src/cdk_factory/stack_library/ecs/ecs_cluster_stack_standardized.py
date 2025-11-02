@@ -174,6 +174,8 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _create_iam_roles(self):
         """Create IAM roles for the ECS cluster if configured."""
+        logger.info(f"create_instance_role setting: {self.ecs_config.create_instance_role}")
+        
         if not self.ecs_config.create_instance_role:
             logger.info("Skipping instance role creation (disabled in config)")
             return
@@ -193,13 +195,17 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             role_name=f"{self.ecs_config.name}-ecs-instance-role",
         )
 
+        logger.info(f"Created ECS instance role: {self.instance_role.role_name}")
+
         # Create instance profile
         self.instance_profile = iam.CfnInstanceProfile(
             self,
             "ECSInstanceProfile",
-            roles=[self.instance_role.role_name],
             instance_profile_name=f"{self.ecs_config.name}-ecs-instance-profile",
+            roles=[self.instance_role.role_name],
         )
+
+        logger.info(f"Created ECS instance profile: {self.instance_profile.instance_profile_name}")
 
         logger.info("ECS instance role and profile created")
 
@@ -254,31 +260,51 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _export_ssm_parameters(self) -> None:
         """Export SSM parameters using standardized approach"""
+        logger.info("=== Starting SSM Parameter Export ===")
+        
         if not self.ecs_cluster:
             logger.warning("No ECS cluster to export")
             return
+
+        logger.info(f"ECS cluster found: {self.ecs_cluster.cluster_name}")
+        logger.info(f"SSM exports configured: {self.ssm_config.get('exports', {})}")
 
         # Prepare resource values for export
         resource_values = {
             "cluster_name": self.ecs_cluster.cluster_name,
             "cluster_arn": self.ecs_cluster.cluster_arn,
-            "instance_role_arn": self.instance_role.role_arn,
         }
+        
+        # Add instance role ARN if created
+        if self.instance_role:
+            resource_values["instance_role_arn"] = self.instance_role.role_arn
+            logger.info(f"Instance role ARN added: {self.instance_role.role_name}")
+        else:
+            logger.info("No instance role to export")
         
         # Add security group ID if available
         if hasattr(self.ecs_cluster, 'connections') and self.ecs_cluster.connections:
             security_groups = self.ecs_cluster.connections.security_groups
             if security_groups:
                 resource_values["security_group_id"] = security_groups[0].security_group_id
+                logger.info(f"Security group ID added: {security_groups[0].security_group_id}")
         
         # Add instance profile ARN if created
         if self.instance_profile:
             resource_values["instance_profile_arn"] = self.instance_profile.attr_arn
+            logger.info(f"Instance profile ARN added: {self.instance_profile.instance_profile_name}")
 
         # Export using standardized SSM mixin
-        exported_params = self.export_standardized_ssm_parameters(resource_values)
-        
-        logger.info(f"Exported SSM parameters: {exported_params}")
+        logger.info(f"Resource values available for export: {list(resource_values.keys())}")
+        for key, value in resource_values.items():
+            logger.info(f"  {key}: {value}")
+            
+        try:
+            exported_params = self.export_standardized_ssm_parameters(resource_values)
+            logger.info(f"Successfully exported SSM parameters: {exported_params}")
+        except Exception as e:
+            logger.error(f"Failed to export SSM parameters: {str(e)}")
+            raise
 
     # Backward compatibility methods
     def process_ssm_imports(self, config: Any, deployment: DeploymentConfig, resource_type: str = "resource") -> None:
