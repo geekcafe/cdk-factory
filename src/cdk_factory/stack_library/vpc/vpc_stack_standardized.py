@@ -156,6 +156,12 @@ class VpcStack(IStack, StandardizedSsmMixin):
         # Add IAM permissions for default security group restriction if enabled
         if self.vpc_config.get("restrict_default_security_group", False):
             self._add_default_sg_restriction_permissions(vpc)
+        else:
+            # Note: When disabling, existing restrictions remain
+            # This is AWS CDK's behavior - custom resources clean up themselves,
+            # but security group rules they created persist
+            # Users can manually clean up if needed via AWS Console
+            pass
 
         # Add interface endpoints if specified
         if self.vpc_config.enable_interface_endpoints:

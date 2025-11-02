@@ -2,6 +2,8 @@
 
 This document describes how to use the custom resource naming features in the CDK Factory VPC stack, including subnet and NAT Gateway naming.
 
+**For complete VPC configuration guidance, see the main [VPC documentation](vpc.md).**
+
 ## Overview
 
 By default, AWS CDK creates resources with generic names like "publicSubnet1", "privateSubnet1", and "NatGateway1". The CDK Factory now allows you to customize these resource names to better reflect their purpose in your architecture.
