@@ -497,14 +497,18 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Get the underlying CloudFormation resource to add update policy
         cfn_asg = self.auto_scaling_group.node.default_child
         
-        # Clear any existing update policy and set the rolling update policy
-        cfn_asg.add_property_override("UpdatePolicy", {
-            "AutoScalingRollingUpdate": {
-                "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
-                "MaxBatchSize": update_policy.get("max_batch_size", 1),
-                "PauseTime": f"PT{update_policy.get('pause_time', 300)}S"
-            }
-        })
+        # Get existing update policy or create new one
+        existing_policy = getattr(cfn_asg, 'update_policy', {})
+        
+        # Merge rolling update policy with existing policy
+        existing_policy["AutoScalingRollingUpdate"] = {
+            "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
+            "MaxBatchSize": update_policy.get("max_batch_size", 1),
+            "PauseTime": f"PT{update_policy.get('pause_time', 300)}S"
+        }
+        
+        # Set the merged policy
+        cfn_asg.update_policy = existing_policy
         
         logger.info("Added rolling update policy to Auto Scaling Group")
 
