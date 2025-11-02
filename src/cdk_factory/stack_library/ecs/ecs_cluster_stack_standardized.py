@@ -186,7 +186,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             "ECSInstanceRole",
             assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerServiceforEC2Role"),
+                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AmazonEC2ContainerServiceforEC2Role"),
                 iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerRegistryReadOnly"),
                 iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore"),
             ],
