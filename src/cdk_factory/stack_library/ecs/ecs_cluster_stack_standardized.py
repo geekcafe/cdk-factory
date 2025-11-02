@@ -118,7 +118,9 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self._export_cluster_info()
         
         # Export SSM parameters
+        logger.info("Starting SSM parameter export for ECS cluster")
         self._export_ssm_parameters()
+        logger.info("Completed SSM parameter export for ECS cluster")
         
         logger.info(f"ECS Cluster stack created: {cluster_name}")
 

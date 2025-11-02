@@ -19,6 +19,11 @@ class EcsClusterConfig:
         self._config = config or {}
     
     @property
+    def dictionary(self) -> Dict[str, Any]:
+        """Access to the underlying configuration dictionary (for compatibility with SSM mixin)"""
+        return self._config
+    
+    @property
     def name(self) -> str:
         """Name of the ECS cluster. Supports template variables like {{WORKLOAD_NAME}}-{{ENVIRONMENT}}-cluster"""
         return self._config.get("name", "cluster")
