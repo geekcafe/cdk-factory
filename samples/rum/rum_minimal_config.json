@@ -42,10 +42,12 @@
           "custom_events_enabled": false,
           "create_cognito_identity_pool": true,
           "create_cognito_user_pool": true,
-          "ssm_exports": {
-            "app_monitor_name": "/{{WORKLOAD_NAME}}/rum/app-monitor-name",
-            "app_monitor_id": "/{{WORKLOAD_NAME}}/rum/app-monitor-id",
-            "identity_pool_id": "/{{WORKLOAD_NAME}}/rum/identity-pool-id"
+          "ssm": {
+            "exports": {
+              "app_monitor_name": "/{{WORKLOAD_NAME}}/rum/app-monitor-name",
+              "app_monitor_id": "/{{WORKLOAD_NAME}}/rum/app-monitor-id",
+              "identity_pool_id": "/{{WORKLOAD_NAME}}/rum/identity-pool-id"
+            }
           },
           "tags": {
             "Environment": "{{ENVIRONMENT}}",

@@ -99,9 +99,11 @@
       "Application": "SampleApp",
       "ManagedBy": "CDK-Factory"
     },
-    "ssm_exports": {
-      "asg_name": "/{deployment_name}/auto-scaling/name",
-      "asg_arn": "/{deployment_name}/auto-scaling/arn"
+    "ssm": {
+      "exports": {
+        "asg_name": "/{deployment_name}/auto-scaling/name",
+        "asg_arn": "/{deployment_name}/auto-scaling/arn"
+      }
     }
   }
 }

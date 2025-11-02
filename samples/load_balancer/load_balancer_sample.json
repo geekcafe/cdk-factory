@@ -81,9 +81,11 @@
       "Application": "SampleApp",
       "ManagedBy": "CDK-Factory"
     },
-    "ssm_exports": {
-      "alb_dns_name": "/{deployment_name}/load-balancer/dns-name",
-      "alb_zone_id": "/{deployment_name}/load-balancer/zone-id"
+    "ssm": {
+      "exports": {
+        "alb_dns_name": "/{deployment_name}/load-balancer/dns-name",
+        "alb_zone_id": "/{deployment_name}/load-balancer/zone-id"
+      }
     }
   }
 }

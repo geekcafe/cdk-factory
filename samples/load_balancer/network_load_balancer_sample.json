@@ -54,9 +54,11 @@
       "Application": "SampleApp",
       "ManagedBy": "CDK-Factory"
     },
-    "ssm_exports": {
-      "nlb_dns_name": "/{deployment_name}/network-load-balancer/dns-name",
-      "nlb_zone_id": "/{deployment_name}/network-load-balancer/zone-id"
+    "ssm": {
+      "exports": {
+        "nlb_dns_name": "/{deployment_name}/network-load-balancer/dns-name",
+        "nlb_zone_id": "/{deployment_name}/network-load-balancer/zone-id"
+      }
     }
   }
 }

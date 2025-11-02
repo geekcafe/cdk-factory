@@ -53,10 +53,12 @@
               }
             ]
           },
-          "ssm_exports": {
-            "name": "/my-app/prod/ecr/backend-api/name",
-            "uri": "/my-app/prod/ecr/backend-api/uri",
-            "arn": "/my-app/prod/ecr/backend-api/arn"
+          "ssm": {
+            "exports": {
+              "name": "/my-app/prod/ecr/backend-api/name",
+              "uri": "/my-app/prod/ecr/backend-api/uri",
+              "arn": "/my-app/prod/ecr/backend-api/arn"
+            }
           }
         }
       ]
