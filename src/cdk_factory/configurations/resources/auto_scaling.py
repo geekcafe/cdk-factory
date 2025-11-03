@@ -70,12 +70,9 @@ class AutoScalingConfig(EnhancedBaseConfig):
         return self.__config.get("termination_policies", ["DEFAULT"])
 
     @property
-    def update_policy(self) -> Dict[str, Any]:
+    def update_policy(self) -> Optional[Dict[str, Any]]:
         """Update policy configuration"""
-        return self.__config.get(
-            "update_policy",
-            {"min_instances_in_service": 1, "max_batch_size": 1, "pause_time": 300},
-        )
+        return self.__config.get("update_policy")
 
     @property
     def user_data_commands(self) -> List[str]:
