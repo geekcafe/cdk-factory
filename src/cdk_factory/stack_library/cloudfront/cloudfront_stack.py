@@ -161,8 +161,32 @@ class CloudFrontStack(IStack):
             logger.info(f"Using certificate from SSM: {ssm_param}")
             return
 
+        # Create new certificate from domain name
+        domain_name = cert_config.get("domain_name")
+        if domain_name and self.cf_config.aliases:
+            # CloudFront certificates must be in us-east-1
+            if self.region != "us-east-1":
+                logger.warning(
+                    f"Certificate creation requested but stack is in {self.region}. "
+                    "CloudFront certificates must be created in us-east-1"
+                )
+                return
+            
+            # Create the certificate
+            self.certificate = acm.Certificate(
+                self,
+                "Certificate",
+                domain_name=domain_name,
+                subject_alternative_names=self.cf_config.aliases,
+                validation_method=acm.ValidationMethod.from_string(
+                    cert_config.get("validation_method", "DNS")
+                ),
+            )
+            logger.info(f"Created new ACM certificate for domain: {domain_name}")
+            return
+
         logger.warning(
-            "No certificate ARN provided - CloudFront will use default certificate"
+            "No certificate ARN or domain name provided - CloudFront will use default certificate"
         )
 
     def _create_origins(self) -> None:
