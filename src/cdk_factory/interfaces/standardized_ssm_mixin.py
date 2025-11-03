@@ -269,6 +269,23 @@ class StandardizedSsmMixin:
         
         return exported_params
     
+    def resolve_ssm_value(self, scope: Construct, value: str, unique_id: str)-> str:
+        if isinstance(value, str) and value.startswith("{{ssm:") and value.endswith("}}"):
+            # Extract SSM parameter path
+            ssm_param_path = value[6:-2]  # Remove {{ssm: and }}
+            
+            # Import SSM parameter - this creates a token that resolves at deployment time
+            param = ssm.StringParameter.from_string_parameter_name(
+                scope=scope,
+                id=f"{unique_id}-env-{hash(ssm_param_path) % 10000}",
+                string_parameter_name=ssm_param_path
+            )
+            resolved_value = param.string_value
+            logger.info(f"Resolved SSM parameter {ssm_param_path}")
+            return resolved_value
+        else:
+            return value
+
     def _resolve_ssm_import(self, import_value: Union[str, List[str]], import_key: str) -> Union[str, List[str]]:
         """
         Resolve SSM import value with proper error handling and validation.

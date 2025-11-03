@@ -106,3 +106,8 @@ class Route53Config:
     def tags(self) -> Dict[str, str]:
         """Tags to apply to the Route53 resources"""
         return self.__config.get("tags", {})
+    
+    @property
+    def records(self) -> List[Dict[str, Any]]:
+        """Records to create"""
+        return self.__config.get("records", [])

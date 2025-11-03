@@ -1,0 +1,82 @@
+{
+  "name": "example-dns-records",
+  "module": "route53_stack",
+  "enabled": true,
+  "route53": {
+    "hosted_zone_id": "Z1PA6795UKMFR9",
+    "hosted_zone_name": "example.com",
+    "create_hosted_zone": false,
+    "records": [
+      {
+        "name": "example.com",
+        "type": "A",
+        "alias": {
+          "target_type": "cloudfront",
+          "target_value": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cloudfront/domain}}",
+          "hosted_zone_id": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/hosted-zone-id}}",
+          "distribution_id": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cloudfront/distribution-id}}"
+        }
+      },
+      {
+        "name": "www.example.com",
+        "type": "A",
+        "alias": {
+          "target_type": "cloudfront",
+          "target_value": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cloudfront/domain}}",
+          "hosted_zone_id": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/hosted-zone-id}}",
+          "distribution_id": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cloudfront/distribution-id}}"
+        }
+      },
+      {
+        "name": "api.example.com",
+        "type": "A",
+        "alias": {
+          "target_type": "loadbalancer",
+          "target_value": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/alb/dns-name}}",
+          "hosted_zone_id": "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/hosted-zone-id}}"
+        }
+      },
+      {
+        "name": "direct.example.com",
+        "type": "A",
+        "values": ["{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/static-ip-1}}", "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/static-ip-2}}"],
+        "ttl": 300
+      },
+      {
+        "name": "ipv6.example.com",
+        "type": "AAAA",
+        "values": ["{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ipv6-address-1}}", "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/ipv6-address-2}}"],
+        "ttl": 300
+      },
+      {
+        "name": "mail.example.com",
+        "type": "MX",
+        "values": [
+          "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/mail-server-1}}",
+          "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/mail-server-2}}"
+        ],
+        "ttl": 3600
+      },
+      {
+        "name": "verification.example.com",
+        "type": "TXT",
+        "values": [
+          "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/spf-record}}",
+          "{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/domain-verification}}"
+        ],
+        "ttl": 3600
+      },
+      {
+        "name": "sub.example.com",
+        "type": "CNAME",
+        "values": ["{{ssm:/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/target-domain}}"],
+        "ttl": 300
+      }
+    ],
+    "tags": {
+      "Environment": "{{ENVIRONMENT}}",
+      "Application": "{{WORKLOAD_NAME}}",
+      "ManagedBy": "CDK-Factory"
+    }
+  }
+}
