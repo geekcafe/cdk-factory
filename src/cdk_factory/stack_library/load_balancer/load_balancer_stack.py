@@ -52,7 +52,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self._hosted_zone = None
         self._record_names = None
         # SSM imported values
-        self.ssm_imported_values: Dict[str, str] = {}
+        self._ssm_imported_values: Dict[str, str] = {}
 
     def build(
         self,
@@ -205,63 +205,13 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
         return self._vpc
 
-    def _process_ssm_imports(self) -> None:
-        """
-        Process SSM imports from configuration.
-        Follows the same pattern as RDS and Security Group stacks.
-        """
-        from aws_cdk import aws_ssm as ssm
-        
-        ssm_imports = self.lb_config.ssm_imports
-        
-        if not ssm_imports:
-            logger.debug("No SSM imports configured for Load Balancer")
-            return
-        
-        logger.info(f"Processing {len(ssm_imports)} SSM imports for Load Balancer")
-        
-        for param_key, param_value in ssm_imports.items():
-            try:
-                # Handle list values (like security_groups)
-                if isinstance(param_value, list):
-                    imported_list = []
-                    for idx, param_path in enumerate(param_value):
-                        if not param_path.startswith('/'):
-                            param_path = f"/{param_path}"
-                        
-                        construct_id = f"ssm-import-{param_key}-{idx}-{hash(param_path) % 10000}"
-                        param = ssm.StringParameter.from_string_parameter_name(
-                            self, construct_id, param_path
-                        )
-                        imported_list.append(param.string_value)
-                    
-                    self.ssm_imported_values[param_key] = imported_list
-                    logger.info(f"Imported SSM parameter list: {param_key} with {len(imported_list)} items")
-                else:
-                    # Handle string values
-                    param_path = param_value
-                    if not param_path.startswith('/'):
-                        param_path = f"/{param_path}"
-                    
-                    construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
-                    param = ssm.StringParameter.from_string_parameter_name(
-                        self, construct_id, param_path
-                    )
-                    
-                    self.ssm_imported_values[param_key] = param.string_value
-                    logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
-                    
-            except Exception as e:
-                logger.error(f"Failed to import SSM parameter {param_key}: {e}")
-                raise
-
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the Load Balancer"""
         security_groups = []
         
         # Check SSM imported values first
-        if "security_groups" in self.ssm_imported_values:
-            sg_ids = self.ssm_imported_values["security_groups"]
+        if "security_groups" in self._ssm_imported_values:
+            sg_ids = self._ssm_imported_values["security_groups"]
             if not isinstance(sg_ids, list):
                 sg_ids = [sg_ids]
         else:
