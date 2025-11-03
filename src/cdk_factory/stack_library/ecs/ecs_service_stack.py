@@ -563,7 +563,7 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         for param_key, param_name in ssm_imports.items():
             if 'target_group' in param_key.lower() or 'tg' in param_key.lower():
                 try:
-                    param_value = self.get_ssm_parameter_value(param_name)
+                    param_value = self.get_ssm_imported_value(param_name)
                     if param_value and param_value.startswith('arn:'):
                         target_group_arns.append(param_value)
                 except Exception as e:
