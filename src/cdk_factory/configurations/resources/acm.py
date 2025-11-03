@@ -60,9 +60,14 @@ class AcmConfig:
         return self.__config.get("certificate_transparency_logging_preference")
 
     @property
+    def ssm(self) -> Dict[str, Any]:
+        """SSM configuration for importing/exporting resources"""
+        return self.__config.get("ssm", {})
+
+    @property
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter paths to export certificate details"""
-        exports = self.__config.get("ssm_exports", {})
+        exports = self.ssm.get("exports", {})
         
         # Provide default SSM export path if not specified
         if not exports and self.__deployment:
