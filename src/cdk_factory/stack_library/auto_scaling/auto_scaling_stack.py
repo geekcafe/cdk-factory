@@ -484,6 +484,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         update_policy = self.asg_config.update_policy
         
         if not update_policy:
+            # No update policy configured, don't add one
             return
             
         # Get the underlying CloudFormation resource to add update policy
