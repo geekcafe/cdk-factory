@@ -10,7 +10,7 @@ from aws_cdk.assertions import Template, Match
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
-from cdk_factory.stack_library.ecs.ecs_service_stack_old import EcsServiceStack
+from cdk_factory.stack_library.ecs.ecs_service_stack import EcsServiceStack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
 

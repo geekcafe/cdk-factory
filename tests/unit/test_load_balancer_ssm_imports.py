@@ -74,8 +74,8 @@ class TestLoadBalancerSSMImports(unittest.TestCase):
 
         # Verify SSM parameters are imported (check they exist, not exact names)
         params = template_dict.get("Parameters", {})
-        vpc_id_params = [p for p in params if "ssmimportvpcid" in p.lower()]
-        subnet_id_params = [p for p in params if "ssmimportsubnetids" in p.lower()]
+        vpc_id_params = [p for p in params if "importvpcid" in p.lower()]
+        subnet_id_params = [p for p in params if "importsubnetids" in p.lower()]
         
         assert len(vpc_id_params) == 1, f"Expected 1 VPC ID parameter, found {len(vpc_id_params)}"
         assert len(subnet_id_params) == 1, f"Expected 1 subnet IDs parameter, found {len(subnet_id_params)}"
@@ -146,7 +146,7 @@ class TestLoadBalancerSSMImports(unittest.TestCase):
 
         # Verify certificate SSM parameter is imported
         params = template_dict.get("Parameters", {})
-        cert_params = [p for p in params if "ssmimportcertificatearns" in p.lower()]
+        cert_params = [p for p in params if "importcertificatearns" in p.lower()]
         
         assert len(cert_params) == 1, f"Expected 1 certificate parameter, found {len(cert_params)}"
         assert params[cert_params[0]]["Type"] == "AWS::SSM::Parameter::Value<String>"
@@ -214,10 +214,10 @@ class TestLoadBalancerSSMImports(unittest.TestCase):
 
         # Verify all SSM parameters are imported
         params = template_dict.get("Parameters", {})
-        assert any("ssmimportvpcid" in p.lower() for p in params), "VPC ID parameter not found"
-        assert any("ssmimportsubnetids" in p.lower() for p in params), "Subnet IDs parameter not found"
-        assert any("ssmimportsecuritygroups" in p.lower() for p in params), "Security groups parameter not found"
-        assert any("ssmimportcertificatearns" in p.lower() for p in params), "Certificate ARN parameter not found"
+        assert any("importvpcid" in p.lower() for p in params), "VPC ID parameter not found"
+        assert any("importsubnetids" in p.lower() for p in params), "Subnet IDs parameter not found"
+        assert any("importsecuritygroups" in p.lower() for p in params), "Security groups parameter not found"
+        assert any("importcertificatearns" in p.lower() for p in params), "Certificate ARN parameter not found"
 
         # Verify ALB is created with all SSM references
         alb_resources = {k: v for k, v in template_dict["Resources"].items() 
@@ -426,7 +426,7 @@ class TestLoadBalancerSSMSecurityGroups(unittest.TestCase):
 
         # Verify multiple security group parameters
         params = template_dict.get("Parameters", {})
-        sg_params = [p for p in params if "ssmimportsecuritygroups" in p.lower()]
+        sg_params = [p for p in params if "importsecuritygroups" in p.lower()]
         
         assert len(sg_params) == 2, f"Expected 2 security group parameters, found {len(sg_params)}"
         
