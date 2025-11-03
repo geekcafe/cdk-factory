@@ -329,7 +329,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         )
         
         # SSM Parameter Store exports (if configured)
-        ssm_exports = self.edge_config.dictionary.get("ssm_exports", {})
+        ssm_exports = self.edge_config.dictionary.get("ssm", {}).get("exports", {})
         if ssm_exports:
             export_values = {
                 "function_name": self.function.function_name,
