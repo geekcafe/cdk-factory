@@ -84,13 +84,26 @@ class EcsServiceConfig:
         return self._config.get("assign_public_ip", False)
 
     @property
+    def load_balancer_config(self) -> Dict[str, Any]:
+        """Load balancer configuration"""
+        return self._config.get("load_balancer", {})
+
+    @property
     def target_group_arns(self) -> List[str]:
         """Target group ARNs for load balancing"""
+        # Check if load_balancer config has target_group_arn
+        if self.load_balancer_config and self.load_balancer_config.get("target_group_arn"):
+            arn = self.load_balancer_config["target_group_arn"]
+            if arn and arn != "arn:aws:elasticloadbalancing:placeholder":
+                return [arn]
         return self._config.get("target_group_arns", [])
 
     @property
     def container_port(self) -> int:
         """Container port for load balancer"""
+        # Check load_balancer config first
+        if self.load_balancer_config and self.load_balancer_config.get("container_port"):
+            return self.load_balancer_config["container_port"]
         return self._config.get("container_port", 80)
 
     @property
@@ -138,8 +151,17 @@ class EcsServiceConfig:
         """SSM parameter imports"""
         # Check both nested and flat structures for backwards compatibility
         if "ssm" in self._config and "imports" in self._config["ssm"]:
-            return self._config["ssm"]["imports"]
-        return self.ssm.get("imports", {})
+            imports = self._config["ssm"]["imports"]
+        else:
+            imports = self.ssm.get("imports", {})
+        
+        # Add load_balancer SSM imports if they exist
+        if self.load_balancer_config and "ssm" in self.load_balancer_config:
+            lb_ssm = self.load_balancer_config["ssm"]
+            if "imports" in lb_ssm:
+                imports.update(lb_ssm["imports"])
+        
+        return imports
 
     @property
     def deployment_type(self) -> str:
