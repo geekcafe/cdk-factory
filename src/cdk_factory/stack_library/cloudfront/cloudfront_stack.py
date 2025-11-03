@@ -13,6 +13,7 @@ from aws_cdk import (
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
     aws_certificatemanager as acm,
+    aws_route53 as route53,
     aws_lambda as _lambda,
     aws_ssm as ssm,
     CfnOutput,
@@ -173,14 +174,18 @@ class CloudFrontStack(IStack):
                 return
             
             # Create the certificate
+            # Get hosted zone from SSM imports
+            hosted_zone_id = cert_config.get("hosted_zone_id")
+            hosted_zone = route53.HostedZone.from_hosted_zone_id(
+                self, "HostedZone", hosted_zone_id
+            )
+            
             self.certificate = acm.Certificate(
                 self,
                 "Certificate",
                 domain_name=domain_name,
                 subject_alternative_names=self.cf_config.aliases,
-                validation_method=acm.ValidationMethod.from_string(
-                    cert_config.get("validation_method", "DNS")
-                ),
+                validation=acm.CertificateValidation.from_dns(hosted_zone=hosted_zone),
             )
             logger.info(f"Created new ACM certificate for domain: {domain_name}")
             return
