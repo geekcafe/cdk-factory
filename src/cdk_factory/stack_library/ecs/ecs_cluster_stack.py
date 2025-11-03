@@ -29,8 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 @register_stack("ecs_cluster_stack")
-@register_stack("ecs_service_stack")
-@register_stack("fargate_service_stack")
 class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     A dedicated stack for creating and managing ECS clusters with standardized SSM integration.
@@ -88,10 +86,13 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Initialize VPC cache from mixin
         self._initialize_vpc_cache()
         
-        # Load ECS cluster configuration
-        self.ecs_config: EcsClusterConfig = EcsClusterConfig(
-            stack_config.dictionary.get("ecs_cluster", {})
-        )
+        # Load ECS cluster configuration with full stack config for SSM access
+        ecs_cluster_dict = stack_config.dictionary.get("ecs_cluster", {})
+        # Merge SSM config from root level into ECS config for VPC resolution
+        if "ssm" in stack_config.dictionary:
+            ecs_cluster_dict["ssm"] = stack_config.dictionary["ssm"]
+        
+        self.ecs_config: EcsClusterConfig = EcsClusterConfig(ecs_cluster_dict)
         
         cluster_name = deployment.build_resource_name(self.ecs_config.name)
         
@@ -169,7 +170,8 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """
         Get VPC using the centralized VPC provider mixin.
         """
-        # Use the centralized VPC resolution from VPCProviderMixin
+        
+        # Use the stack_config (not ecs_config) to ensure SSM imports are available
         return self.resolve_vpc(
             config=self.ecs_config,
             deployment=self.deployment,

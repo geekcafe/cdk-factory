@@ -31,9 +31,9 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(service="EcsServiceStack")
 
 
-@register_stack("ecs_service_library_module_old")
-@register_stack("ecs_service_stack_old")
-@register_stack("fargate_service_stack_old")
+@register_stack("ecs_service_library_module")
+@register_stack("ecs_service_stack")
+@register_stack("fargate_service_stack")
 class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     Reusable stack for ECS/Fargate services with Docker container support.
