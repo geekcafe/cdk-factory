@@ -6,6 +6,8 @@ MIT License.  See Project Root for the license information.
 
 from typing import Dict, Any, List, Optional
 
+import base64
+import hashlib
 import aws_cdk as cdk
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_ec2 as ec2
@@ -303,12 +305,41 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             )
         return subnets
 
+    def _generate_target_group_name(self, lb_name: str, tg_name: str, max_length: int = 32) -> str:
+        """Generate a unique target group name that doesn't begin/end with hyphens"""
+        full_name = f"{lb_name}-{tg_name}"
+        
+        if len(full_name) <= max_length:
+            # No truncation needed, just ensure no leading/trailing hyphens
+            return full_name.strip('-')
+        
+        # Need to truncate - use hash suffix for uniqueness
+        # Reserve space for hash (typically 8 chars) and separator
+        hash_length = 8
+        separator_length = 1
+        max_name_length = max_length - hash_length - separator_length
+        
+        # Take the prefix and ensure it doesn't end with hyphen
+        prefix = full_name[:max_name_length].rstrip('-')
+        
+        # Generate hash of the full name for uniqueness
+        hash_bytes = hashlib.sha256(full_name.encode()).digest()
+        hash_suffix = base64.urlsafe_b64encode(hash_bytes).decode()[:hash_length]
+        
+        # Ensure hash doesn't start with hyphen (replace any non-alphanumeric chars)
+        hash_suffix = ''.join(c for c in hash_suffix if c.isalnum())[:hash_length]
+        
+        return f"{prefix}-{hash_suffix}"
+
     def _create_target_groups(self, lb_name: str) -> None:
         """Create target groups for the Load Balancer"""
 
         for idx, tg_config in enumerate(self.lb_config.target_groups):
             tg_name = tg_config.get("name", f"tg-{idx}")
             tg_id = f"{lb_name}-{tg_name}"
+
+            # Generate a unique target group name that doesn't begin/end with hyphens
+            tg_name_sanitized = self._generate_target_group_name(lb_name, tg_name)
 
             # Configure health check
             health_check = self._configure_health_check(
@@ -320,7 +351,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 target_group = elbv2.ApplicationTargetGroup(
                     self,
                     tg_id,
-                    target_group_name=tg_id[:32],  # Ensure name is within AWS limits
+                    target_group_name=tg_name_sanitized,
                     vpc=self.vpc,
                     port=tg_config.get("port", 80),
                     protocol=elbv2.ApplicationProtocol(
@@ -335,7 +366,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 target_group = elbv2.NetworkTargetGroup(
                     self,
                     tg_id,
-                    target_group_name=tg_id[:32],  # Ensure name is within AWS limits
+                    target_group_name=tg_name_sanitized,
                     vpc=self.vpc,
                     port=tg_config.get("port", 80),
                     protocol=elbv2.Protocol(tg_config.get("protocol", "TCP")),
@@ -345,6 +376,8 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     health_check=health_check,
                 )
 
+
+            
             # Store target group for later use
             self.target_groups[tg_name] = target_group
 
