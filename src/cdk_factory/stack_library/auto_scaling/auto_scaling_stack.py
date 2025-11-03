@@ -358,8 +358,11 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             elif self.asg_config.ami_type.upper() == "AMAZON-LINUX-2":
                 machine_image = ec2.MachineImage.latest_amazon_linux2()
             elif self.asg_config.ami_type.upper() == "ECS_OPTIMIZED":
-                # Use actual ECS-optimized AMI (Amazon Linux 2 based)
-                machine_image = ec2.MachineImage.lookup(name="amzn2-ami-ecs-hvm-*-x86_64-ebs")
+                # Use ECS-optimized AMI from SSM parameter
+                from aws_cdk import aws_ssm as ssm
+                machine_image = ec2.MachineImage.from_ssm_parameter(
+                    parameter_name="/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
+                )
             else:
                 # Default to latest Amazon Linux
                 machine_image = ec2.MachineImage.latest_amazon_linux2023()
