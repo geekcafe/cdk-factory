@@ -52,7 +52,7 @@ class LambdaEdgeConfig(EnhancedBaseConfig):
         """Timeout in seconds (max 5 for origin-request)"""
         timeout = int(self._config.get("timeout", 5))
         if timeout > 5:
-            raise ValueError("Lambda@Edge origin-request timeout cannot exceed 5 seconds")
+            raise ValueError("Lambda@Edge origin-request timeout cannot exceed 5 seconds. Value was set to {}".format(timeout))
         return timeout
 
     @property
