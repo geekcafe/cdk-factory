@@ -285,7 +285,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _add_outputs(self, db_name: str) -> None:
         """Add CloudFormation outputs for the RDS instance"""
-       return
+        return
 
     def _export_ssm_parameters(self, db_name: str) -> None:
         """Export RDS connection info and credentials to SSM Parameter Store"""
