@@ -285,31 +285,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _add_outputs(self, db_name: str) -> None:
         """Add CloudFormation outputs for the RDS instance"""
-        if self.db_instance:
-            # Database endpoint
-            cdk.CfnOutput(
-                self,
-                f"{db_name}-endpoint",
-                value=self.db_instance.db_instance_endpoint_address,
-                export_name=f"{self.deployment.build_resource_name(db_name)}-endpoint",
-            )
-
-            # Database port
-            cdk.CfnOutput(
-                self,
-                f"{db_name}-port",
-                value=self.db_instance.db_instance_endpoint_port,
-                export_name=f"{self.deployment.build_resource_name(db_name)}-port",
-            )
-
-            # Secret ARN (if available)
-            if hasattr(self.db_instance, "secret") and self.db_instance.secret:
-                cdk.CfnOutput(
-                    self,
-                    f"{db_name}-secret-arn",
-                    value=self.db_instance.secret.secret_arn,
-                    export_name=f"{self.deployment.build_resource_name(db_name)}-secret-arn",
-                )
+       return
 
     def _export_ssm_parameters(self, db_name: str) -> None:
         """Export RDS connection info and credentials to SSM Parameter Store"""

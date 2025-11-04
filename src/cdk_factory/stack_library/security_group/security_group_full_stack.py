@@ -194,37 +194,7 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
                 description="Uptime Robot",
             )
 
-        # =========================================================
-        # Outputs (exports)
-        # =========================================================
-        cdk.CfnOutput(
-            self,
-            "WebFleetAlbSecurityGroupOut",
-            value=alb_sg.ref,
-            description="Web Fleet Application Load Balancer Security Group",
-            export_name=f"{self.deployment.environment}-{self.workload.name}-WebFleetAlbSecurityGroup",
-        )
-        cdk.CfnOutput(
-            self,
-            "WebFleetInstancesSecurityGroupOut",
-            value=web_fleet_sg.ref,
-            description="Web Fleet Instances Security Group",
-            export_name=f"{self.deployment.environment}-{self.workload.name}-WebFleetInstancesSecurityGroup",
-        )
-        cdk.CfnOutput(
-            self,
-            "MySqlDbSecurityGroupOut",
-            value=mysql_sg.ref,
-            description="MySql Security Group",
-            export_name=f"{self.deployment.environment}-{self.workload.name}-MySqlDbSecurityGroup",
-        )
-        cdk.CfnOutput(
-            self,
-            "WebMonitoringSecurityGroupOut",
-            value=monitoring_sg.ref,
-            description="Web Fleet Application Load Balancer Security Group",
-            export_name=f"{self.deployment.environment}-{self.workload.name}-WebMonitoringSecurityGroup",
-        )
+       
 
         # =========================================================
         # SSM Parameter Store Exports

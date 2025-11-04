@@ -413,37 +413,4 @@ class Route53Stack(IStack, StandardizedSsmMixin):
     def _add_outputs(self) -> None:
         """Add CloudFormation outputs for the Route53 resources"""
         # Hosted Zone ID
-        if self.hosted_zone:
-            cdk.CfnOutput(
-                self,
-                "HostedZoneId",
-                value=self.hosted_zone.hosted_zone_id,
-                export_name=f"{self.deployment.build_resource_name('hosted-zone')}-id"
-            )
-            
-            # Hosted Zone Name Servers
-            if hasattr(self.hosted_zone, "name_servers") and self.hosted_zone.name_servers:
-                cdk.CfnOutput(
-                    self,
-                    "NameServers",
-                    value=",".join(self.hosted_zone.name_servers),
-                    export_name=f"{self.deployment.build_resource_name('hosted-zone')}-name-servers"
-                )
-        
-        # Certificate ARN
-        if self.certificate:
-            cdk.CfnOutput(
-                self,
-                "CertificateArn",
-                value=self.certificate.certificate_arn,
-                export_name=f"{self.deployment.build_resource_name('certificate')}-arn"
-            )
-            
-        # Record names
-        for name, record in self.records.items():
-            cdk.CfnOutput(
-                self,
-                f"Record-{name}",
-                value=name,
-                export_name=f"{self.deployment.build_resource_name('record')}-{name}"
-            )
+        return

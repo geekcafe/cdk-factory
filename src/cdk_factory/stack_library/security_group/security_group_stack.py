@@ -337,14 +337,7 @@ class SecurityGroupStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _export_cfn_outputs(self, sg_name: str) -> None:
         """Add CloudFormation outputs for the Security Group"""
-        if self.security_group:
-            # Security Group ID
-            cdk.CfnOutput(
-                self,
-                f"{sg_name}-id",
-                value=self.security_group.security_group_id,
-                export_name=f"{self.deployment.build_resource_name(sg_name)}-id",
-            )
+        return
 
     def _export_ssm_parameters(self, sg_name: str) -> None:
         """Add SSM parameters for the Security Group"""

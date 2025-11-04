@@ -101,6 +101,7 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         
         # Add outputs
         self._add_outputs(service_name)
+        self._export_to_ssm(service_name)
 
     def _load_vpc(self) -> None:
         """Load VPC using the centralized VPC provider mixin."""
@@ -603,35 +604,13 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             scale_out_cooldown=cdk.Duration.seconds(60),
         )
 
+    
+
     def _add_outputs(self, service_name: str) -> None:
         """Add CloudFormation outputs"""
+        return
         
-        # Service name output
-        cdk.CfnOutput(
-            self,
-            "ServiceName",
-            value=self.service.service_name,
-            description=f"ECS Service Name: {service_name}",
-        )
         
-        # Service ARN output
-        cdk.CfnOutput(
-            self,
-            "ServiceArn",
-            value=self.service.service_arn,
-            description=f"ECS Service ARN: {service_name}",
-        )
-        
-        # Cluster name output
-        cdk.CfnOutput(
-            self,
-            "ClusterName",
-            value=self.cluster.cluster_name,
-            description=f"ECS Cluster Name for {service_name}",
-        )
-        
-        # Export to SSM if configured
-        self._export_to_ssm(service_name)
 
     def _export_to_ssm(self, service_name: str) -> None:
         """Export resource ARNs and names to SSM Parameter Store"""

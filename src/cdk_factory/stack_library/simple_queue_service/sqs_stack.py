@@ -131,37 +131,4 @@ class SQSStack(IStack):
 
     def _add_outputs(self) -> None:
         """Add CloudFormation outputs for the SQS queues"""
-        for queue_name, queue in self.queues.items():
-            # Queue ARN
-            cdk.CfnOutput(
-                self,
-                f"{queue_name}-arn",
-                value=queue.queue_arn,
-                export_name=f"{self.deployment.build_resource_name(queue_name)}-arn"
-            )
-            
-            # Queue URL
-            cdk.CfnOutput(
-                self,
-                f"{queue_name}-url",
-                value=queue.queue_url,
-                export_name=f"{self.deployment.build_resource_name(queue_name)}-url"
-            )
-        
-        # Also add outputs for DLQs
-        for dlq_name, dlq in self.dead_letter_queues.items():
-            # DLQ ARN
-            cdk.CfnOutput(
-                self,
-                f"{dlq_name}-arn",
-                value=dlq.queue_arn,
-                export_name=f"{self.deployment.build_resource_name(dlq_name)}-arn"
-            )
-            
-            # DLQ URL
-            cdk.CfnOutput(
-                self,
-                f"{dlq_name}-url",
-                value=dlq.queue_url,
-                export_name=f"{self.deployment.build_resource_name(dlq_name)}-url"
-            )
+        return

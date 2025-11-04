@@ -140,32 +140,10 @@ class CodeArtifactStack(IStack, StandardizedSsmMixin):
 
     def _add_outputs(self) -> None:
         """Add CloudFormation outputs for the CodeArtifact resources"""
+
+        
         # Domain outputs
         if self.domain:
             domain_name = self.code_artifact_config.domain_name
             
-            # Domain ARN
-            cdk.CfnOutput(
-                self,
-                f"{domain_name}-domain-arn",
-                value=self.domain.attr_arn,
-                export_name=f"{self.deployment.build_resource_name(domain_name)}-domain-arn"
-            )
             
-            # Domain URL
-            cdk.CfnOutput(
-                self,
-                f"{domain_name}-domain-url",
-                value=f"https://{self.code_artifact_config.account}.d.codeartifact.{self.code_artifact_config.region}.amazonaws.com/",
-                export_name=f"{self.deployment.build_resource_name(domain_name)}-domain-url"
-            )
-        
-        # Repository outputs
-        for repo_name, repo in self.repositories.items():
-            # Repository ARN
-            cdk.CfnOutput(
-                self,
-                f"{repo_name}-repo-arn",
-                value=repo.attr_arn,
-                export_name=f"{self.deployment.build_resource_name(repo_name)}-repo-arn"
-            )

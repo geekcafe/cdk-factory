@@ -303,30 +303,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
     def _add_outputs(self, function_name: str) -> None:
         """Add CloudFormation outputs and SSM exports"""
         
-        # CloudFormation outputs
-        cdk.CfnOutput(
-            self,
-            "FunctionName",
-            value=self.function.function_name,
-            description="Lambda function name",
-            export_name=f"{function_name}-name"
-        )
         
-        cdk.CfnOutput(
-            self,
-            "FunctionArn",
-            value=self.function.function_arn,
-            description="Lambda function ARN (unversioned)",
-            export_name=f"{function_name}-arn"
-        )
-        
-        cdk.CfnOutput(
-            self,
-            "FunctionVersionArn",
-            value=self.function_version.function_arn,
-            description="Lambda function version ARN (use this for Lambda@Edge)",
-            export_name=f"{function_name}-version-arn"
-        )
         
         # SSM Parameter Store exports (if configured)
         ssm_exports = self.edge_config.dictionary.get("ssm", {}).get("exports", {})

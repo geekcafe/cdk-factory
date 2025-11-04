@@ -153,18 +153,7 @@ class AcmStack(IStack, StandardizedSsmMixin):
 
     def _add_outputs(self, cert_name: str) -> None:
         """Add CloudFormation outputs"""
-        cdk.CfnOutput(
-            self,
-            "CertificateArn",
-            value=self.certificate.certificate_arn,
-            description=f"Certificate ARN for {self.acm_config.domain_name}",
-            export_name=f"{cert_name}-arn",
-        )
-        
-        cdk.CfnOutput(
-            self,
-            "DomainName",
-            value=self.acm_config.domain_name,
-            description="Primary domain name for the certificate",
-            export_name=f"{cert_name}-domain",
-        )
+
+        return
+
+       
