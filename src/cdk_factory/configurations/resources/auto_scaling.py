@@ -75,6 +75,11 @@ class AutoScalingConfig(EnhancedBaseConfig):
         return self.__config.get("update_policy")
 
     @property
+    def instance_refresh(self) -> Optional[Dict[str, Any]]:
+        """Instance refresh configuration for rolling updates"""
+        return self.__config.get("instance_refresh")
+
+    @property
     def user_data_commands(self) -> List[str]:
         """User data commands to run on instance launch"""
         return self.__config.get("user_data_commands", [])

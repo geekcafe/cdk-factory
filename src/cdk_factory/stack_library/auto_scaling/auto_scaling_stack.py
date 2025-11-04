@@ -241,11 +241,12 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         user_data = ec2.UserData.for_linux()
         
         # Add basic setup commands
-        user_data.add_commands(
-            "#!/bin/bash",
-            "yum update -y",
-            "yum install -y aws-cfn-bootstrap",
-        )
+        # this will break amazon linux 2023 which uses dnf instead of yum
+        # user_data.add_commands(
+        #     "#!/bin/bash",
+        #     "yum update -y",
+        #     "yum install -y aws-cfn-bootstrap",
+        # )
 
         # Add user data commands from configuration
         if self.asg_config.user_data_commands:
@@ -423,6 +424,10 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             ],
         )
 
+        # Add instance refresh if configured
+        if self.asg_config.instance_refresh:
+            self._configure_instance_refresh(auto_scaling_group)
+
         # Attach target groups if configured
         self._attach_target_groups(auto_scaling_group)
 
@@ -527,6 +532,50 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         exported_params = self.export_ssm_parameters(resource_values)
         
         logger.info(f"Exported SSM parameters: {exported_params}")
+
+    def _configure_instance_refresh(self, asg: autoscaling.AutoScalingGroup) -> None:
+        """Configure instance refresh for rolling updates"""
+        instance_refresh_config = self.asg_config.instance_refresh
+        
+        if not instance_refresh_config.get("enabled", False):
+            return
+            
+        # Get the CloudFormation ASG resource
+        cfn_asg = asg.node.default_child
+        
+        # Configure instance refresh properties
+        refresh_props = {}
+        
+        if "min_healthy_percentage" in instance_refresh_config:
+            refresh_props["min_healthy_percentage"] = instance_refresh_config["min_healthy_percentage"]
+            
+        if "instance_warmup" in instance_refresh_config:
+            refresh_props["instance_warmup"] = instance_refresh_config["instance_warmup"]
+            
+        if "preferences" in instance_refresh_config:
+            preferences = instance_refresh_config["preferences"]
+            
+            # Build preferences property
+            pref_props = {}
+            
+            if "skip_matching" in preferences:
+                pref_props["skip_matching"] = preferences["skip_matching"]
+                
+            if "auto_rollback" in preferences:
+                pref_props["auto_rollback"] = preferences["auto_rollback"]
+                
+            if "instance_warmup" in preferences:
+                pref_props["instance_warmup"] = preferences["instance_warmup"]
+                
+            if "min_healthy_percentage" in preferences:
+                pref_props["min_healthy_percentage"] = preferences["min_healthy_percentage"]
+                
+            if pref_props:
+                refresh_props["preferences"] = pref_props
+        
+        if refresh_props:
+            cfn_asg.add_property_override("InstanceRefresh", refresh_props)
+            logger.info(f"Configured instance refresh: {refresh_props}")
 
 
 # Backward compatibility alias
