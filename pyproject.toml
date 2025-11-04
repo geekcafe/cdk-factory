@@ -33,7 +33,7 @@ markers = [
 [project]
 
 name = "cdk_factory"
-version = "0.18.25"
+version = "0.18.26"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
