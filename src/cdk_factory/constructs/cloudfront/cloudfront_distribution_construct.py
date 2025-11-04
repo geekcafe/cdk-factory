@@ -558,7 +558,7 @@ class CloudFrontDistributionConstruct(Construct):
         """
         bucket_policy = s3.BucketPolicy(
             self,
-            id=f"CloudFrontBucketPolicy-{self.source_bucket.bucket_name}",
+            id="CloudFrontBucketPolicy",
             bucket=self.source_bucket,
         )
 
