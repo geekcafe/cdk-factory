@@ -13,7 +13,7 @@ from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_ecs as ecs
-from aws_cdk import Duration, Stack
+from aws_cdk import Duration, Stack, CfnUpdatePolicy
 from aws_lambda_powertools import Logger
 from constructs import Construct
 
@@ -539,12 +539,15 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         
         if not instance_refresh_config.get("enabled", False):
             return
+
+        logger.warning("Instance refresh is not supported in this version of the CDK")
+        return
             
         # Get the CloudFormation ASG resource
         cfn_asg = asg.node.default_child
         
         # Configure instance refresh using CloudFormation UpdatePolicy
-        # Instance refresh is configured as an update policy, not a property
+        # UpdatePolicy is added at the resource level, not as a property
         update_policy = {
             "AutoScalingRollingUpdate": {
                 "PauseTime": "PT300S",  # 5 minutes pause
@@ -561,13 +564,37 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             }
         }
         
-        # Apply instance refresh using CloudFormation UpdatePolicy
-        cfn_asg.add_property_override("UpdatePolicy", update_policy)
-        logger.info(f"Configured instance refresh via UpdatePolicy: {update_policy}")
+        # # Apply instance refresh using CloudFormation's cfn_options.update_policy
+        # cfn_asg.cfn_options.update_policy = cdk.CfnUpdatePolicy.from_rolling_update(
+        #     pause_time=cdk.Duration.seconds(300),
+        #     min_instances_in_service=1,
+        #     max_batch_size=1,
+        #     wait_on_resource_signals=True
+        # )
         
-        # Note: For true instance refresh with preferences, we would need to use
-        # CDK's native instance refresh support when available, or custom CloudFormation
-        # This rolling update policy provides similar functionality
+        # Grab the L1 to attach UpdatePolicy.InstanceRefresh
+        cfn_asg: autoscaling.CfnAutoScalingGroup = asg.node.default_child
+
+        # cfn_asg.cfn_options.update_policy = CfnUpdatePolicy.from_auto_scaling_instance_refresh(
+        #     # Triggers tell CFN *what* changes should start a refresh
+        #     triggers=[CfnUpdatePolicy.InstanceRefreshTrigger.LAUNCH_TEMPLATE],
+        #     preferences=CfnUpdatePolicy.InstanceRefreshPreferences(
+        #         # warmup is like “grace” before counting a new instance healthy
+        #         instance_warmup=Duration.minutes(5),
+        #         # how aggressive the refresh is; 90 keeps capacity high
+        #         min_healthy_percentage=90,
+        #         # skip instances that already match the new LT (fast when only userdata/env tweaked)
+        #         skip_matching=True,
+        #         # optional: put instances in Standby first; default is rolling terminate/launch
+        #         # standby_instances=CfnUpdatePolicy.StandbyInstances.TERMINATE,
+        #         # checkpoint_percentages=[25, 50, 75],   # optional: progressive checkpoints
+        #         # checkpoint_delay=Duration.minutes(2),  # optional delay at checkpoints
+        #     ),
+        # )
+        logger.info(f"Configured instance refresh via CDK CfnUpdatePolicy")
+        
+        # Note: This provides rolling update functionality similar to instance refresh
+        # For true instance refresh with preferences, we would need CDK v2.80+ or custom CloudFormation
 
 
 # Backward compatibility alias
