@@ -540,42 +540,38 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if not instance_refresh_config.get("enabled", False):
             return
             
-        # Get the CloudFormation ASG resource
-        cfn_asg = asg.node.default_child
+        # Configure instance refresh using CDK construct
+        refresh_prefs = autoscaling.InstanceRefreshPreferences()
         
-        # Configure instance refresh properties
-        refresh_props = {}
-        
-        if "min_healthy_percentage" in instance_refresh_config:
-            refresh_props["min_healthy_percentage"] = instance_refresh_config["min_healthy_percentage"]
-            
-        if "instance_warmup" in instance_refresh_config:
-            refresh_props["instance_warmup"] = instance_refresh_config["instance_warmup"]
-            
         if "preferences" in instance_refresh_config:
             preferences = instance_refresh_config["preferences"]
             
-            # Build preferences property
-            pref_props = {}
-            
             if "skip_matching" in preferences:
-                pref_props["skip_matching"] = preferences["skip_matching"]
+                refresh_prefs.skip_matching = preferences["skip_matching"]
                 
             if "auto_rollback" in preferences:
-                pref_props["auto_rollback"] = preferences["auto_rollback"]
+                refresh_prefs.auto_rollback = preferences["auto_rollback"]
                 
             if "instance_warmup" in preferences:
-                pref_props["instance_warmup"] = preferences["instance_warmup"]
+                refresh_prefs.instance_warmup = cdk.Duration.seconds(preferences["instance_warmup"])
                 
             if "min_healthy_percentage" in preferences:
-                pref_props["min_healthy_percentage"] = preferences["min_healthy_percentage"]
-                
-            if pref_props:
-                refresh_props["preferences"] = pref_props
+                refresh_prefs.min_healthy_percentage = preferences["min_healthy_percentage"]
         
-        if refresh_props:
-            cfn_asg.add_property_override("InstanceRefresh", refresh_props)
-            logger.info(f"Configured instance refresh: {refresh_props}")
+        # Apply instance refresh to the ASG
+        if "min_healthy_percentage" in instance_refresh_config:
+            refresh_prefs.min_healthy_percentage = instance_refresh_config["min_healthy_percentage"]
+            
+        if "instance_warmup" in instance_refresh_config:
+            refresh_prefs.instance_warmup = cdk.Duration.seconds(instance_refresh_config["instance_warmup"])
+        
+        # Set the instance refresh property
+        asg.instance_refresh = autoscaling.InstanceRefresh(
+            strategy=autoscaling.InstanceRefreshStrategy.ROLLING,
+            preferences=refresh_prefs
+        )
+        
+        logger.info(f"Configured instance refresh with strategy: ROLLING")
 
 
 # Backward compatibility alias
