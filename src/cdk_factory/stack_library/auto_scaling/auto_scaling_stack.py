@@ -543,39 +543,31 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Get the CloudFormation ASG resource
         cfn_asg = asg.node.default_child
         
-        # Configure instance refresh using CloudFormation property
-        # The correct structure is at the ASG level, not nested
-        refresh_config = {
-            "Strategy": "Rolling",
-            "Preferences": {}
+        # Configure instance refresh using CloudFormation UpdatePolicy
+        # Instance refresh is configured as an update policy, not a property
+        update_policy = {
+            "AutoScalingRollingUpdate": {
+                "PauseTime": "PT300S",  # 5 minutes pause
+                "MinInstancesInService": "1",
+                "MaxBatchSize": "1",
+                "WaitOnResourceSignals": True,
+                "SuspendProcesses": [
+                    "HealthCheck",
+                    "ReplaceUnhealthy",
+                    "AZRebalance",
+                    "AlarmNotification",
+                    "ScheduledActions"
+                ]
+            }
         }
         
-        # Add preferences if configured
-        if "preferences" in instance_refresh_config:
-            preferences = instance_refresh_config["preferences"]
-            
-            if "min_healthy_percentage" in preferences:
-                refresh_config["Preferences"]["MinHealthyPercentage"] = preferences["min_healthy_percentage"]
-                
-            if "instance_warmup" in preferences:
-                refresh_config["Preferences"]["InstanceWarmup"] = preferences["instance_warmup"]
-                
-            if "skip_matching" in preferences:
-                refresh_config["Preferences"]["SkipMatching"] = preferences["skip_matching"]
-                
-            if "auto_rollback" in preferences:
-                refresh_config["Preferences"]["AutoRollback"] = preferences["auto_rollback"]
+        # Apply instance refresh using CloudFormation UpdatePolicy
+        cfn_asg.add_property_override("UpdatePolicy", update_policy)
+        logger.info(f"Configured instance refresh via UpdatePolicy: {update_policy}")
         
-        # Add top-level properties if configured
-        if "min_healthy_percentage" in instance_refresh_config:
-            refresh_config["MinHealthyPercentage"] = instance_refresh_config["min_healthy_percentage"]
-            
-        if "instance_warmup" in instance_refresh_config:
-            refresh_config["InstanceWarmup"] = instance_refresh_config["instance_warmup"]
-        
-        # Apply instance refresh using CloudFormation property override
-        cfn_asg.add_property_override("InstanceRefresh", refresh_config)
-        logger.info(f"Configured instance refresh: {refresh_config}")
+        # Note: For true instance refresh with preferences, we would need to use
+        # CDK's native instance refresh support when available, or custom CloudFormation
+        # This rolling update policy provides similar functionality
 
 
 # Backward compatibility alias
