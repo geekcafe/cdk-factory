@@ -185,10 +185,12 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         # Create runtime configuration file for Lambda@Edge
         # Since Lambda@Edge doesn't support environment variables, we bundle a config file
         # Use the full function_name (e.g., "tech-talk-dev-ip-gate") not just the base name
+        resolved_env = self._resolve_environment_variables()
         runtime_config = {
             'environment': self.deployment.environment,
             'function_name': function_name,
-            'region': self.deployment.region
+            'region': self.deployment.region,
+            'environment_variables': resolved_env  # Add actual environment variables
         }
         
         runtime_config_path = temp_code_dir / 'runtime_config.json'
