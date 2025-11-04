@@ -25,6 +25,7 @@ logger = Logger(service="AcmStack")
 
 @register_stack("acm_stack")
 @register_stack("certificate_stack")
+@register_stack("certificate_library_module")
 class AcmStack(IStack, StandardizedSsmMixin):
     """
     Reusable stack for AWS Certificate Manager.
