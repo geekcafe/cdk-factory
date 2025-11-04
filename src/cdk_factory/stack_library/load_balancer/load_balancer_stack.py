@@ -456,44 +456,42 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             # Configure conditions
             conditions = []
 
-            # Path patterns
-            path_patterns = rule_config.get("path_patterns", [])
-            if path_patterns:
-                conditions.append(elbv2.ListenerCondition.path_patterns(path_patterns))
-
-            # Host headers
-            host_headers = rule_config.get("host_headers", [])
-            if host_headers:
-                conditions.append(elbv2.ListenerCondition.host_headers(host_headers))
-
-            # HTTP headers
-            http_headers = rule_config.get("http_headers", {})
-            for header_name, header_values in http_headers.items():
-                conditions.append(
-                    elbv2.ListenerCondition.http_header(header_name, header_values)
-                )
-
-            # Query strings
-            query_strings = rule_config.get("query_strings", [])
-            if query_strings:
-                query_string_conditions = []
-                for qs in query_strings:
-                    query_string_conditions.append(
-                        elbv2.QueryStringCondition(
-                            key=qs.get("key"), value=qs.get("value")
+            # Parse AWS ALB conditions format
+            aws_conditions = rule_config.get("conditions", [])
+            for condition in aws_conditions:
+                field = condition.get("field")
+                if field == "http-header" and "http_header_config" in condition:
+                    header_config = condition["http_header_config"]
+                    header_name = header_config.get("header_name")
+                    header_values = header_config.get("values", [])
+                    if header_name and header_values:
+                        conditions.append(
+                            elbv2.ListenerCondition.http_header(header_name, header_values)
                         )
-                    )
-                conditions.append(
-                    elbv2.ListenerCondition.query_strings(query_string_conditions)
-                )
+                elif field == "path-pattern" and "values" in condition:
+                    path_patterns = condition.get("values", [])
+                    if path_patterns:
+                        conditions.append(elbv2.ListenerCondition.path_patterns(path_patterns))
+                elif field == "host-header" and "values" in condition:
+                    host_headers = condition.get("values", [])
+                    if host_headers:
+                        conditions.append(elbv2.ListenerCondition.host_headers(host_headers))
 
             # Configure actions
-            target_group_name = rule_config.get("target_group")
-            target_group = (
-                self.target_groups.get(target_group_name) if target_group_name else None
-            )
+            target_group = None
+            
+            # Parse AWS ALB actions format
+            aws_actions = rule_config.get("actions", [])
+            for action in aws_actions:
+                if action.get("type") == "forward":
+                    target_group_name = action.get("target_group")
+                    target_group = (
+                        self.target_groups.get(target_group_name) if target_group_name else None
+                    )
+                    break  # Use first forward action
 
-            if target_group:
+            # Validate that we have both conditions and target group before creating rule
+            if target_group and conditions:
                 # Create rule with forward action
                 elbv2.ApplicationListenerRule(
                     self,
@@ -502,6 +500,15 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     priority=priority,
                     conditions=conditions,
                     target_groups=[target_group],
+                )
+            elif not conditions:
+                logger.warning(
+                    f"Skipping listener rule '{rule_id}' - no conditions defined. "
+                    f"CDK requires at least one condition for every rule."
+                )
+            elif not target_group:
+                logger.warning(
+                    f"Skipping listener rule '{rule_id}' - no valid target group found."
                 )
 
     def _add_ip_whitelist_rules(
