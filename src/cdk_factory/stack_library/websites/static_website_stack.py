@@ -113,12 +113,16 @@ class StaticWebSiteStack(IStack):
         self, stack_config: StackConfig, workload: WorkloadConfig
     ) -> str:
         source = stack_config.dictionary.get("src", {}).get("path")
+        if not source:
+            raise ValueError("Source path is required for static website stack")
         for base in workload.paths:
-            candidate = Path(os.path.join(Path(base), source)).resolve()
+            if base is None:
+                continue
+            candidate = Path(os.path.join(str(Path(base)), source)).resolve()
 
             if candidate.exists():
                 return str(candidate)
-        raise ValueError(f"Could not find the source path: {source}")
+        raise ValueError(f"Could not find the source path for static site: {source}")
 
     def __setup_cloudfront_distribution(
         self,
