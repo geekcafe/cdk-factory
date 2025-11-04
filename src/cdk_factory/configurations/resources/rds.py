@@ -29,7 +29,7 @@ class RdsConfig(EnhancedBaseConfig):
     @property
     def name(self) -> str:
         """RDS instance name"""
-        return self.__config.get("name", "database")
+        return self.__config.get("name", self.database_name)
     
     @property
     def identifier(self) -> str:
