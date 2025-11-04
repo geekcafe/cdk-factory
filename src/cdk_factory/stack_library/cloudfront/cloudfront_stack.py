@@ -223,27 +223,27 @@ class CloudFrontStack(IStack):
 
     def _create_custom_origin(self, config: Dict[str, Any]) -> cloudfront.IOrigin:
         """Create custom origin (ALB, API Gateway, etc.)"""
-        domain_name = config.get("domain_name")
+        domain_name = self.resolve_ssm_value(self, config.get("domain_name"), config.get("domain_name"))
         origin_id = config.get("id")
 
         if not domain_name:
             raise ValueError("domain_name is required for custom origin")
 
-        # Check if domain name is a placeholder from ssm_imports
-        if domain_name.startswith("{{") and domain_name.endswith("}}"):
-            placeholder_key = domain_name[2:-2]  # Remove {{ and }}
-            if placeholder_key in self.ssm_imported_values:
-                domain_name = self.ssm_imported_values[placeholder_key]
-                logger.info(f"Resolved domain from SSM import: {placeholder_key}")
-            else:
-                logger.warning(f"Placeholder {domain_name} not found in SSM imports")
+        # # Check if domain name is a placeholder from ssm_imports
+        # if domain_name.startswith("{{") and domain_name.endswith("}}"):
+        #     placeholder_key = domain_name[2:-2]  # Remove {{ and }}
+        #     if placeholder_key in self.ssm_imported_values:
+        #         domain_name = self.ssm_imported_values[placeholder_key]
+        #         logger.info(f"Resolved domain from SSM import: {placeholder_key}")
+        #     else:
+        #         logger.warning(f"Placeholder {domain_name} not found in SSM imports")
 
-        # Legacy support: Check if domain name is an SSM parameter reference
-        elif domain_name.startswith("{{ssm:") and domain_name.endswith("}}"):
-            # Extract SSM parameter name
-            ssm_param = domain_name[6:-2]  # Remove {{ssm: and }}
-            domain_name = ssm.StringParameter.value_from_lookup(self, ssm_param)
-            logger.info(f"Resolved domain from SSM lookup {ssm_param}: {domain_name}")
+        # # Legacy support: Check if domain name is an SSM parameter reference
+        # elif domain_name.startswith("{{ssm:") and domain_name.endswith("}}"):
+        #     # Extract SSM parameter name
+        #     ssm_param = domain_name[6:-2]  # Remove {{ssm: and }}
+        #     domain_name = ssm.StringParameter.value_from_lookup(self, ssm_param)
+        #     logger.info(f"Resolved domain from SSM lookup {ssm_param}: {domain_name}")
 
         # Build custom headers (e.g., X-Origin-Secret)
         custom_headers = {}
@@ -297,8 +297,9 @@ class CloudFrontStack(IStack):
 
     def _create_s3_origin(self, config: Dict[str, Any]) -> cloudfront.IOrigin:
         """Create S3 origin"""
-        bucket_name = config.get("bucket_name")
-        domain_name = config.get("domain_name")
+        bucket_name = self.resolve_ssm_value(self, config.get("bucket_name"), config.get("bucket_name"))
+        
+
         origin_path = config.get("origin_path", "")
         
         if not bucket_name:
