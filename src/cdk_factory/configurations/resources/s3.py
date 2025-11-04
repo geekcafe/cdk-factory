@@ -158,7 +158,15 @@ class S3BucketConfig(EnhancedBaseConfig):
             value = self.__config.get("block_public_access")
 
         if value and isinstance(value, str):
-            if value.lower() == "block_acls":
+            if value.lower() == "disabled":
+                # For public website hosting, disable block public access
+                return s3.BlockPublicAccess(
+                    block_public_acls=False,
+                    block_public_policy=False,
+                    ignore_public_acls=False,
+                    restrict_public_buckets=False
+                )
+            elif value.lower() == "block_acls":
                 return s3.BlockPublicAccess.BLOCK_ACLS
             # elif value.lower() == "block_public_acls":
             #     return s3.BlockPublicAccess.block_public_acls
