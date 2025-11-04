@@ -58,7 +58,7 @@ class LambdaEdgeConfig(EnhancedBaseConfig):
     @property
     def code_path(self) -> str:
         """Path to Lambda function code directory"""
-        return self._config.get("code_path", "./lambdas/edge/ip_gate")
+        return self._config.get("code_path", "./lambdas/cloudfront/ip_gate")
 
     @property
     def environment(self) -> Dict[str, str]:

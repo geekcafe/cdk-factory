@@ -743,7 +743,7 @@ With CDK Factory, implementing IP gating is trivial:
         "name": "my-app-ip-gate",
         "runtime": "python3.11",
         "handler": "handler.lambda_handler",
-        "code_path": "cdk_factory:lambdas/edge/ip_gate",
+        "code_path": "cdk_factory:lambdas/cloudfront/ip_gate",
         "environment": {
           "GATE_ENABLED": "true",
           "ALLOW_CIDRS": "10.0.0.0/8,192.168.0.0/16",

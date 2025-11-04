@@ -14,6 +14,7 @@ from aws_cdk import (
     aws_cloudfront_origins as origins,
     aws_certificatemanager as acm,
     aws_route53 as route53,
+    aws_s3 as s3,
     aws_lambda as _lambda,
     aws_ssm as ssm,
     CfnOutput,
@@ -296,11 +297,31 @@ class CloudFrontStack(IStack):
 
     def _create_s3_origin(self, config: Dict[str, Any]) -> cloudfront.IOrigin:
         """Create S3 origin"""
-        # S3 origin implementation
-        # This would use origins.S3Origin
-        raise NotImplementedError(
-            "S3 origin support - use existing static_website_stack for S3"
+        bucket_name = config.get("bucket_name")
+        domain_name = config.get("domain_name")
+        origin_path = config.get("origin_path", "")
+        
+        if not bucket_name:
+            raise ValueError("S3 origin requires 'bucket_name' configuration")
+        
+        # For S3 origins, we need to import the bucket by name
+        bucket = s3.Bucket.from_bucket_name(
+            self,
+            id=f"S3OriginBucket-{config.get('id', 'unknown')}",
+            bucket_name=bucket_name
         )
+        
+        # Create S3 origin with OAC (Origin Access Control) for security
+        origin = origins.S3BucketOrigin.with_origin_access_control(
+            bucket,
+            origin_path=origin_path,
+            origin_access_levels=[
+                cloudfront.AccessLevel.READ,
+                cloudfront.AccessLevel.LIST,
+            ],
+        )
+        
+        return origin
 
     def _create_distribution(self) -> None:
         """Create CloudFront distribution"""

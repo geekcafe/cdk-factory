@@ -132,7 +132,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
     def _create_lambda_function(self, function_name: str) -> None:
         """Create the Lambda function"""
         
-        # Resolve code path - support package references (e.g., "cdk_factory:lambdas/edge/ip_gate")
+        # Resolve code path - support package references (e.g., "cdk_factory:lambdas/cloudfront/ip_gate")
         code_path_str = self.edge_config.code_path
         
         if ':' in code_path_str:
