@@ -119,6 +119,7 @@ class StandardizedSsmMixin:
         """Export multiple resource values to SSM Parameter Store."""
         params = {}
         
+        invalid_export_keys = []
         # Only export parameters that are explicitly configured in ssm_exports
         if not hasattr(config, 'ssm_exports') or not config.ssm_exports:
             logger.debug("No SSM exports configured")
@@ -138,8 +139,17 @@ class StandardizedSsmMixin:
                 )
                 params[key] = param
             else:
+                invalid_export_keys.append(key)
                 logger.warning(f"SSM export configured for '{key}' but no value found in resource_values")
         
+        if invalid_export_keys:
+            message = f"Export SSM Error\n🚨 SSM exports configured for '{invalid_export_keys}' but no values found in resource_values"
+            available_keys = list(resource_values.keys())
+            message = f"{message}\n✅ Available keys: {available_keys}"
+            message = f"{message}\n👉 Please update to the correct key or remove from the export list."
+            logger.warning(message)
+            raise ValueError(message)
+            
         return params
 
     def normalize_resource_name(self, name: str, for_export: bool = False) -> str:
