@@ -540,6 +540,14 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """Attach service to load balancer target groups"""
         target_group_arns = self.ecs_config.target_group_arns
         
+        if target_group_arns:
+            tmp = []
+            for tg_arn in target_group_arns:
+                import hashlib
+                unique_id = hashlib.md5(tg_arn.encode()).hexdigest()
+                tmp.append(self.resolve_ssm_value(self, tg_arn, unique_id))
+            target_group_arns = tmp
+        
         if not target_group_arns:
             # Try to load from SSM if configured
             target_group_arns = self._load_target_groups_from_ssm()
