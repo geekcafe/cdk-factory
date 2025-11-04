@@ -540,38 +540,42 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if not instance_refresh_config.get("enabled", False):
             return
             
-        # Configure instance refresh using CDK construct
-        refresh_prefs = autoscaling.InstanceRefreshPreferences()
+        # Get the CloudFormation ASG resource
+        cfn_asg = asg.node.default_child
         
+        # Configure instance refresh using CloudFormation property
+        # The correct structure is at the ASG level, not nested
+        refresh_config = {
+            "Strategy": "Rolling",
+            "Preferences": {}
+        }
+        
+        # Add preferences if configured
         if "preferences" in instance_refresh_config:
             preferences = instance_refresh_config["preferences"]
             
-            if "skip_matching" in preferences:
-                refresh_prefs.skip_matching = preferences["skip_matching"]
-                
-            if "auto_rollback" in preferences:
-                refresh_prefs.auto_rollback = preferences["auto_rollback"]
+            if "min_healthy_percentage" in preferences:
+                refresh_config["Preferences"]["MinHealthyPercentage"] = preferences["min_healthy_percentage"]
                 
             if "instance_warmup" in preferences:
-                refresh_prefs.instance_warmup = cdk.Duration.seconds(preferences["instance_warmup"])
+                refresh_config["Preferences"]["InstanceWarmup"] = preferences["instance_warmup"]
                 
-            if "min_healthy_percentage" in preferences:
-                refresh_prefs.min_healthy_percentage = preferences["min_healthy_percentage"]
+            if "skip_matching" in preferences:
+                refresh_config["Preferences"]["SkipMatching"] = preferences["skip_matching"]
+                
+            if "auto_rollback" in preferences:
+                refresh_config["Preferences"]["AutoRollback"] = preferences["auto_rollback"]
         
-        # Apply instance refresh to the ASG
+        # Add top-level properties if configured
         if "min_healthy_percentage" in instance_refresh_config:
-            refresh_prefs.min_healthy_percentage = instance_refresh_config["min_healthy_percentage"]
+            refresh_config["MinHealthyPercentage"] = instance_refresh_config["min_healthy_percentage"]
             
         if "instance_warmup" in instance_refresh_config:
-            refresh_prefs.instance_warmup = cdk.Duration.seconds(instance_refresh_config["instance_warmup"])
+            refresh_config["InstanceWarmup"] = instance_refresh_config["instance_warmup"]
         
-        # Set the instance refresh property
-        asg.instance_refresh = autoscaling.InstanceRefresh(
-            strategy=autoscaling.InstanceRefreshStrategy.ROLLING,
-            preferences=refresh_prefs
-        )
-        
-        logger.info(f"Configured instance refresh with strategy: ROLLING")
+        # Apply instance refresh using CloudFormation property override
+        cfn_asg.add_property_override("InstanceRefresh", refresh_config)
+        logger.info(f"Configured instance refresh: {refresh_config}")
 
 
 # Backward compatibility alias
