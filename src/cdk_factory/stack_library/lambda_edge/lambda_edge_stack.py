@@ -53,6 +53,8 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         self.workload: Optional[WorkloadConfig] = None
         self.function: Optional[_lambda.Function] = None
         self.function_version: Optional[_lambda.Version] = None
+        # Cache for resolved environment variables to prevent duplicate construct creation
+        self._resolved_env_cache: Optional[Dict[str, str]] = None
 
     def build(
         self,
@@ -101,12 +103,32 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         # Add outputs
         self._add_outputs(function_name)
 
+    def _sanitize_construct_name(self, name: str) -> str:
+        """
+        Create a deterministic, valid CDK construct name from any string.
+        Replaces non-alphanumeric characters with dashes and limits length.
+        """
+        # Replace non-alphanumeric characters with dashes
+        sanitized = ''.join(c if c.isalnum() else '-' for c in name)
+        # Remove consecutive dashes
+        while '--' in sanitized:
+            sanitized = sanitized.replace('--', '-')
+        # Remove leading/trailing dashes
+        sanitized = sanitized.strip('-')
+        # Limit to 255 characters (CDK limit)
+        return sanitized[:255]
+
     def _resolve_environment_variables(self) -> Dict[str, str]:
         """
         Resolve environment variables, including SSM parameter references.
         Supports {{ssm:parameter-path}} syntax for dynamic SSM lookups.
         Uses CDK tokens that resolve at deployment time, not synthesis time.
+        Caches results to prevent duplicate construct creation.
         """
+        # Return cached result if available
+        if self._resolved_env_cache is not None:
+            return self._resolved_env_cache
+        
         resolved_env = {}
         
         for key, value in self.edge_config.environment.items():
@@ -115,18 +137,23 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                 # Extract SSM parameter path
                 ssm_param_path = value[6:-2]  # Remove {{ssm: and }}
                 
+                # Create deterministic construct name from parameter path
+                construct_name = self._sanitize_construct_name(f"env-{key}-{ssm_param_path}")
+                
                 # Import SSM parameter - this creates a token that resolves at deployment time
                 param = ssm.StringParameter.from_string_parameter_name(
                     self,
-                    f"env-{key}-{hash(ssm_param_path) % 10000}",
+                    construct_name,
                     ssm_param_path
                 )
                 resolved_value = param.string_value
-                logger.info(f"Resolved environment variable {key} from SSM {ssm_param_path}")
+                logger.info(f"Resolved environment variable {key} from SSM {ssm_param_path} as {construct_name}")
                 resolved_env[key] = resolved_value
             else:
                 resolved_env[key] = value
         
+        # Cache the result
+        self._resolved_env_cache = resolved_env
         return resolved_env
 
     def _create_lambda_function(self, function_name: str) -> None:
