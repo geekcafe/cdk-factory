@@ -49,10 +49,24 @@ class LambdaEdgeConfig(EnhancedBaseConfig):
 
     @property
     def timeout(self) -> int:
-        """Timeout in seconds (max 5 for origin-request)"""
+        """Timeout in seconds
+        viewer-request: 5s
+        viewer-response: 5s
+        ---
+        origin-request: 30s
+        origin-response: 30s
+        
+        
+        """
         timeout = int(self._config.get("timeout", 5))
-        if timeout > 5:
-            raise ValueError("Lambda@Edge origin-request timeout cannot exceed 5 seconds. Value was set to {}".format(timeout))
+
+        event_type = self.event_type
+        if event_type == "viewer-request" or event_type == "viewer-response":
+            if timeout > 5:
+                raise ValueError("Lambda@Edge viewer timeout cannot exceed 5 seconds. Value was set to {}".format(timeout))
+        else:
+            if timeout > 30:
+                raise ValueError("Lambda@Edge origin timeout cannot exceed 30 seconds. Value was set to {}".format(timeout))
         return timeout
 
     @property
