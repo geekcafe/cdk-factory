@@ -145,7 +145,7 @@ class CloudFrontStack(IStack):
             return
 
         # Check if certificate ARN is provided
-        cert_arn = cert_config.get("arn")
+        cert_arn = self.resolve_ssm_value(self, cert_config.get("arn"), "CertificateARN")
         if cert_arn:
             self.certificate = acm.Certificate.from_certificate_arn(
                 self, "Certificate", certificate_arn=cert_arn
@@ -173,14 +173,14 @@ class CloudFrontStack(IStack):
                     "CloudFront certificates must be created in us-east-1"
                 )
                 return
-            
+
             # Create the certificate
             # Get hosted zone from SSM imports
             hosted_zone_id = cert_config.get("hosted_zone_id")
             hosted_zone = route53.HostedZone.from_hosted_zone_id(
                 self, "HostedZone", hosted_zone_id
             )
-            
+
             self.certificate = acm.Certificate(
                 self,
                 "Certificate",
@@ -223,7 +223,9 @@ class CloudFrontStack(IStack):
 
     def _create_custom_origin(self, config: Dict[str, Any]) -> cloudfront.IOrigin:
         """Create custom origin (ALB, API Gateway, etc.)"""
-        domain_name = self.resolve_ssm_value(self, config.get("domain_name"), config.get("domain_name"))
+        domain_name = self.resolve_ssm_value(
+            self, config.get("domain_name"), config.get("domain_name")
+        )
         origin_id = config.get("id")
 
         if not domain_name:
@@ -297,21 +299,22 @@ class CloudFrontStack(IStack):
 
     def _create_s3_origin(self, config: Dict[str, Any]) -> cloudfront.IOrigin:
         """Create S3 origin"""
-        bucket_name = self.resolve_ssm_value(self, config.get("bucket_name"), config.get("bucket_name"))
-        
+        bucket_name = self.resolve_ssm_value(
+            self, config.get("bucket_name"), config.get("bucket_name")
+        )
 
         origin_path = config.get("origin_path", "")
-        
+
         if not bucket_name:
             raise ValueError("S3 origin requires 'bucket_name' configuration")
-        
+
         # For S3 origins, we need to import the bucket by name
         bucket = s3.Bucket.from_bucket_name(
             self,
             id=f"S3OriginBucket-{config.get('id', 'unknown')}",
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
         )
-        
+
         # Create S3 origin with OAC (Origin Access Control) for security
         origin = origins.S3BucketOrigin.with_origin_access_control(
             bucket,
@@ -321,7 +324,7 @@ class CloudFrontStack(IStack):
                 cloudfront.AccessLevel.LIST,
             ],
         )
-        
+
         return origin
 
     def _create_distribution(self) -> None:
