@@ -268,7 +268,8 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             f"{function_name}-Role",
             assumed_by=iam.CompositePrincipal(
                 iam.ServicePrincipal("lambda.amazonaws.com"),
-                iam.ServicePrincipal("edgelambda.amazonaws.com")
+                iam.ServicePrincipal("edgelambda.amazonaws.com"),
+                iam.ServicePrincipal("cloudfront.amazonaws.com")  # Add CloudFront service principal
             ),
             description=f"Execution role for Lambda@Edge function {function_name}",
             managed_policies=[
@@ -313,6 +314,36 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         # Add tags
         for key, value in self.edge_config.tags.items():
             cdk.Tags.of(self.function).add(key, value)
+
+        # Add resource-based policy allowing CloudFront to invoke the Lambda function
+        # This is REQUIRED for Lambda@Edge to work properly
+        permission_kwargs = {
+            "principal": iam.ServicePrincipal("cloudfront.amazonaws.com"),
+            "action": "lambda:InvokeFunction",
+        }
+        
+        # Optional: Add source ARN restriction if CloudFront distribution ARN is available
+        # This provides more secure permission scoping
+        distribution_arn_path = f"/{self.deployment.environment}/{self.workload.name}/cloudfront/arn"
+        try:
+            distribution_arn = ssm.StringParameter.from_string_parameter_name(
+                self,
+                "cloudfront-distribution-arn",
+                distribution_arn_path
+            ).string_value
+            
+            # Add source ARN condition for more secure permission scoping
+            permission_kwargs["source_arn"] = distribution_arn
+            logger.info(f"Adding CloudFront permission with source ARN restriction: {distribution_arn}")
+        except Exception:
+            # Distribution ARN not available (common during initial deployment)
+            # CloudFront will scope the permission appropriately when it associates the Lambda
+            logger.warning(f"CloudFront distribution ARN not found at {distribution_arn_path}, using open permission")
+        
+        self.function.add_permission(
+            "CloudFrontInvokePermission",
+            **permission_kwargs
+        )
 
     def _create_function_version(self, function_name: str) -> None:
         """
