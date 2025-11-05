@@ -226,6 +226,9 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     "CloudWatchAgentServerPolicy"
                 )
             )
+
+        # add any custom policies
+        self._add_custom_task_policies(task_role)
         
         # Create task definition based on launch type
         if self.ecs_config.launch_type == "EC2":
@@ -256,6 +259,37 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         
         # Add containers
         self._add_containers_to_task()
+
+    def _add_custom_task_policies(self, task_role: iam.Role) -> None:
+        """
+        Add custom task policies to the task definition.
+        """
+        for policy in self.ecs_config.task_definition.get("policies", []):
+
+            effect = policy.get("effect", "Allow")
+            action = policy.get("action", None)
+            actions = policy.get("actions", [])
+            if action:
+                actions.append(action)
+            resources = policy.get("resources", [])
+            resource = policy.get("resource", None)
+            if resource:
+                resources.append(resource)
+
+            if effect == "Allow" and actions:
+                effect = iam.Effect.ALLOW
+            if effect == "Deny" and actions:
+                effect = iam.Effect.DENY
+
+            sid = policy.get("sid", None)
+            task_role.add_to_policy(
+                iam.PolicyStatement(
+                    effect=effect,
+                    actions=actions,
+                    resources=resources,
+                    sid=sid,
+                )
+            )
 
     def _add_volumes_to_task(self) -> None:
         """
