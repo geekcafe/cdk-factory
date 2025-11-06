@@ -398,7 +398,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             cr.AwsCustomResource(
                 self, f"EdgeLogRetention-{region}",
                 on_update={
-                    "service": "Logs",
+                    "service": "CloudWatchLogs",
                     "action": "putRetentionPolicy",
                     "parameters": {
                         "logGroupName": log_group_name,
@@ -407,7 +407,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                     "physical_resource_id": cr.PhysicalResourceId.from_response("logGroupName")
                 },
                 on_delete={
-                    "service": "Logs", 
+                    "service": "CloudWatchLogs", 
                     "action": "deleteRetentionPolicy",
                     "parameters": {
                         "logGroupName": log_group_name
