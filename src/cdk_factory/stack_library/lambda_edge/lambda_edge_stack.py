@@ -318,6 +318,39 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                 ]
             )
         )
+        
+        # Add ELB permissions for target health API access
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "elasticloadbalancing:DescribeTargetHealth",
+                    "elasticloadbalancing:DescribeTargetGroups",
+                    "elasticloadbalancing:DescribeLoadBalancers"
+                ],
+                resources=[
+                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:targetgroup/*/*",
+                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:loadbalancer/*/*"
+                ]
+            )
+        )
+        
+        # Add CloudWatch permissions for enhanced logging and metrics
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "cloudwatch:PutMetricData"
+                ],
+                resources=[
+                    f"arn:aws:logs:*:{self.deployment.account}:log-group:/aws/lambda/*",
+                    f"arn:aws:cloudwatch:*:{self.deployment.account}:metric:*"
+                ]
+            )
+        )
     
         self.function = _lambda.Function(
             self,
