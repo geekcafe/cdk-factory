@@ -373,63 +373,40 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
     def _configure_edge_log_retention(self, function_name: str) -> None:
         """
         Configure log retention for Lambda@Edge log groups in all edge regions
+        
+        TODO: IMPLEMENT POST-DEPLOYMENT SOLUTION
+        --------------------------------------
+        Lambda@Edge log groups are created on-demand when the function is invoked
+        at edge locations, not during deployment. This means we cannot set retention
+        policies during CloudFormation deployment.
+        
+        Possible solutions to implement:
+        1. EventBridge rule that triggers on log group creation
+        2. Custom Lambda function that runs periodically to set retention
+        3. Post-deployment script that waits for log groups to appear
+        4. CloudWatch Logs subscription filter that handles new log groups
+        
+        Current behavior: DISABLED to prevent deployment failures
         """
-        from aws_cdk import custom_resources as cr
         
-        # Get edge log retention from config (default to same as primary logs)
+        # DISABLED: Edge log groups don't exist during deployment
+        # Lambda@Edge creates log groups on-demand at edge locations
+        # Setting retention policies during deployment fails with "log group does not exist"
+        
         edge_retention_days = self.edge_config.dictionary.get("edge_log_retention_days", 7)
+        logger.warning(
+            f"Edge log retention configuration disabled - log groups are created on-demand. "
+            f"Desired retention: {edge_retention_days} days. "
+            f"See TODO in _configure_edge_log_retention() for implementation approach."
+        )
         
-        # List of common Lambda@Edge regions
-        edge_regions = [
-            'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
-            'eu-west-1', 'eu-west-2', 'eu-central-1',
-            'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1',
-            'ca-central-1', 'sa-east-1'
-        ]
+        # TODO: Implement one of these solutions:
+        # 1. EventBridge + Lambda: Trigger on log group creation and set retention
+        # 2. Periodic Lambda: Scan for edge log groups and apply retention policies  
+        # 3. Post-deployment script: Wait for log groups to appear after edge replication
+        # 4. CloudWatch Logs subscription: Process new log group events
         
-        # Lambda@Edge log groups are created in us-east-1 with region prefix
-        # Pattern: /aws/lambda/{edge-region}.{function-name}
-        # But they're all located in us-east-1
-        
-        for edge_region in edge_regions:
-            log_group_name = f"/aws/lambda/{edge_region}.{function_name}"
-            
-            # Use AwsCustomResource to set log retention
-            cr.AwsCustomResource(
-                self, f"EdgeLogRetention-{edge_region}",
-                on_update={
-                    "service": "CloudWatchLogs",
-                    "action": "putRetentionPolicy",
-                    "parameters": {
-                        "logGroupName": log_group_name,
-                        "retentionInDays": edge_retention_days
-                    },
-                    "physical_resource_id": cr.PhysicalResourceId.from_response("logGroupName")
-                },
-                on_delete={
-                    "service": "CloudWatchLogs", 
-                    "action": "deleteRetentionPolicy",
-                    "parameters": {
-                        "logGroupName": log_group_name
-                    },
-                    "physical_resource_id": cr.PhysicalResourceId.from_response("logGroupName")
-                },
-                policy=cr.AwsCustomResourcePolicy.from_statements([
-                    iam.PolicyStatement(
-                        effect=iam.Effect.ALLOW,
-                        actions=[
-                            "logs:PutRetentionPolicy",
-                            "logs:DeleteRetentionPolicy",
-                            "logs:DescribeLogGroups",
-                            "logs:DescribeLogStreams"
-                        ],
-                        # All Lambda@Edge log groups are in us-east-1
-                        resources=[f"arn:aws:logs:us-east-1:*:log-group:{log_group_name}*"]
-                    )
-                ])
-            )
-        
-        logger.info(f"Configured edge log retention to {edge_retention_days} days for {len(edge_regions)} regions")
+        return
 
     def _add_outputs(self, function_name: str) -> None:
         """Add CloudFormation outputs and SSM exports"""
