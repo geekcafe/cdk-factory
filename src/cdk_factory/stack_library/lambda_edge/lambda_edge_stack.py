@@ -290,8 +290,21 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                     ]
                 )
             )
-                
         
+        # Add Secrets Manager permissions for origin secret access
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:DescribeSecret"
+                ],
+                resources=[
+                    f"arn:aws:secretsmanager:*:{cdk.Aws.ACCOUNT_ID}:secret:{self.deployment.environment}/{self.workload.name}/origin-secret*"
+                ]
+            )
+        )
+    
         self.function = _lambda.Function(
             self,
             function_name,
