@@ -100,6 +100,9 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         # Create version (required for Lambda@Edge)
         self._create_function_version(function_name)
         
+        # Configure edge log retention for regional logs
+        self._configure_edge_log_retention(function_name)
+        
         # Add outputs
         self._add_outputs(function_name)
 
@@ -359,6 +362,57 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                 "Description",
                 f"Version for Lambda@Edge deployment - {self.edge_config.description}"
             )
+
+    def _configure_edge_log_retention(self, function_name: str) -> None:
+        """
+        Configure log retention for Lambda@Edge regional logs.
+        
+        Lambda@Edge creates log groups in multiple regions that need
+        separate retention configuration from the primary log group.
+        """
+        from aws_cdk import custom_resources as cr
+        
+        # Get edge log retention from config (default to same as primary logs)
+        edge_retention_days = self.edge_config.dictionary.get("edge_log_retention_days", 7)
+        
+        # List of common Lambda@Edge regions
+        edge_regions = [
+            'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
+            'eu-west-1', 'eu-west-2', 'eu-central-1',
+            'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1',
+            'ca-central-1', 'sa-east-1'
+        ]
+        
+        # Create custom resource to set log retention for each region
+        for region in edge_regions:
+            log_group_name = f"/aws/lambda/{region}.{function_name}"
+            
+            # Use AwsCustomResource to set log retention
+            cr.AwsCustomResource(
+                self, f"EdgeLogRetention-{region}",
+                on_update={
+                    "service": "Logs",
+                    "action": "putRetentionPolicy",
+                    "parameters": {
+                        "logGroupName": log_group_name,
+                        "retentionInDays": edge_retention_days
+                    },
+                    "physical_resource_id": cr.PhysicalResourceId.from_response("logGroupName")
+                },
+                on_delete={
+                    "service": "Logs", 
+                    "action": "deleteRetentionPolicy",
+                    "parameters": {
+                        "logGroupName": log_group_name
+                    },
+                    "physical_resource_id": cr.PhysicalResourceId.from_response("logGroupName")
+                },
+                policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
+                    resources=[f"arn:aws:logs:{region}:*:log-group:{log_group_name}*"]
+                )
+            )
+        
+        logger.info(f"Configured edge log retention to {edge_retention_days} days for {len(edge_regions)} regions")
 
     def _add_outputs(self, function_name: str) -> None:
         """Add CloudFormation outputs and SSM exports"""
