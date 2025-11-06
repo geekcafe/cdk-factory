@@ -326,11 +326,43 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                 actions=[
                     "elasticloadbalancing:DescribeTargetHealth",
                     "elasticloadbalancing:DescribeTargetGroups",
-                    "elasticloadbalancing:DescribeLoadBalancers"
+                    "elasticloadbalancing:DescribeLoadBalancers",
+                    "elasticloadbalancing:DescribeListeners",
+                    "elasticloadbalancing:DescribeTags"
                 ],
                 resources=[
                     f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:targetgroup/*/*",
-                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:loadbalancer/*/*"
+                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:loadbalancer/*/*",
+                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:listener/*/*/*/*"
+                ]
+            )
+        )
+        
+        # Add ACM permissions for certificate validation
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "acm:DescribeCertificate",
+                    "acm:ListCertificates"
+                ],
+                resources=[
+                    f"arn:aws:acm:*:{self.deployment.account}:certificate/*"
+                ]
+            )
+        )
+        
+        # Add Route 53 permissions for health check access
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "route53:GetHealthCheckStatus",
+                    "route53:ListHealthChecks",
+                    "route53:GetHealthCheck"
+                ],
+                resources=[
+                    f"arn:aws:route53:::{self.deployment.account}:health-check/*"
                 ]
             )
         )
@@ -484,8 +516,11 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         configuration = self.edge_config.dictionary.get("configuration", {})
         environment_variables = configuration.get("environment_variables", {})
         
+        # Build full configuration that Lambda@Edge expects
         full_config = {
-            "environment_variables": environment_variables
+            "environment_variables": environment_variables,
+            "runtime": configuration.get("runtime", {}),
+            "ui": configuration.get("ui", {})
         }
         
         self.export_ssm_parameter(
