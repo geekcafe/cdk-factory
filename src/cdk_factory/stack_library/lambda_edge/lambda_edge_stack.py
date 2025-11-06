@@ -372,10 +372,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
 
     def _configure_edge_log_retention(self, function_name: str) -> None:
         """
-        Configure log retention for Lambda@Edge regional logs.
-        
-        Lambda@Edge creates log groups in multiple regions that need
-        separate retention configuration from the primary log group.
+        Configure log retention for Lambda@Edge log groups in all edge regions
         """
         from aws_cdk import custom_resources as cr
         
@@ -390,13 +387,16 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             'ca-central-1', 'sa-east-1'
         ]
         
-        # Create custom resource to set log retention for each region
-        for region in edge_regions:
-            log_group_name = f"/aws/lambda/{region}.{function_name}"
+        # Lambda@Edge log groups are created in us-east-1 with region prefix
+        # Pattern: /aws/lambda/{edge-region}.{function-name}
+        # But they're all located in us-east-1
+        
+        for edge_region in edge_regions:
+            log_group_name = f"/aws/lambda/{edge_region}.{function_name}"
             
             # Use AwsCustomResource to set log retention
             cr.AwsCustomResource(
-                self, f"EdgeLogRetention-{region}",
+                self, f"EdgeLogRetention-{edge_region}",
                 on_update={
                     "service": "CloudWatchLogs",
                     "action": "putRetentionPolicy",
@@ -414,9 +414,19 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                     },
                     "physical_resource_id": cr.PhysicalResourceId.from_response("logGroupName")
                 },
-                policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
-                    resources=[f"arn:aws:logs:{region}:*:log-group:{log_group_name}*"]
-                )
+                policy=cr.AwsCustomResourcePolicy.from_statements([
+                    iam.PolicyStatement(
+                        effect=iam.Effect.ALLOW,
+                        actions=[
+                            "logs:PutRetentionPolicy",
+                            "logs:DeleteRetentionPolicy",
+                            "logs:DescribeLogGroups",
+                            "logs:DescribeLogStreams"
+                        ],
+                        # All Lambda@Edge log groups are in us-east-1
+                        resources=[f"arn:aws:logs:us-east-1:*:log-group:{log_group_name}*"]
+                    )
+                ])
             )
         
         logger.info(f"Configured edge log retention to {edge_retention_days} days for {len(edge_regions)} regions")
