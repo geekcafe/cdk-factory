@@ -424,8 +424,6 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
     def _add_outputs(self, function_name: str) -> None:
         """Add CloudFormation outputs and SSM exports"""
         
-        
-        
         # SSM Parameter Store exports (if configured)
         ssm_exports = self.edge_config.dictionary.get("ssm", {}).get("exports", {})
         if ssm_exports:
@@ -447,35 +445,13 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                         description=f"{key} for Lambda@Edge function {function_name}"
                     )
         
-        # Export environment variables as SSM parameters
-        # Since Lambda@Edge doesn't support environment variables, we export them
-        # to SSM so the Lambda function can fetch them at runtime
-        if self.edge_config.environment:
-            logger.info("Exporting Lambda@Edge environment variables as SSM parameters")
-            env_ssm_exports = self.edge_config.dictionary.get("environment_ssm_exports", {})
-            
-            # If no explicit environment_ssm_exports, create default SSM paths
-            if not env_ssm_exports:
-                env_ssm_exports = {
-                    key: f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/{key.lower()}"
-                    for key in self.edge_config.environment.keys()
-                }
-            
-            # Export each environment variable to SSM
-            for var_name, var_value in self.edge_config.environment.items():
-                ssm_path = env_ssm_exports.get(var_name, f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/{var_name.lower()}")
-                self.export_ssm_parameter(
-                    self,
-                    f"{var_name}-env-param",
-                    var_value,
-                    ssm_path,
-                    description=f"Lambda@Edge environment variable: {var_name} for {function_name}"
-                )
-        
-        # Export the complete configuration as a single SSM parameter for dynamic updates
+        # Export the complete configuration as a single SSM parameter
         config_ssm_path = f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/config"
+        configuration = self.edge_config.dictionary.get("configuration", {})
+        environment_variables = configuration.get("environment_variables", {})
+        
         full_config = {
-            "environment_variables": self.edge_config.environment or {}
+            "environment_variables": environment_variables
         }
         
         self.export_ssm_parameter(
@@ -497,58 +473,3 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             cache_ttl_ssm_path,
             description=f"Lambda@Edge configuration cache TTL in seconds for {function_name} - adjust for maintenance windows (30-3600)"
         )
-        
-        # Create additional default parameters if configured
-        default_params = self.edge_config.dictionary.get("default_parameters", {})
-        if default_params:
-            logger.info(f"Creating {len(default_params)} default SSM parameters")
-            
-            for param_name, param_value in default_params.items():
-                param_path = f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/defaults/{param_name}"
-                
-                # Create descriptive parameter description
-                descriptions = {
-                    "CACHE_TTL": f"Configuration cache TTL in seconds for {function_name}",
-                    "HEALTH_CHECK_TIMEOUT": f"ALB health check timeout in seconds for {function_name}",
-                    "HEALTH_CHECK_CACHE_TTL": f"Health check result cache TTL in seconds for {function_name}",
-                    "MAINTENANCE_MODE": f"Maintenance mode toggle for {function_name}",
-                    "GATE_ENABLED": f"IP gate toggle for {function_name}",
-                    "ALLOW_CIDRS": f"Allowed CIDR blocks for {function_name}",
-                    "HEALTH_CHECK_PATH": f"Health check endpoint path for {function_name}",
-                    "ALB_DOMAIN": f"ALB DNS name for {function_name}",
-                    "DEBUG_MODE": f"Debug mode toggle for {function_name}",
-                    "CIRCUIT_BREAKER_THRESHOLD": f"Circuit breaker failure threshold for {function_name}",
-                    "CIRCUIT_BREAKER_TIMEOUT": f"Circuit breaker timeout in seconds for {function_name}"
-                }
-                
-                description = descriptions.get(param_name, f"Default parameter '{param_name}' for Lambda@Edge function {function_name}")
-                
-                self.export_ssm_parameter(
-                    scope=self,
-                    id=f"default-{param_name.lower()}-param",
-                    value=str(param_value),
-                    parameter_name=param_path,
-                    description=description
-                )
-
-        # Resolve and export environment variables to SSM
-        resolved_env = self._resolve_environment_variables()
-        for env_key, env_value in resolved_env.items():
-              if env_key in resolved_env:
-                    env_value = resolved_env[env_key]      
-                    # Handle empty values - SSM doesn't allow empty strings
-                    # Use sentinel value "NONE" to indicate explicitly unset
-                    if not env_value or (isinstance(env_value, str) and env_value.strip() == ""):
-                        env_value = "NONE"
-                        logger.info(
-                            f"Environment variable {env_key} is empty - setting SSM parameter to 'NONE'. "
-                            f"Lambda function should treat 'NONE' as unset/disabled."
-                        )
-                    
-                    self.export_ssm_parameter(
-                        scope=self,
-                        id=f"env-{env_key}-param",
-                        value=env_value,
-                        parameter_name=ssm_path,
-                        description=f"Configuration for Lambda@Edge: {env_key}"
-                    )
