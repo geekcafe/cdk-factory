@@ -248,19 +248,12 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             self.edge_config.runtime,
             _lambda.Runtime.PYTHON_3_11
         )
-        
-        # Lambda@Edge does NOT support environment variables
-        # Configuration must be handled via:
-        # 1. Hardcoded in the function code
-        # 2. Fetched from SSM Parameter Store at runtime
-        # 3. Other configuration mechanisms
-        
+
         # Log warning if environment variables are configured
         if self.edge_config.environment:
             logger.warning(
                 f"Lambda@Edge function '{function_name}' has environment variables configured, "
-                "but Lambda@Edge does not support environment variables. "
-                "The function must fetch these values from SSM Parameter Store at runtime."
+                "but Lambda@Edge does not support environment variables. The function must fetch these values from SSM Parameter Store at runtime."
             )
             for key, value in self.edge_config.environment.items():
                 logger.warning(f"  - {key}: {value}")
@@ -297,8 +290,8 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                     ]
                 )
             )
+                
         
-        # Create the Lambda function WITHOUT environment variables
         self.function = _lambda.Function(
             self,
             function_name,
@@ -311,6 +304,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             description=self.edge_config.description,
             role=execution_role,
             # Lambda@Edge does NOT support environment variables
+            # Configuration must be fetched from SSM at runtime
             log_retention=logs.RetentionDays.ONE_WEEK,
         )
         
@@ -449,18 +443,86 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             
             # If no explicit environment_ssm_exports, create default SSM paths
             if not env_ssm_exports:
-                # Auto-generate SSM parameter names based on environment variable names
-                for env_key in self.edge_config.environment.keys():
-                    # Use snake_case version of the key for SSM path
-                    ssm_key = env_key.lower().replace('_', '-')
-                    env_ssm_exports[env_key] = f"/{self.deployment.environment}/{function_name}/{ssm_key}"
+                env_ssm_exports = {
+                    key: f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/{key.lower()}"
+                    for key in self.edge_config.environment.keys()
+                }
             
-            # Resolve and export environment variables to SSM
-            resolved_env = self._resolve_environment_variables()
-            for env_key, ssm_path in env_ssm_exports.items():
-                if env_key in resolved_env:
-                    env_value = resolved_env[env_key]
-                    
+            # Export each environment variable to SSM
+            for var_name, var_value in self.edge_config.environment.items():
+                ssm_path = env_ssm_exports.get(var_name, f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/{var_name.lower()}")
+                self.export_ssm_parameter(
+                    self,
+                    f"{var_name}-env-param",
+                    var_value,
+                    ssm_path,
+                    description=f"Lambda@Edge environment variable: {var_name} for {function_name}"
+                )
+        
+        # Export the complete configuration as a single SSM parameter for dynamic updates
+        config_ssm_path = f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/config"
+        full_config = {
+            "environment_variables": self.edge_config.environment or {}
+        }
+        
+        self.export_ssm_parameter(
+            self,
+            "full-config-param",
+            json.dumps(full_config),
+            config_ssm_path,
+            description=f"Complete Lambda@Edge configuration for {function_name} - update this for dynamic changes"
+        )
+        
+        # Export cache TTL parameter for dynamic cache control
+        cache_ttl_ssm_path = f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/cache-ttl"
+        default_cache_ttl = self.edge_config.dictionary.get("cache_ttl_seconds", 300)  # Default 5 minutes
+        
+        self.export_ssm_parameter(
+            self,
+            "cache-ttl-param",
+            str(default_cache_ttl),
+            cache_ttl_ssm_path,
+            description=f"Lambda@Edge configuration cache TTL in seconds for {function_name} - adjust for maintenance windows (30-3600)"
+        )
+        
+        # Create additional default parameters if configured
+        default_params = self.edge_config.dictionary.get("default_parameters", {})
+        if default_params:
+            logger.info(f"Creating {len(default_params)} default SSM parameters")
+            
+            for param_name, param_value in default_params.items():
+                param_path = f"/{self.deployment.environment}/{self.workload.name}/lambda-edge/defaults/{param_name}"
+                
+                # Create descriptive parameter description
+                descriptions = {
+                    "CACHE_TTL": f"Configuration cache TTL in seconds for {function_name}",
+                    "HEALTH_CHECK_TIMEOUT": f"ALB health check timeout in seconds for {function_name}",
+                    "HEALTH_CHECK_CACHE_TTL": f"Health check result cache TTL in seconds for {function_name}",
+                    "MAINTENANCE_MODE": f"Maintenance mode toggle for {function_name}",
+                    "GATE_ENABLED": f"IP gate toggle for {function_name}",
+                    "ALLOW_CIDRS": f"Allowed CIDR blocks for {function_name}",
+                    "HEALTH_CHECK_PATH": f"Health check endpoint path for {function_name}",
+                    "ALB_DOMAIN": f"ALB DNS name for {function_name}",
+                    "DEBUG_MODE": f"Debug mode toggle for {function_name}",
+                    "CIRCUIT_BREAKER_THRESHOLD": f"Circuit breaker failure threshold for {function_name}",
+                    "CIRCUIT_BREAKER_TIMEOUT": f"Circuit breaker timeout in seconds for {function_name}"
+                }
+                
+                description = descriptions.get(param_name, f"Default parameter '{param_name}' for Lambda@Edge function {function_name}")
+                
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"default-{param_name.lower()}-param",
+                    value=str(param_value),
+                    parameter_name=param_path,
+                    description=description
+                )
+
+        # Resolve and export environment variables to SSM
+        resolved_env = self._resolve_environment_variables()
+        for env_key, env_value in resolved_env.items():
+              if env_key in resolved_env:
+                    env_value = resolved_env[env_key]      
                     # Handle empty values - SSM doesn't allow empty strings
                     # Use sentinel value "NONE" to indicate explicitly unset
                     if not env_value or (isinstance(env_value, str) and env_value.strip() == ""):
@@ -471,9 +533,9 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                         )
                     
                     self.export_ssm_parameter(
-                        self,
-                        f"env-{env_key}-param",
-                        env_value,
-                        ssm_path,
+                        scope=self,
+                        id=f"env-{env_key}-param",
+                        value=env_value,
+                        parameter_name=ssm_path,
                         description=f"Configuration for Lambda@Edge: {env_key}"
                     )
