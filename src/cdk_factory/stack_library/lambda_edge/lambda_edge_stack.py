@@ -136,9 +136,10 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         
         # Use the new simplified configuration structure
         configuration = self.edge_config.dictionary.get("configuration", {})
-        environment_variables = configuration.get("environment_variables", {})
+        runtime_config = configuration.get("runtime", {})
+        ui_config = configuration.get("ui", {})
         
-        for key, value in environment_variables.items():
+        for key, value in runtime_config.items():
             # Check if value is an SSM parameter reference
             if isinstance(value, str) and value.startswith("{{ssm:") and value.endswith("}}"):
                 # Extract SSM parameter path
@@ -220,11 +221,17 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         # Since Lambda@Edge doesn't support environment variables, we bundle a config file
         # Use the full function_name (e.g., "tech-talk-dev-ip-gate") not just the base name
         resolved_env = self._resolve_environment_variables()
+        
+        # Get the UI configuration
+        configuration = self.edge_config.dictionary.get("configuration", {})
+        ui_config = configuration.get("ui", {})
+        
         runtime_config = {
             'environment': self.deployment.environment,
             'function_name': function_name,
             'region': self.deployment.region,
-            'environment_variables': resolved_env  # Add actual environment variables
+            'runtime': resolved_env,  # Runtime variables (SSM, etc.)
+            'ui': ui_config  # UI configuration (colors, messages, etc.)
         }
         
         runtime_config_path = temp_code_dir / 'runtime_config.json'
@@ -255,14 +262,14 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
 
         # Log warning if environment variables are configured
         configuration = self.edge_config.dictionary.get("configuration", {})
-        environment_variables = configuration.get("environment_variables", {})
+        runtime_config = configuration.get("runtime", {})
         
-        if environment_variables:
+        if runtime_config:
             logger.warning(
                 f"Lambda@Edge function '{function_name}' has environment variables configured, "
                 "but Lambda@Edge does not support environment variables. The function must fetch these values from SSM Parameter Store at runtime."
             )
-            for key, value in environment_variables.items():
+            for key, value in runtime_config.items():
                 logger.warning(f"  - {key}: {value}")
         
         # Create execution role with CloudWatch Logs and SSM permissions
@@ -283,7 +290,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         )
         
         # Add SSM read permissions if environment variables reference SSM parameters
-        if environment_variables:
+        if runtime_config:
             execution_role.add_to_policy(
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
