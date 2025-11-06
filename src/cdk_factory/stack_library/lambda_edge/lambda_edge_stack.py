@@ -134,7 +134,11 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         
         resolved_env = {}
         
-        for key, value in self.edge_config.environment.items():
+        # Use the new simplified configuration structure
+        configuration = self.edge_config.dictionary.get("configuration", {})
+        environment_variables = configuration.get("environment_variables", {})
+        
+        for key, value in environment_variables.items():
             # Check if value is an SSM parameter reference
             if isinstance(value, str) and value.startswith("{{ssm:") and value.endswith("}}"):
                 # Extract SSM parameter path
@@ -250,12 +254,15 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         )
 
         # Log warning if environment variables are configured
-        if self.edge_config.environment:
+        configuration = self.edge_config.dictionary.get("configuration", {})
+        environment_variables = configuration.get("environment_variables", {})
+        
+        if environment_variables:
             logger.warning(
                 f"Lambda@Edge function '{function_name}' has environment variables configured, "
                 "but Lambda@Edge does not support environment variables. The function must fetch these values from SSM Parameter Store at runtime."
             )
-            for key, value in self.edge_config.environment.items():
+            for key, value in environment_variables.items():
                 logger.warning(f"  - {key}: {value}")
         
         # Create execution role with CloudWatch Logs and SSM permissions
@@ -276,7 +283,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         )
         
         # Add SSM read permissions if environment variables reference SSM parameters
-        if self.edge_config.environment:
+        if environment_variables:
             execution_role.add_to_policy(
                 iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
@@ -286,7 +293,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                         "ssm:GetParametersByPath"
                     ],
                     resources=[
-                        f"arn:aws:ssm:*:{cdk.Aws.ACCOUNT_ID}:parameter/*"
+                        f"arn:aws:ssm:*:{self.deployment.account}:parameter/*"
                     ]
                 )
             )
@@ -300,7 +307,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                     "secretsmanager:DescribeSecret"
                 ],
                 resources=[
-                    f"arn:aws:secretsmanager:*:{cdk.Aws.ACCOUNT_ID}:secret:{self.deployment.environment}/{self.workload.name}/origin-secret*"
+                    f"arn:aws:secretsmanager:*:{self.deployment.account}:secret:{self.deployment.environment}/{self.workload.name}/origin-secret*"
                 ]
             )
         )
