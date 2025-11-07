@@ -226,9 +226,14 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         configuration = self.edge_config.dictionary.get("configuration", {})
         ui_config = configuration.get("ui", {})
         
+
+        workload_name = self.deployment.workload.get("name")
+
+        if not workload_name:
+            raise ValueError("Workload name is required for Lambda@Edge function")
         runtime_config = {
             'environment': self.deployment.environment,
-            'workload': self.deployment.workload,
+            'workload': workload_name,
             'function_name': function_name,
             'region': self.deployment.region,
             'runtime': resolved_env,  # Runtime variables (SSM, etc.)
