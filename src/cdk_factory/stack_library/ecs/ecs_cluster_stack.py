@@ -136,7 +136,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Add container insights if enabled
         if self.ecs_config.container_insights:
-            cluster_settings.append({"name": "containerInsights", "value": "enabled"})
+            cluster_settings.append({"name": "containerInsightsV2", "value": "enabled"})
 
         # Add custom cluster settings
         if self.ecs_config.cluster_settings:
@@ -151,7 +151,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             "ECSCluster",
             cluster_name=self.ecs_config.name,
             vpc=self.vpc,
-            container_insights=self.ecs_config.container_insights,
+            container_insights_v2=ecs.ContainerInsights.ENABLED if self.ecs_config.container_insights else ecs.ContainerInsights.DISABLED,
             default_cloud_map_namespace=(
                 self.ecs_config.cloud_map_namespace
                 if self.ecs_config.cloud_map_namespace

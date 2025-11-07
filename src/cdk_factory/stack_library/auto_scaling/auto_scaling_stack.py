@@ -9,11 +9,11 @@ from typing import Dict, Any, List, Optional
 import aws_cdk as cdk
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_autoscaling as autoscaling
-from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_iam as iam
-from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_ecs as ecs
-from aws_cdk import Duration, Stack, CfnUpdatePolicy
+from aws_cdk import Duration
+
+from aws_cdk.aws_autoscaling import HealthChecks, AdditionalHealthCheckType
 from aws_lambda_powertools import Logger
 from constructs import Construct
 
@@ -34,10 +34,10 @@ logger = Logger(service="AutoScalingStackStandardized")
 class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     """
     Reusable stack for AWS Auto Scaling Groups with standardized SSM integration.
-    
+
     This version uses the StandardizedSsmMixin to provide consistent SSM parameter
     handling across all CDK Factory modules.
-    
+
     Key Features:
     - Standardized SSM import/export patterns
     - Template variable resolution
@@ -49,10 +49,10 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         # Initialize parent classes properly
         super().__init__(scope, id, **kwargs)
-        
+
         # Initialize VPC cache from mixin
         self._initialize_vpc_cache()
-        
+
         # Initialize module attributes
         self.asg_config = None
         self.stack_config = None
@@ -98,7 +98,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             resource_type="auto_scaling",
             resource_name=asg_name,
             deployment=deployment,
-            workload=workload
+            workload=workload,
         )
 
         # Process SSM imports using standardized method
@@ -127,7 +127,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Add scaling policies
         self._add_scaling_policies()
-        
+
         # Add update policy
         self._add_update_policy()
 
@@ -143,12 +143,12 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """
         Get security groups for the Auto Scaling Group using standardized SSM imports.
-        
+
         Returns:
             List of security group references
         """
         security_groups = []
-        
+
         # Primary method: Use standardized SSM imports
         ssm_imports = self._get_ssm_imports()
         if "security_group_ids" in ssm_imports:
@@ -160,7 +160,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                             self, f"SecurityGroup-SSM-{idx}", sg_id
                         )
                     )
-                logger.info(f"Added {len(imported_sg_ids)} security groups from SSM imports")
+                logger.info(
+                    f"Added {len(imported_sg_ids)} security groups from SSM imports"
+                )
             else:
                 security_groups.append(
                     ec2.SecurityGroup.from_security_group_id(
@@ -168,10 +170,12 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     )
                 )
                 logger.info(f"Added security group from SSM imports")
-        
+
         # Fallback: Check for direct configuration (backward compatibility)
         elif self.asg_config.security_group_ids:
-            logger.warning("Using direct security group configuration - consider migrating to SSM imports")
+            logger.warning(
+                "Using direct security group configuration - consider migrating to SSM imports"
+            )
             for idx, sg_id in enumerate(self.asg_config.security_group_ids):
                 logger.info(f"Adding security group from direct config: {sg_id}")
                 # Handle comma-separated security group IDs
@@ -180,7 +184,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     for block_idx, block in enumerate(blocks):
                         security_groups.append(
                             ec2.SecurityGroup.from_security_group_id(
-                                self, f"SecurityGroup-Direct-{idx}-{block_idx}", block.strip()
+                                self,
+                                f"SecurityGroup-Direct-{idx}-{block_idx}",
+                                block.strip(),
                             )
                         )
                 else:
@@ -190,8 +196,10 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                         )
                     )
         else:
-            logger.warning("No security groups found from SSM imports or direct configuration")
-        
+            logger.warning(
+                "No security groups found from SSM imports or direct configuration"
+            )
+
         return security_groups
 
     def _get_vpc_id(self) -> str:
@@ -200,9 +208,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """
         # Use the centralized VPC resolution from VPCProviderMixin
         vpc = self.resolve_vpc(
-            config=self.asg_config,
-            deployment=self.deployment,
-            workload=self.workload
+            config=self.asg_config, deployment=self.deployment, workload=self.workload
         )
         return vpc.vpc_id
 
@@ -214,9 +220,8 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # ssm_imports = self._get_ssm_imports()
 
         subnet_ids = self.get_subnet_ids(self.asg_config)
-        
+
         return subnet_ids
-       
 
     def _create_instance_role(self, asg_name: str) -> iam.Role:
         """Create IAM role for EC2 instances"""
@@ -239,7 +244,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     def _create_user_data(self) -> ec2.UserData:
         """Create user data for EC2 instances"""
         user_data = ec2.UserData.for_linux()
-        
+
         # Add basic setup commands
         # this will break amazon linux 2023 which uses dnf instead of yum
         # user_data.add_commands(
@@ -258,9 +263,11 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 # Substitute SSM-imported values
                 if "cluster_name" in ssm_imports and "{{cluster_name}}" in command:
                     cluster_name = ssm_imports["cluster_name"]
-                    processed_command = command.replace("{{cluster_name}}", cluster_name)
+                    processed_command = command.replace(
+                        "{{cluster_name}}", cluster_name
+                    )
                 processed_commands.append(processed_command)
-            
+
             user_data.add_commands(*processed_commands)
             self.user_data_commands = processed_commands
 
@@ -272,7 +279,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 cluster_name = ssm_imports["cluster_name"]
                 ecs_commands = [
                     f"echo 'ECS_CLUSTER={cluster_name}' >> /etc/ecs/ecs.config",
-                    "systemctl restart ecs"
+                    "systemctl restart ecs",
                 ]
             else:
                 # Fallback to default naming pattern
@@ -280,11 +287,13 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     "echo 'ECS_CLUSTER={}{}' >> /etc/ecs/ecs.config".format(
                         self.deployment.workload_name, self.deployment.environment
                     ),
-                    "systemctl restart ecs"
+                    "systemctl restart ecs",
                 ]
             user_data.add_commands(*ecs_commands)
 
-        logger.info(f"Created user data with {len(self.user_data_commands)} custom commands")
+        logger.info(
+            f"Created user data with {len(self.user_data_commands)} custom commands"
+        )
         return user_data
 
     def _get_or_create_vpc(self) -> ec2.Vpc:
@@ -292,14 +301,18 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if self._vpc is None:
             vpc_id = self._get_vpc_id()
             subnet_ids = self._get_subnet_ids()
-            
+
             # Create VPC and subnets from imported values
             self._vpc = ec2.Vpc.from_vpc_attributes(
-                self, "ImportedVPC",
+                self,
+                "ImportedVPC",
                 vpc_id=vpc_id,
-                availability_zones=["us-east-1a", "us-east-1b"]  # Add required availability zones
+                availability_zones=[
+                    "us-east-1a",
+                    "us-east-1b",
+                ],  # Add required availability zones
             )
-            
+
             # Create and store subnets if we have subnet IDs
             self._subnets = []
             if subnet_ids:
@@ -311,41 +324,40 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             else:
                 # Use default subnets from VPC
                 self._subnets = self._vpc.public_subnets
-        
+
         return self._vpc
 
     def _get_subnets(self) -> List[ec2.Subnet]:
         """Get the subnets from the shared VPC"""
-        return getattr(self, '_subnets', [])
+        return getattr(self, "_subnets", [])
 
     def _create_ecs_cluster_if_needed(self) -> Optional[ecs.Cluster]:
         """Create ECS cluster if ECS configuration is detected"""
         # Check if user data contains ECS configuration (use raw config since user_data_commands might not be set yet)
         ecs_detected = False
         if self.asg_config.user_data_commands:
-            ecs_detected = any("ECS_CLUSTER" in cmd for cmd in self.asg_config.user_data_commands)
-        
+            ecs_detected = any(
+                "ECS_CLUSTER" in cmd for cmd in self.asg_config.user_data_commands
+            )
+
         if ecs_detected:
             ssm_imports = self._get_ssm_imports()
             if "cluster_name" in ssm_imports:
                 cluster_name = ssm_imports["cluster_name"]
-                
+
                 # Use the shared VPC
                 vpc = self._get_or_create_vpc()
-                
+
                 self.ecs_cluster = ecs.Cluster.from_cluster_attributes(
-                    self,
-                    "ImportedECSCluster",
-                    cluster_name=cluster_name,
-                    vpc=vpc
+                    self, "ImportedECSCluster", cluster_name=cluster_name, vpc=vpc
                 )
                 logger.info(f"Connected to existing ECS cluster: {cluster_name}")
-        
+
         return self.ecs_cluster
 
     def _create_launch_template(self, asg_name: str) -> ec2.LaunchTemplate:
         """Create launch template for Auto Scaling Group"""
-        
+
         # Use the configured AMI ID or fall back to appropriate lookup
         if self.asg_config.ami_id:
             # Use explicit AMI ID provided by user
@@ -361,6 +373,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             elif self.asg_config.ami_type.upper() == "ECS_OPTIMIZED":
                 # Use ECS-optimized AMI from SSM parameter
                 from aws_cdk import aws_ssm as ssm
+
                 machine_image = ec2.MachineImage.from_ssm_parameter(
                     parameter_name="/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
                 )
@@ -370,7 +383,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         else:
             # Default fallback
             machine_image = ec2.MachineImage.latest_amazon_linux2023()
-        
+
         launch_template = ec2.LaunchTemplate(
             self,
             f"{asg_name}-LaunchTemplate",
@@ -381,17 +394,27 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             security_group=self.security_groups[0] if self.security_groups else None,
             key_name=self.asg_config.key_name,
             detailed_monitoring=self.asg_config.detailed_monitoring,
-            block_devices=[
-                ec2.BlockDevice(
-                    device_name=block_device.get("device_name", "/dev/xvda"),
-                    volume=ec2.BlockDeviceVolume.ebs(
-                        volume_size=block_device.get("volume_size", 8),
-                        volume_type=getattr(ec2.EbsDeviceVolumeType, block_device.get("volume_type", "GP3").upper()),
-                        delete_on_termination=block_device.get("delete_on_termination", True),
-                        encrypted=block_device.get("encrypted", False),
+            block_devices=(
+                [
+                    ec2.BlockDevice(
+                        device_name=block_device.get("device_name", "/dev/xvda"),
+                        volume=ec2.BlockDeviceVolume.ebs(
+                            volume_size=block_device.get("volume_size", 8),
+                            volume_type=getattr(
+                                ec2.EbsDeviceVolumeType,
+                                block_device.get("volume_type", "GP3").upper(),
+                            ),
+                            delete_on_termination=block_device.get(
+                                "delete_on_termination", True
+                            ),
+                            encrypted=block_device.get("encrypted", False),
+                        ),
                     )
-                ) for block_device in self.asg_config.block_devices
-            ] if self.asg_config.block_devices else None,
+                    for block_device in self.asg_config.block_devices
+                ]
+                if self.asg_config.block_devices
+                else None
+            ),
         )
 
         logger.info(f"Created launch template: {launch_template.launch_template_name}")
@@ -403,6 +426,22 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         vpc = self._get_or_create_vpc()
         subnets = self._get_subnets()
 
+        health_checks = (
+            # ELB + EC2 (EC2 is always included; ELB is “additional”)
+            HealthChecks.with_additional_checks(
+                additional_types=[AdditionalHealthCheckType.ELB],
+                grace_period=Duration.seconds(
+                    self.asg_config.health_check_grace_period
+                ),
+            )
+            if self.asg_config.health_check_type.upper() == "ELB"
+            # EC2-only
+            else HealthChecks.ec2(
+                grace_period=Duration.seconds(
+                    self.asg_config.health_check_grace_period
+                ),
+            )
+        )
         auto_scaling_group = autoscaling.AutoScalingGroup(
             self,
             f"{asg_name}-ASG",
@@ -412,14 +451,10 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             min_capacity=self.asg_config.min_capacity,
             max_capacity=self.asg_config.max_capacity,
             desired_capacity=self.asg_config.desired_capacity,
-            health_check=autoscaling.HealthCheck.elb(
-                grace=cdk.Duration.seconds(self.asg_config.health_check_grace_period)
-            ) if self.asg_config.health_check_type.upper() == "ELB" else autoscaling.HealthCheck.ec2(
-                grace=cdk.Duration.seconds(self.asg_config.health_check_grace_period)
-            ),
+            health_checks=health_checks,
             cooldown=cdk.Duration.seconds(self.asg_config.cooldown),
             termination_policies=[
-                getattr(autoscaling.TerminationPolicy, policy.upper()) 
+                getattr(autoscaling.TerminationPolicy, policy.upper())
                 for policy in self.asg_config.termination_policies
             ],
         )
@@ -449,7 +484,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     def _get_target_group_arns(self) -> List[str]:
         """Get target group ARNs using standardized SSM approach"""
         target_group_arns = []
-        
+
         # Use standardized SSM imports
         ssm_imports = self._get_ssm_imports()
         if "target_group_arns" in ssm_imports:
@@ -458,11 +493,11 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 target_group_arns.extend(imported_arns)
             else:
                 target_group_arns.append(imported_arns)
-        
+
         # Fallback: Direct configuration
         elif self.asg_config.target_group_arns:
             target_group_arns.extend(self.asg_config.target_group_arns)
-        
+
         return target_group_arns
 
     def _add_scaling_policies(self) -> None:
@@ -482,38 +517,40 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                         target_value=policy_config.get("target_cpu", 70),
                         predefined_metric_specification=autoscaling.CfnScalingPolicy.PredefinedMetricSpecificationProperty(
                             predefined_metric_type="ASGAverageCPUUtilization"
-                        )
-                    )
+                        ),
+                    ),
                 )
                 logger.info("Added CPU utilization scaling policy")
 
     def _add_update_policy(self) -> None:
         """Add update policy to the Auto Scaling Group"""
         update_policy = self.asg_config.update_policy
-        
+
         if not update_policy:
             # No update policy configured, don't add one
             return
-            
+
         # Get the underlying CloudFormation resource to add update policy
         cfn_asg = self.auto_scaling_group.node.default_child
-        
+
         # Get CDK's default policy first (if any)
-        default_policy = getattr(cfn_asg, 'update_policy', {})
-        
+        default_policy = getattr(cfn_asg, "update_policy", {})
+
         # Merge with defaults, then use the robust add_override method
         merged_policy = {
             **default_policy,  # Preserve CDK defaults
             "AutoScalingRollingUpdate": {
-                "MinInstancesInService": update_policy.get("min_instances_in_service", 1),
+                "MinInstancesInService": update_policy.get(
+                    "min_instances_in_service", 1
+                ),
                 "MaxBatchSize": update_policy.get("max_batch_size", 1),
-                "PauseTime": f"PT{update_policy.get('pause_time', 300)}S"
-            }
+                "PauseTime": f"PT{update_policy.get('pause_time', 300)}S",
+            },
         }
-        
+
         # Use the robust CDK-documented approach
         cfn_asg.add_override("UpdatePolicy", merged_policy)
-        
+
         logger.info("Added rolling update policy to Auto Scaling Group")
 
     def _export_ssm_parameters(self) -> None:
@@ -530,22 +567,22 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Export using standardized SSM mixin
         exported_params = self.export_ssm_parameters(resource_values)
-        
+
         logger.info(f"Exported SSM parameters: {exported_params}")
 
     def _configure_instance_refresh(self, asg: autoscaling.AutoScalingGroup) -> None:
         """Configure instance refresh for rolling updates"""
         instance_refresh_config = self.asg_config.instance_refresh
-        
+
         if not instance_refresh_config.get("enabled", False):
             return
 
         logger.warning("Instance refresh is not supported in this version of the CDK")
         return
-            
+
         # Get the CloudFormation ASG resource
         cfn_asg = asg.node.default_child
-        
+
         # Configure instance refresh using CloudFormation UpdatePolicy
         # UpdatePolicy is added at the resource level, not as a property
         update_policy = {
@@ -559,11 +596,11 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     "ReplaceUnhealthy",
                     "AZRebalance",
                     "AlarmNotification",
-                    "ScheduledActions"
-                ]
+                    "ScheduledActions",
+                ],
             }
         }
-        
+
         # # Apply instance refresh using CloudFormation's cfn_options.update_policy
         # cfn_asg.cfn_options.update_policy = cdk.CfnUpdatePolicy.from_rolling_update(
         #     pause_time=cdk.Duration.seconds(300),
@@ -571,7 +608,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         #     max_batch_size=1,
         #     wait_on_resource_signals=True
         # )
-        
+
         # Grab the L1 to attach UpdatePolicy.InstanceRefresh
         cfn_asg: autoscaling.CfnAutoScalingGroup = asg.node.default_child
 
@@ -592,7 +629,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         #     ),
         # )
         logger.info(f"Configured instance refresh via CDK CfnUpdatePolicy")
-        
+
         # Note: This provides rolling update functionality similar to instance refresh
         # For true instance refresh with preferences, we would need CDK v2.80+ or custom CloudFormation
 
