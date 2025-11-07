@@ -228,6 +228,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         
         runtime_config = {
             'environment': self.deployment.environment,
+            'workload': self.deployment.workload,
             'function_name': function_name,
             'region': self.deployment.region,
             'runtime': resolved_env,  # Runtime variables (SSM, etc.)
