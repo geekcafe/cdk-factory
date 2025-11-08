@@ -337,9 +337,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
                     "elasticloadbalancing:DescribeTags"
                 ],
                 resources=[
-                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:targetgroup/*/*",
-                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:loadbalancer/*/*",
-                    f"arn:aws:elasticloadbalancing:*:{self.deployment.account}:listener/*/*/*/*"
+                    "*"
                 ]
             )
         )
