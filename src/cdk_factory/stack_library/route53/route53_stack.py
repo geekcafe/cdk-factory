@@ -49,7 +49,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
         self.hosted_zone = None
         self.certificate = None
         self.records = {}
-        self._distribution_cache = {}  # Cache for reusing distributions
+        self._local_cache = {}  # Cache for reusing distributions
 
     def build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
         """Build the Route53 stack"""
@@ -120,7 +120,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
         return certificate
 
     def _create_dns_records(self) -> None:
-        self._create_dns_records_old()
+        # self._create_dns_records_old()
         self._create_dns_records_new()
 
     
@@ -129,7 +129,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
         # Create a unique cache key from distribution domain and ID
         cache_key = f"{distribution_domain}-{distribution_id}"
         
-        if cache_key not in self._distribution_cache:
+        if cache_key not in self._local_cache:
             # Create the distribution construct with a unique ID
             unique_id = f"CF-{distribution_domain.replace('.', '-').replace('*', 'wildcard')}-{hash(cache_key) % 10000}"
             distribution = cloudfront.Distribution.from_distribution_attributes(
@@ -137,10 +137,32 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                 domain_name=distribution_domain,
                 distribution_id=distribution_id
             )
-            self._distribution_cache[cache_key] = distribution
+            self._local_cache[cache_key] = distribution
             logger.info(f"Created CloudFront distribution construct for {distribution_domain}")
         
-        return self._distribution_cache[cache_key]
+        return self._local_cache[cache_key]
+    
+    def _get_or_create_alb_target(self, record_name: str, target_value: str, hosted_zone_id: str, security_group_id: str, load_balancer_dns_name: str) -> targets.LoadBalancerTarget:
+        """Get or create a CloudFront distribution, reusing if already created"""
+        # Create a unique cache key from distribution domain and ID
+        cache_key = f"{record_name}-alb"
+        
+        if cache_key not in self._local_cache:
+            # Create the distribution construct with a unique ID
+            target = targets.LoadBalancerTarget(
+                elbv2.ApplicationLoadBalancer.from_application_load_balancer_attributes(
+                    self, f"ALB-{record_name}",
+                    load_balancer_arn=target_value,
+                    load_balancer_canonical_hosted_zone_id=hosted_zone_id,
+                    security_group_id=security_group_id,
+                    load_balancer_dns_name=load_balancer_dns_name,
+                    
+                )
+            )
+            self._local_cache[cache_key] = target
+            logger.info(f"Created ALB target construct for ALB-{record_name}")
+        
+        return self._local_cache[cache_key]
 
     def _create_dns_records_new(self) -> None:
         """Create DNS records based on configuration - generic implementation"""
@@ -164,7 +186,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                 target_value = alias_config.get("target_value", "")
                 hosted_zone_id = alias_config.get("hosted_zone_id", "")
                 
-                unique_id = f"{record_name}-{record_type}"
+                unique_id = f"{record_name}-{record_type}-target-value"
                 # Handle SSM parameter references in target_value                
                 target_value = self.resolve_ssm_value(self, target_value, unique_id=unique_id)
                 
@@ -195,28 +217,25 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                     # ALB alias target using imported load balancer attributes
 
                     security_group_id=alias_config.get("security_group_id", "")
-                    load_balancer_arn=alias_config.get("load_balancer_arn", "")
-                    if not load_balancer_arn:
-                        message = f"Alias record missing load_balancer_arn: {record}"
+                    
+                    unique_id = f"{record_name}-{record_type}-sg-id"
+                    # Handle SSM parameter references in target_value                
+                    security_group_id = self.resolve_ssm_value(self, security_group_id, unique_id=unique_id)
+
+                    load_balancer_dns_name = alias_config.get("load_balancer_dns_name", "")
+                    
+                    unique_id = f"{record_name}-{record_type}-load-balancer-dns-name"
+                    # Handle SSM parameter references in target_value                
+                    load_balancer_dns_name = self.resolve_ssm_value(self, load_balancer_dns_name, unique_id=unique_id)
+
+                    if not security_group_id or not load_balancer_dns_name:
+                        message = f"Alias record missing security_group_id or load_balancer_dns_name: {record}"
                         logger.warning(message)
                         missing_configurations.append(message)
                         continue
 
-                    if not security_group_id:
-                        message = f"Alias record missing security_group_id: {record}"
-                        logger.warning(message)
-                        missing_configurations.append(message)
-                        continue
-
-                    target = targets.LoadBalancerTarget(
-                            elbv2.ApplicationLoadBalancer.from_application_load_balancer_attributes(
-                                self, f"ALB-{record_name}",
-                                load_balancer_arn=load_balancer_arn,
-                                load_balancer_canonical_hosted_zone_id=hosted_zone_id,
-                                security_group_id=security_group_id,
-                                
-                            )
-                        )
+                    target = self._get_or_create_alb_target(record_name, target_value, hosted_zone_id, security_group_id, load_balancer_dns_name)
+                            
                     alias_target = route53.RecordTarget.from_alias(target)
                 
                 else:
