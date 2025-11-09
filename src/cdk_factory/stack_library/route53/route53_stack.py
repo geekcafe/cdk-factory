@@ -50,6 +50,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
         self.certificate = None
         self.records = {}
         self._local_cache = {}  # Cache for reusing distributions
+        self._missing_configurations = []
 
     def build(self, stack_config: StackConfig, deployment: DeploymentConfig, workload: WorkloadConfig) -> None:
         """Build the Route53 stack"""
@@ -142,7 +143,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
         
         return self._local_cache[cache_key]
     
-    def _get_or_create_alb_target(self, record_name: str, target_value: str, hosted_zone_id: str, security_group_id: str, load_balancer_dns_name: str) -> targets.LoadBalancerTarget:
+    def _get_or_create_alb_target(self, record_name: str, target_value: str, load_balancer_zone_id: str, security_group_id: str, load_balancer_dns_name: str) -> targets.LoadBalancerTarget:
         """Get or create a CloudFront distribution, reusing if already created"""
         # Create a unique cache key from distribution domain and ID
         cache_key = f"{record_name}-alb"
@@ -153,7 +154,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                 elbv2.ApplicationLoadBalancer.from_application_load_balancer_attributes(
                     self, f"ALB-{record_name}",
                     load_balancer_arn=target_value,
-                    load_balancer_canonical_hosted_zone_id=hosted_zone_id,
+                    load_balancer_canonical_hosted_zone_id=load_balancer_zone_id,
                     security_group_id=security_group_id,
                     load_balancer_dns_name=load_balancer_dns_name,
                     
@@ -167,46 +168,32 @@ class Route53Stack(IStack, StandardizedSsmMixin):
     def _create_dns_records_new(self) -> None:
         """Create DNS records based on configuration - generic implementation"""
         
-        missing_configurations = []
+        
 
         for record in self.route53_config.records:
-            record_name = record.get("name", "")
-            record_type = record.get("type", "")
+            t = record.get("type")
+            record_name = self._get_resolved_value(config=record, key="name", record_type=t)
+            record_type = self._get_resolved_value(config=record, key="type", record_type=t)
             
-            if not record_name or not record_type:
-                message = f"Record missing name or type: {record}"
-                logger.warning(message)
-                missing_configurations.append(message)
-                continue
+            
             
             # Handle alias records
             if "alias" in record:
                 alias_config = record["alias"]
-                target_type = alias_config.get("target_type", "")
-                target_value = alias_config.get("target_value", "")
-                hosted_zone_id = alias_config.get("hosted_zone_id", "")
                 
-                unique_id = f"{record_name}-{record_type}-target-value"
-                # Handle SSM parameter references in target_value                
-                target_value = self.resolve_ssm_value(self, target_value, unique_id=unique_id)
+                target_type = self._get_resolved_value(config=alias_config, key="target_type", record_type=record_type)
+                target_value = self._get_resolved_value(config=alias_config, key="target_value", record_type=record_type)
                 
-                if not target_type or not target_value:
-                    message = f"Alias record missing target_type or target_value: {record}"
-                    logger.warning(message)
-                    missing_configurations.append(message)
-                    continue
+                
+                
                 
                 # Create appropriate target based on type
                 alias_target = None
                 if target_type == "cloudfront":
                     # CloudFront distribution target
                     distribution_domain = target_value
-                    distribution_id = alias_config.get("distribution_id", "")
-                    if not distribution_id:
-                        message = f"Alias record missing distribution_id: {record}"
-                        logger.warning(message)
-                        missing_configurations.append(message)
-                        continue
+                    distribution_id = self._get_resolved_value(config=alias_config, key="distribution_id", record_type=record_type)
+                    
                     
                     # Get or create the distribution (reuses if already created)
                     distribution = self._get_or_create_cloudfront_distribution(distribution_domain, distribution_id)
@@ -216,25 +203,13 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                 elif target_type == "loadbalancer" or target_type == "alb" or target_type == "elbv2":
                     # ALB alias target using imported load balancer attributes
 
-                    security_group_id=alias_config.get("security_group_id", "")
+                    security_group_id=self._get_resolved_value(config=alias_config, key="security_group_id", record_type=record_type)                
+                    load_balancer_dns_name = self._get_resolved_value(config=alias_config, key="load_balancer_dns_name", record_type=record_type)                
+                    load_balancer_zone_id = self._get_resolved_value(config=alias_config, key="load_balancer_zone_id", record_type=record_type)
                     
-                    unique_id = f"{record_name}-{record_type}-sg-id"
-                    # Handle SSM parameter references in target_value                
-                    security_group_id = self.resolve_ssm_value(self, security_group_id, unique_id=unique_id)
-
-                    load_balancer_dns_name = alias_config.get("load_balancer_dns_name", "")
                     
-                    unique_id = f"{record_name}-{record_type}-load-balancer-dns-name"
-                    # Handle SSM parameter references in target_value                
-                    load_balancer_dns_name = self.resolve_ssm_value(self, load_balancer_dns_name, unique_id=unique_id)
-
-                    if not security_group_id or not load_balancer_dns_name:
-                        message = f"Alias record missing security_group_id or load_balancer_dns_name: {record}"
-                        logger.warning(message)
-                        missing_configurations.append(message)
-                        continue
-
-                    target = self._get_or_create_alb_target(record_name, target_value, hosted_zone_id, security_group_id, load_balancer_dns_name)
+                    
+                    target = self._get_or_create_alb_target(record_name, target_value, load_balancer_zone_id, security_group_id, load_balancer_dns_name)
                             
                     alias_target = route53.RecordTarget.from_alias(target)
                 
@@ -244,22 +219,27 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                     missing_configurations.append(message)
                     continue
                 
-                # Create the alias record
-                route53.ARecord(
-                    self,
-                    f"AliasRecord-{record_name}-{record_type}",
-                    zone=self.hosted_zone,
-                    record_name=record_name,
-                    target=alias_target,
-                    ttl=cdk.Duration.seconds(record.get("ttl", 300))
-                ) if record_type == "A" else route53.AaaaRecord(
-                    self,
-                    f"AliasRecord-{record_name}-{record_type}",
-                    zone=self.hosted_zone,
+                route_53_record = None
+                id = f"AliasRecord-{record_name}-{record_type}"
+                print(f"creating record {id}")
+                if record_type == "A":
+                    route_53_record = route53.ARecord(
+                        self,
+                        id,
+                        zone=self.hosted_zone,
                     record_name=record_name,
                     target=alias_target,
                     ttl=cdk.Duration.seconds(record.get("ttl", 300))
                 )
+                elif record_type == "AAAA":
+                    route_53_record = route53.AaaaRecord(
+                        self,
+                        id,
+                        zone=self.hosted_zone,
+                        record_name=record_name,
+                        target=alias_target,
+                        ttl=cdk.Duration.seconds(record.get("ttl", 300))
+                    )
                 
             # Handle standard records with values
             elif "values" in record:
@@ -352,89 +332,47 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                 else:
                     message = f"Unsupported record type: {record_type}"
                     logger.warning(message)
-                    missing_configurations.append(message)
+                    self._missing_configurations.append(message)
                     continue
             
             else:
                 message = f"Record missing 'alias' or 'values' configuration: {record}"
                 logger.warning(message)
-                missing_configurations.append(message)
+                self._missing_configurations.append(message)
                 continue
 
-        if missing_configurations and len(missing_configurations) > 0:
+        if self._missing_configurations and len(self._missing_configurations) > 0:
             # print all missing configurations
             print("Missing configurations:")
-            for message in missing_configurations:
+            for message in self._missing_configurations:
                 print(message)
             
-            messages = "\n".join(missing_configurations)
+            messages = "\n".join(self._missing_configurations)
             raise ValueError(f"Missing Configurations:\n{messages}")
 
-    def _create_dns_records_old(self) -> None:
-        """Create DNS records based on configuration"""
-        # Create alias records
-        for alias_record in self.route53_config.aliases:
-            record_name = alias_record.get("name", "")
-            target_type = alias_record.get("target_type", "")
-            target_value = alias_record.get("target_value", "")
-            
-            # target value needs to handle SSM parameters
-            if "{{ssm:" in target_value and "}}" in target_value:
-                # Extract SSM parameter path from template like {{ssm:/path/to/parameter}}
-                ssm_path = target_value.split("{{ssm:")[1].split("}}")[0]
-                target_value = self.get_ssm_imported_value(ssm_path)
+    def _get_resolved_value(self, *, config: dict, key: str, required: bool = True, record_type: str = ""   ) -> str:
+        
+        value = config.get(key, "")
+        x = str(value).replace("{", "").replace("}", "").replace(":", "")
+        unique_id = f"{key}-id-{record_type}-{x}"
 
-            if not record_name or not target_type or not target_value:
-                continue
-                
-            # Determine the alias target
-            alias_target = None
-            if target_type == "alb":
-                # Get the ALB from the workload if available
-                if hasattr(self.workload, "load_balancer"):
-                    alb = self.workload.load_balancer
-                    alias_target = route53.RecordTarget.from_alias(targets.LoadBalancerTarget(alb))
-                else:
-                    # Try to get ALB from target value
-                    alb = elbv2.ApplicationLoadBalancer.from_lookup(
-                        self,
-                        f"ALB-{record_name}",
-                        load_balancer_arn=target_value
-                    )
-                    alias_target = route53.RecordTarget.from_alias(targets.LoadBalancerTarget(alb))
-            elif target_type == "cloudfront":
-                # For CloudFront, we would need the distribution
-                # This is a simplified implementation
-                pass
-                
-            if alias_target:
-                record = route53.ARecord(
-                    self,
-                    f"AliasRecord-{record_name}",
-                    zone=self.hosted_zone,
-                    record_name=record_name,
-                    target=alias_target
-                )
-                self.records[record_name] = record
-                
-        # Create CNAME records
-        for cname_record in self.route53_config.cname_records:
-            record_name = cname_record.get("name", "")
-            target_domain = cname_record.get("target_domain", "")
-            ttl = cname_record.get("ttl", 300)
-            
-            if not record_name or not target_domain:
-                continue
-                
-            record = route53.CnameRecord(
-                self,
-                f"CnameRecord-{record_name}",
-                zone=self.hosted_zone,
-                record_name=record_name,
-                domain_name=target_domain,
-                ttl=cdk.Duration.seconds(ttl)
-            )
-            self.records[record_name] = record
+        if unique_id in self._local_cache:
+            return self._local_cache[unique_id]
+        
+        
+        
+        # Handle SSM parameter references in target_value                
+        value = self.resolve_ssm_value(self, value, unique_id=unique_id)
+
+        if required and not value:
+            self._missing_configurations.append(f"Missing required value for key: {key}")
+
+        self._local_cache[unique_id] = value
+
+
+        return value
+
+    
 
     def _add_outputs(self) -> None:
         """Add CloudFormation outputs for the Route53 resources"""
