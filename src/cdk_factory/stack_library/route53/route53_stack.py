@@ -27,6 +27,7 @@ from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
+
 logger = Logger(service="Route53Stack")
 
 
@@ -190,28 +191,34 @@ class Route53Stack(IStack, StandardizedSsmMixin):
                     alias_target = route53.RecordTarget.from_alias(
                         targets.CloudFrontTarget(distribution)
                     )
-                elif target_type == "loadbalancer" or target_type == "alb":
-                    # Load Balancer target
-                    alias_target = route53.RecordTarget.from_alias(
-                        targets.LoadBalancerTarget(
-                            elbv2.ApplicationLoadBalancer.from_load_balancer_attributes(
+                elif target_type == "loadbalancer" or target_type == "alb" or target_type == "elbv2":
+                    # ALB alias target using imported load balancer attributes
+
+                    security_group_id=alias_config.get("security_group_id", "")
+                    load_balancer_arn=alias_config.get("load_balancer_arn", "")
+                    if not load_balancer_arn:
+                        message = f"Alias record missing load_balancer_arn: {record}"
+                        logger.warning(message)
+                        missing_configurations.append(message)
+                        continue
+
+                    if not security_group_id:
+                        message = f"Alias record missing security_group_id: {record}"
+                        logger.warning(message)
+                        missing_configurations.append(message)
+                        continue
+
+                    target = targets.LoadBalancerTarget(
+                            elbv2.ApplicationLoadBalancer.from_application_load_balancer_attributes(
                                 self, f"ALB-{record_name}",
-                                load_balancer_dns_name=target_value,
-                                load_balancer_canonical_hosted_zone_id=hosted_zone_id
+                                load_balancer_arn=load_balancer_arn,
+                                load_balancer_canonical_hosted_zone_id=hosted_zone_id,
+                                security_group_id=security_group_id,
+                                
                             )
                         )
-                    )
-                elif target_type == "elbv2":
-                    # Generic ELBv2 target
-                    alias_target = route53.RecordTarget.from_alias(
-                        targets.LoadBalancerTarget(
-                            elbv2.ApplicationLoadBalancer.from_load_balancer_attributes(
-                                self, f"ELB-{record_name}",
-                                load_balancer_dns_name=target_value,
-                                load_balancer_canonical_hosted_zone_id=hosted_zone_id
-                            )
-                        )
-                    )
+                    alias_target = route53.RecordTarget.from_alias(target)
+                
                 else:
                     message = f"Unsupported alias target type: {target_type}"
                     logger.warning(message)
