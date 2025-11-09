@@ -459,6 +459,10 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             # Parse AWS ALB conditions format
             aws_conditions = rule_config.get("conditions", [])
             for condition in aws_conditions:
+                enabled = str(condition.get("enabled", True)).lower()
+                if enabled != "true":
+                    continue
+                
                 field = condition.get("field")
                 if field == "http-header" and "http_header_config" in condition:
                     header_config = condition["http_header_config"]
