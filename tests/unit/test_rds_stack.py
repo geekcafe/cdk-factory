@@ -29,11 +29,12 @@ def test_rds_stack_minimal():
         {
             "rds": {
                 "name": "test-db",
+                "instance_identifier": "test-db-instance",
                 "engine": "postgres",
                 "engine_version": "14",
                 "instance_class": "t3.micro",
                 "database_name": "testdb",
-                "username": "admin",
+                "master_username": "admin",
             }
         },
         workload=dummy_workload.dictionary,
@@ -74,12 +75,12 @@ def test_rds_stack_minimal():
                 stack.build(stack_config, deployment, dummy_workload)
 
                 # Verify the RDS config was correctly loaded
-                assert stack.rds_config.name == "test-db"
+                assert stack.rds_config.instance_identifier == "test-db-instance"
                 assert stack.rds_config.engine == "postgres"
                 assert stack.rds_config.engine_version == "14"
                 assert stack.rds_config.instance_class == "t3.micro"
                 assert stack.rds_config.database_name == "testdb"
-                assert stack.rds_config.username == "admin_usr"
+                assert stack.rds_config.master_username == "admin_usr"
 
                 # Verify the DB instance was created
                 assert stack.db_instance is mock_db_instance
@@ -102,11 +103,12 @@ def test_rds_stack_full_config():
         {
             "rds": {
                 "name": "full-db",
+                "instance_identifier": "full-db-instance",
                 "engine": "mysql",
                 "engine_version": "8.0",
                 "instance_class": "r5.large",
                 "database_name": "fulldb",
-                "username": "dbadmin",
+                "master_username": "dbadmin",
                 "secret_name": "full-db-credentials",
                 "allocated_storage": 100,
                 "storage_encrypted": True,
@@ -168,12 +170,12 @@ def test_rds_stack_full_config():
                     stack.build(stack_config, deployment, dummy_workload)
 
                     # Verify the RDS config was correctly loaded
-                    assert stack.rds_config.name == "full-db"
+                    assert stack.rds_config.instance_identifier == "full-db-instance"
                     assert stack.rds_config.engine == "mysql"
                     assert stack.rds_config.engine_version == "8.0"
                     assert stack.rds_config.instance_class == "r5.large"
                     assert stack.rds_config.database_name == "fulldb"
-                    assert stack.rds_config.username == "dbadmin"
+                    assert stack.rds_config.master_username == "dbadmin"
                     assert stack.rds_config.secret_name == "full-db-credentials"
                     assert stack.rds_config.allocated_storage == 100
                     assert stack.rds_config.storage_encrypted is True
@@ -216,6 +218,7 @@ def test_rds_import_existing():
         {
             "rds": {
                 "name": "imported-db",
+                "instance_identifier": "imported-db-instance",
                 "existing_instance_id": "database-1",
             }
         },
@@ -252,7 +255,7 @@ def test_rds_import_existing():
                 stack.build(stack_config, deployment, dummy_workload)
 
                 # Verify the RDS config was correctly loaded
-                assert stack.rds_config.name == "imported-db"
+                assert stack.rds_config.instance_identifier == "imported-db-instance"
                 assert stack.rds_config.existing_instance_id == "database-1"
 
                 # Verify the DB instance was imported

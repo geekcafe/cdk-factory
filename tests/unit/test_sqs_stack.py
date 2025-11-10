@@ -164,7 +164,7 @@ def test_create_queue():
         mock_queue_constructor.return_value = mock_queue
         
         # Call the create queue method
-        result = stack._create_queue(queue_config, queue_name)
+        result = stack._create_queue(queue_config, queue_name, deployment)
         
         # Verify the queue was created with the correct properties
         mock_queue_constructor.assert_called_once()

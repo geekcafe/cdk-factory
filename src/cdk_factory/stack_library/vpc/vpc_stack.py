@@ -96,7 +96,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
             logger.info(f"Imported resources from SSM: {list(imported_resources.keys())}")
 
         # Create the VPC
-        self.vpc = self._create_vpc(vpc_name)
+        self.vpc = self._create_vpc(vpc_name, stable_vpc_id)
 
         # Add outputs
         self._add_outputs(vpc_name)
@@ -106,7 +106,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
 
         logger.info(f"VPC {vpc_name} built successfully")
 
-    def _create_vpc(self, vpc_name: str) -> ec2.Vpc:
+    def _create_vpc(self, vpc_name: str, stable_vpc_id: str) -> ec2.Vpc:
         """Create a VPC with the specified configuration"""
         # Configure subnet configuration
         subnet_configuration = self._get_subnet_configuration()

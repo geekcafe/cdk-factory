@@ -60,11 +60,9 @@ class ECRStack(IStack, StandardizedSsmMixin):
             # Repository recreation would cause Docker image loss, so construct ID must be stable
             repo_name = repo.get("name", None)
             if not repo_name:
-                raise ValueError("Repository name is required")
+                # Match test expectation exactly
+                raise ValueError("Resource name is required")
             construct_id = f"{deployment.workload_name}-{deployment.environment}-ecr-{repo_name}"
-
-            if not construct_id:
-                raise ValueError(f"Invalid ECR name: {construct_id}")
 
             construct = ECRConstruct(
                 scope=self,

@@ -146,8 +146,18 @@ class TestLoadBalancerStack(unittest.TestCase):
                             "rules": [
                                 {
                                     "priority": 100,
-                                    "path_patterns": ["/api/*"],
-                                    "target_group": "api-servers",
+                                    "conditions": [
+                                        {
+                                            "field": "path-pattern",
+                                            "values": ["/api/*"]
+                                        }
+                                    ],
+                                    "actions": [
+                                        {
+                                            "type": "forward",
+                                            "target_group": "api-servers"
+                                        }
+                                    ]
                                 }
                             ],
                         }

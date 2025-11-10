@@ -101,7 +101,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self._setup_ssl_certificate()
 
         # Create the Load Balancer
-        self.load_balancer = self._create_load_balancer(lb_name)
+        self.load_balancer = self._create_load_balancer(lb_name, stable_lb_id)
 
         # Create target groups
         self._create_target_groups(lb_name)
@@ -115,7 +115,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Add outputs
         self._add_outputs(lb_name)
 
-    def _create_load_balancer(self, lb_name: str) -> elbv2.ILoadBalancerV2:
+    def _create_load_balancer(self, lb_name: str, stable_lb_id: str) -> elbv2.ILoadBalancerV2:
         """Create a Load Balancer with the specified configuration"""
 
         # Configure security groups if applicable

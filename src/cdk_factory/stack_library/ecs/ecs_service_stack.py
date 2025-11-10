@@ -241,7 +241,6 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 network_mode=ecs.NetworkMode(network_mode.upper()) if network_mode else ecs.NetworkMode.BRIDGE,
                 execution_role=execution_role,
                 task_role=task_role,
-                inference_accelerators=None
             )
         else:
             # Fargate task definition
@@ -253,7 +252,6 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 memory_limit_mib=int(self.ecs_config.memory),
                 execution_role=execution_role,
                 task_role=task_role,
-                inference_accelerators=None
             )
         
         # Add volumes to task definition
