@@ -60,15 +60,19 @@ class SQSStack(IStack):
                 self._create_dead_letter_queue(queue_config, queue_name)
             
             # Create the main queue
-            self._create_queue(queue_config, queue_name)
+            self._create_queue(queue_config, queue_name, deployment)
             
         # Add outputs
         self._add_outputs()
 
-    def _create_queue(self, queue_config: SQSConfig, queue_name: str) -> sqs.Queue:
+    def _create_queue(self, queue_config: SQSConfig, queue_name: str, deployment: DeploymentConfig) -> sqs.Queue:
         """Create an SQS queue with the specified configuration"""
         # Determine if this is a FIFO queue
         is_fifo = queue_name.endswith(".fifo")
+        
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # Queue recreation would cause message loss, so construct ID must be stable
+        stable_queue_id = queue_config.resource_id or f"{deployment.workload_name}-{deployment.environment}-sqs-{queue_config.name}"
         
         # Configure queue properties
         queue_props = {
@@ -93,7 +97,7 @@ class SQSStack(IStack):
         # Create the queue
         queue = sqs.Queue(
             self,
-            queue_config.resource_id or queue_name,
+            stable_queue_id,
             **queue_props
         )
         

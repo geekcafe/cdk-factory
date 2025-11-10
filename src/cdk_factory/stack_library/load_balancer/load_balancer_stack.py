@@ -77,6 +77,9 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.lb_config = LoadBalancerConfig(
             stack_config.dictionary.get("load_balancer", {}), deployment
         )
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # Load balancer recreation would cause downtime, so construct ID must be stable
+        stable_lb_id = f"{deployment.workload_name}-{deployment.environment}-load-balancer"
         lb_name = deployment.build_resource_name(self.lb_config.name)
 
         # Setup standardized SSM integration
@@ -151,7 +154,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             if vpc_subnets_param:
                 alb_props["vpc_subnets"] = vpc_subnets_param
             
-            load_balancer = elbv2.ApplicationLoadBalancer(self, lb_name, **alb_props)
+            load_balancer = elbv2.ApplicationLoadBalancer(self, stable_lb_id, **alb_props)
         else:  # NETWORK
             nlb_props = {
                 "load_balancer_name": lb_name,
@@ -164,7 +167,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             if vpc_subnets_param:
                 nlb_props["vpc_subnets"] = vpc_subnets_param
             
-            load_balancer = elbv2.NetworkLoadBalancer(self, lb_name, **nlb_props)
+            load_balancer = elbv2.NetworkLoadBalancer(self, stable_lb_id, **nlb_props)
 
         # If subnets is None, check if we have SSM-imported subnet_ids as a token
         # We need to use Fn.Split to convert the comma-separated string to an array

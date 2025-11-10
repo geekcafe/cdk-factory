@@ -489,12 +489,15 @@ See examples: cdk-factory/examples/separate-api-gateway/
             workload=self.workload,
         )
 
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # Function recreation would cause downtime, so construct ID must be stable
+        stable_lambda_id = f"{self.deployment.workload_name}-{self.deployment.environment}-lambda-{lambda_config.name}"
         construct_id = self.deployment.build_resource_name(
             lambda_config.name, resource_type=ResourceTypes.LAMBDA_FUNCTION
         )
 
         function = construct.create_function(
-            id=f"{construct_id}",
+            id=stable_lambda_id,
             lambda_config=lambda_config,
         )
 
@@ -511,6 +514,10 @@ See examples: cdk-factory/examples/separate-api-gateway/
         # Status Code: 400; Error Code: AccessDeniedException; Request ID: 48ecad9b-0360-4047-a6e0-85aea39b21d7; Proxy: null
         # kms_key = kms.Key(self, id=f"{name}-kms", enable_key_rotation=True)
 
+        # Use stable construct IDs to prevent CloudFormation logical ID changes on pipeline rename
+        # Queue recreation would cause message loss, so construct IDs must be stable
+        stable_sqs_dlq_id = f"{self.deployment.workload_name}-{self.deployment.environment}-sqs-{sqs_config.name}-dlq"
+        stable_sqs_reg_id = f"{self.deployment.workload_name}-{self.deployment.environment}-sqs-{sqs_config.name}"
         name_dlq = self.deployment.build_resource_name(
             f"{sqs_config.name}-dlq", ResourceTypes.SQS
         )
@@ -523,7 +530,7 @@ See examples: cdk-factory/examples/separate-api-gateway/
         if sqs_config.add_dead_letter_queue:
             dlq = sqs.Queue(
                 self,
-                id=name_dlq,
+                id=stable_sqs_dlq_id,
                 queue_name=name_dlq,
                 # encryption=sqs.QueueEncryption.KMS,
                 # encryption_master_key=kms_key,
@@ -546,7 +553,7 @@ See examples: cdk-factory/examples/separate-api-gateway/
 
         queue = sqs.Queue(
             self,
-            id=name_reg,
+            id=stable_sqs_reg_id,
             queue_name=name_reg,
             retention_period=aws_cdk.Duration.days(retention_period),
             visibility_timeout=aws_cdk.Duration.seconds(visibility_timeout),

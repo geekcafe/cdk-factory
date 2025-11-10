@@ -65,13 +65,16 @@ class SecurityGroupStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.sg_config = SecurityGroupConfig(
             stack_config.dictionary.get("security_group", {}), deployment
         )
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # Security group recreation would cause network disruption, so construct ID must be stable
+        stable_sg_id = f"{deployment.workload_name}-{deployment.environment}-security-group"
         sg_name = deployment.build_resource_name(self.sg_config.name)
 
         # Create or import security group
         if self.sg_config.existing_security_group_id:
             self.security_group = self._import_existing_security_group(sg_name)
         else:
-            self.security_group = self._create_security_group(sg_name)
+            self.security_group = self._create_security_group(sg_name, stable_sg_id)
 
         # Add ingress and egress rules
         self._add_ingress_rules()
@@ -95,11 +98,11 @@ class SecurityGroupStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
         return self._vpc
 
-    def _create_security_group(self, sg_name: str) -> ec2.SecurityGroup:
+    def _create_security_group(self, sg_name: str, stable_sg_id: str) -> ec2.SecurityGroup:
         """Create a new security group"""
         security_group = ec2.SecurityGroup(
             self,
-            sg_name,
+            stable_sg_id,
             vpc=self.vpc,
             security_group_name=sg_name,
             description=self.sg_config.description,

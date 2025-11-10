@@ -56,7 +56,12 @@ class ECRStack(IStack, StandardizedSsmMixin):
         repo: dict
         for repo in repos:
             config = ECRConfig(config=repo, deployment=deployment)
-            construct_id = deployment.build_resource_name(repo.get("name", None))
+            # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+            # Repository recreation would cause Docker image loss, so construct ID must be stable
+            repo_name = repo.get("name", None)
+            if not repo_name:
+                raise ValueError("Repository name is required")
+            construct_id = f"{deployment.workload_name}-{deployment.environment}-ecr-{repo_name}"
 
             if not construct_id:
                 raise ValueError(f"Invalid ECR name: {construct_id}")

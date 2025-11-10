@@ -71,6 +71,9 @@ class VpcStack(IStack, StandardizedSsmMixin):
         self.workload = workload
 
         self.vpc_config = VpcConfig(stack_config.dictionary.get("vpc", {}), deployment)
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # VPC recreation would be catastrophic, so construct ID must be stable
+        stable_vpc_id = f"{deployment.workload_name}-{deployment.environment}-vpc"
         vpc_name = deployment.build_resource_name(self.vpc_config.name)
 
         # Setup standardized SSM integration
@@ -151,7 +154,7 @@ class VpcStack(IStack, StandardizedSsmMixin):
         }
         
         # Create the VPC
-        vpc = ec2.Vpc(self, vpc_name, **vpc_props)
+        vpc = ec2.Vpc(self, stable_vpc_id, **vpc_props)
 
         # Add IAM permissions for default security group restriction if enabled
         if self.vpc_config.get("restrict_default_security_group", False):

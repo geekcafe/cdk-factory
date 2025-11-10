@@ -73,17 +73,20 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
 
         api_type = self.api_config.api_type
         api_name = self.api_config.name or "api-gateway"
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # API recreation would cause downtime, so construct ID must be stable
+        stable_api_id = f"{deployment.workload_name}-{deployment.environment}-api-gateway"
         api_id = deployment.build_resource_name(api_name)
 
         routes = self.api_config.routes or [
             {"path": "/health", "method": "GET", "src": None, "handler": None}
         ]
         if api_type == "HTTP":
-            api = self._create_http_api(api_id, routes)
+            api = self._create_http_api(stable_api_id, routes)
             # TODO: Add custom domain support for HTTP API
             # self.__setup_custom_domain(api)
         elif api_type == "REST":
-            api = self._create_rest_api(api_id, routes)
+            api = self._create_rest_api(stable_api_id, routes)
             self.__setup_custom_domain(api)
         else:
             raise ValueError(f"Unsupported api_type: {api_type}")

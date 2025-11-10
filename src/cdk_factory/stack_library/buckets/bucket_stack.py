@@ -53,9 +53,13 @@ class S3BucketStack(IStack):
 
         self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
 
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # Bucket recreation would cause data loss, so construct ID must be stable
+        stable_bucket_id = f"{deployment.workload_name}-{deployment.environment}-bucket"
+
         S3BucketConstruct(
             self,
-            id=deployment.build_resource_name(self.bucket_config.name),
+            id=stable_bucket_id,
             stack_config=stack_config,
             deployment=deployment,
         )

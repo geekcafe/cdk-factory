@@ -97,6 +97,10 @@ class CodeArtifactStack(IStack, StandardizedSsmMixin):
         # Build the resource name
         resource_name = self.deployment.build_resource_name(repo_name)
         
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # Repository recreation would cause package loss, so construct ID must be stable
+        stable_repo_id = f"{self.deployment.workload_name}-{self.deployment.environment}-codeartifact-{repo_name}"
+        
         # Configure repository properties
         repo_props = {
             "domain_name": self.code_artifact_config.domain_name,
@@ -119,6 +123,8 @@ class CodeArtifactStack(IStack, StandardizedSsmMixin):
                 {"repository_name": self.deployment.build_resource_name(repo)} 
                 for repo in upstream_repos
             ]
+            # Note: Upstream repository references use physical names, which is correct
+            # The actual repository construct IDs are stable
         
         # Remove None values
         repo_props = {k: v for k, v in repo_props.items() if v is not None}
@@ -126,7 +132,7 @@ class CodeArtifactStack(IStack, StandardizedSsmMixin):
         # Create the repository
         repository = codeartifact.CfnRepository(
             self,
-            f"{resource_name}-repo",
+            stable_repo_id,
             **repo_props
         )
         
