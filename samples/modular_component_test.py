@@ -155,7 +155,7 @@ class DatabaseOnlyStack(Stack):
         # Get context parameters (optional now with SSM)
         vpc_id = self.node.try_get_context("vpc_id")
         security_group_id = self.node.try_get_context("security_group_id")
-        db_name = self.node.try_get_context("db_name") or "testdb"
+        db_name = self.node.try_get_context("db_instance_identifier") or "testdb"
         db_username = self.node.try_get_context("db_username") or "admin"
 
         # No need to raise an error if vpc_id or security_group_id are not provided

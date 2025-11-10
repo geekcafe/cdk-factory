@@ -69,15 +69,14 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.rds_config = RdsConfig(stack_config.dictionary.get("rds", {}), deployment)
         # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
         # The construct ID determines the CloudFormation logical ID, not the physical resource names
-        stable_db_id = f"{deployment.workload_name}-{deployment.environment}-rds-instance"
-        db_name = deployment.build_resource_name(self.rds_config.name)
+        instance_identifier = self.rds_config.instance_identifier
 
         # Setup standardized SSM integration
         self.setup_ssm_integration(
             scope=self,
             config=self.rds_config,
             resource_type="rds",
-            resource_name=self.rds_config.name,
+            resource_name=instance_identifier,
             deployment=deployment,
             workload=workload
         )
@@ -90,15 +89,15 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Create RDS instance or import existing
         if self.rds_config.existing_instance_id:
-            self.db_instance = self._import_existing_db(db_name)
+            self.db_instance = self._import_existing_db(instance_identifier)
         else:
-            self.db_instance = self._create_db_instance(db_name, stable_db_id)
+            self.db_instance = self._create_db_instance(instance_identifier, instance_identifier)
 
         # Add outputs
-        self._add_outputs(db_name)
+        self._add_outputs(instance_identifier)
         
         # Export to SSM Parameter Store
-        self._export_ssm_parameters(db_name)
+        self._export_ssm_parameters(instance_identifier)
 
     @property
     def vpc(self) -> ec2.IVpc:
@@ -323,15 +322,15 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             logger.info(f"Exported SSM parameter: {ssm_exports['db_port']}")
         
         # Export database name
-        if "db_name" in ssm_exports and self.rds_config.database_name:
+        if "db_instance_identifier" in ssm_exports and self.rds_config.instance_identifier:
             self.export_ssm_parameter(
                 scope=self,
                 id="SsmExportDbName",
-                value=self.rds_config.database_name,
-                parameter_name=ssm_exports["db_name"],
+                value=self.rds_config.instance_identifier,
+                parameter_name=ssm_exports["db_instance_identifier"],
                 description=f"RDS database name for {db_name}",
             )
-            logger.info(f"Exported SSM parameter: {ssm_exports['db_name']}")
+            logger.info(f"Exported SSM parameter: {ssm_exports['db_instance_identifier']}")
         
         # Export secret ARN (contains username and password)
         if "db_secret_arn" in ssm_exports:

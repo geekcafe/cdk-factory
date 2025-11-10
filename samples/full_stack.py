@@ -45,7 +45,7 @@ class WebAppStack(Stack):
         min_capacity = int(ctx("min_capacity") or 2)
         max_capacity = int(ctx("max_capacity") or 6)
 
-        db_name = ctx("db_name") or "appdb"
+        db_name = ctx("db_instance_identifier") or "appdb"
         db_engine_version = rds.PostgresEngineVersion.of(
             major_version=ctx("db_engine_version") or "16"
         )
