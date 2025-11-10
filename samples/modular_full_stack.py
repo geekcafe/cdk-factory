@@ -44,7 +44,7 @@ class ModularWebAppStack(Stack):
         domain_name = self.node.try_get_context("domain_name") or "example.com"
         hosted_zone_id = self.node.try_get_context("hosted_zone_id")
         certificate_arn = self.node.try_get_context("certificate_arn")
-        db_name = self.node.try_get_context("db_name") or "appdb"
+        db_name = self.node.try_get_context("db_instance_identifier") or "appdb"
         db_username = self.node.try_get_context("db_username") or "admin"
         container_image = self.node.try_get_context("container_image") or "nginx:latest"
         container_port = self.node.try_get_context("container_port") or 80

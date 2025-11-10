@@ -57,7 +57,7 @@ pyyaml
     "desired_capacity": 2,
     "min_capacity": 2,
     "max_capacity": 6,
-    "db_name": "appdb",
+    "db_instance_identifier": "appdb",
     "db_instance_class": "t3.micro",
     "db_engine_version": "16"
   }
@@ -140,7 +140,7 @@ class WebAppStack(Stack):
         min_capacity = int(ctx("min_capacity") or 2)
         max_capacity = int(ctx("max_capacity") or 6)
 
-        db_name = ctx("db_name") or "appdb"
+        db_name = ctx("db_instance_identifier") or "appdb"
         db_engine_version = rds.PostgresEngineVersion.of(major_version=ctx("db_engine_version") or "16")
         db_instance_class = ctx("db_instance_class") or "t3.micro"
 

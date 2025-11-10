@@ -64,7 +64,7 @@ When resources export values to AWS Systems Manager Parameter Store, they must u
     "ssm_exports": {
       "db_endpoint": "/prod/myapp/rds/endpoint",
       "db_port": "/prod/myapp/rds/port",
-      "db_name": "/prod/myapp/rds/database-name",
+      "db_instance_identifier": "/prod/myapp/rds/instance-identifier",
       "db_secret_arn": "/prod/myapp/rds/secret-arn"
     }
   }
