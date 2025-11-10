@@ -89,6 +89,8 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.asg_config = AutoScalingConfig(
             stack_config.dictionary.get("auto_scaling", {}), deployment
         )
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        stable_asg_id = f"{deployment.workload_name}-{deployment.environment}-asg"
         asg_name = deployment.build_resource_name(self.asg_config.name)
 
         # Setup standardized SSM integration
@@ -123,10 +125,10 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.launch_template = self._create_launch_template(asg_name)
 
         # Create Auto Scaling Group
-        self.auto_scaling_group = self._create_auto_scaling_group(asg_name)
+        self.auto_scaling_group = self._create_auto_scaling_group(asg_name, stable_asg_id)
 
         # Add scaling policies
-        self._add_scaling_policies()
+        self._add_scaling_policies(stable_asg_id)
 
         # Add update policy
         self._add_update_policy()
@@ -420,7 +422,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         logger.info(f"Created launch template: {launch_template.launch_template_name}")
         return launch_template
 
-    def _create_auto_scaling_group(self, asg_name: str) -> autoscaling.AutoScalingGroup:
+    def _create_auto_scaling_group(self, asg_name: str, stable_asg_id: str) -> autoscaling.AutoScalingGroup:
         """Create Auto Scaling Group"""
         # Use the shared VPC and subnets
         vpc = self._get_or_create_vpc()
@@ -444,7 +446,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
         auto_scaling_group = autoscaling.AutoScalingGroup(
             self,
-            f"{asg_name}-ASG",
+            stable_asg_id,
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnets=subnets),
             launch_template=self.launch_template,
@@ -500,7 +502,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         return target_group_arns
 
-    def _add_scaling_policies(self) -> None:
+    def _add_scaling_policies(self, stable_asg_id: str) -> None:
         """Add scaling policies to the Auto Scaling Group"""
         if not self.asg_config.scaling_policies:
             return
@@ -510,7 +512,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 # Create a target tracking scaling policy for CPU utilization
                 scaling_policy = autoscaling.CfnScalingPolicy(
                     self,
-                    "CPUScalingPolicy",
+                    f"{stable_asg_id}-CPUScalingPolicy",
                     auto_scaling_group_name=self.auto_scaling_group.auto_scaling_group_name,
                     policy_type="TargetTrackingScaling",
                     target_tracking_configuration=autoscaling.CfnScalingPolicy.TargetTrackingConfigurationProperty(
