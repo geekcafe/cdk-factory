@@ -67,6 +67,9 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.workload = workload
 
         self.rds_config = RdsConfig(stack_config.dictionary.get("rds", {}), deployment)
+        # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
+        # The construct ID determines the CloudFormation logical ID, not the physical resource names
+        stable_db_id = f"{deployment.workload_name}-{deployment.environment}-rds-instance"
         db_name = deployment.build_resource_name(self.rds_config.name)
 
         # Setup standardized SSM integration
@@ -89,7 +92,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         if self.rds_config.existing_instance_id:
             self.db_instance = self._import_existing_db(db_name)
         else:
-            self.db_instance = self._create_db_instance(db_name)
+            self.db_instance = self._create_db_instance(db_name, stable_db_id)
 
         # Add outputs
         self._add_outputs(db_name)
@@ -162,7 +165,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         else:
             raise ValueError("No subnets available in VPC for RDS instance")
 
-    def _create_db_instance(self, db_name: str) -> rds.DatabaseInstance:
+    def _create_db_instance(self, db_name: str, stable_db_id: str) -> rds.DatabaseInstance:
         """Create a new RDS instance"""
         # Configure subnet group
         # If we have subnet IDs from SSM, create a DB subnet group explicitly
@@ -264,7 +267,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         else:
             db_props["vpc_subnets"] = subnets
         
-        db_instance = rds.DatabaseInstance(self, db_name, **db_props)
+        db_instance = rds.DatabaseInstance(self, stable_db_id, **db_props)
 
         # Add tags
         for key, value in self.rds_config.tags.items():
