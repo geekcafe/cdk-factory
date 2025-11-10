@@ -118,15 +118,22 @@ class RdsConfig(EnhancedBaseConfig):
         return self.__config.get("instance_class", "t3.micro")
 
     @property
-    def database_name(self) -> str:
-        """Name of the database to create (sanitized for RDS requirements)"""
-        raw_name = self.__config.get("database_name", "appdb")
+    def database_name(self) -> str | None:
+        """
+        Name of the database to create (sanitized for RDS requirements)
+        Optional and not required
+        """
+        raw_name = self.__config.get("database_name")
+        if not raw_name:
+            return None
         return self._sanitize_database_name(raw_name)
 
     @property
-    def username(self) -> str:
+    def master_username(self) -> str:
         """Master username for the database (sanitized for RDS requirements)"""
-        raw_username = self.__config.get("username", "appuser") 
+        raw_username = self.__config.get("master_username") 
+        if not raw_username:
+            raise ValueError("No master username found. Please add the master username to the config.")
         return self._sanitize_username(raw_username)
 
     @property

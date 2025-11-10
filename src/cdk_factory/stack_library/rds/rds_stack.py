@@ -235,7 +235,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             "vpc": self.vpc,
             "instance_type": instance_type,
             "credentials": rds.Credentials.from_generated_secret(
-                username=self.rds_config.username,
+                username=self.rds_config.master_username,
                 secret_name=self.rds_config.secret_name,
             ),
             "database_name": self.rds_config.database_name,
