@@ -32,11 +32,11 @@ class RdsConfig(EnhancedBaseConfig):
         return self.__config.get("name", self.database_name)
     
     @property
-    def instance_identifier(self) -> str:
+    def instance_identifier(self) -> Optional[str]:
         """RDS DB instance identifier (sanitized)"""
         raw_id = self.__config.get("instance_identifier")
         if not raw_id:
-            raise ValueError("No instance identifier found. Please add the instance identifier to the config.")
+            return None
         return self._sanitize_instance_identifier(raw_id)
     
     def _sanitize_instance_identifier(self, identifier: str) -> str:
