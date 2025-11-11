@@ -16,12 +16,35 @@ General-purpose CDK stack for managing AWS Systems Manager Parameter Store param
 
 ## Implementation Notes
 
-**CDK v2 Changes:** This stack uses modern CDK v2 patterns without deprecated APIs:
+### CDK v2 Compliance
+This stack uses modern CDK v2 patterns without deprecated APIs:
 - **String parameters**: Use `StringParameter` (L2 construct)
 - **StringList parameters**: Use `StringListParameter` (L2 construct)
-- **SecureString parameters**: Use `CfnParameter` (L1 construct) since CDK v2 deprecated the `type` parameter
 
-**Tagging:** SecureString parameters (L1 constructs) don't support the standard CDK tagging mechanism. Use resource tags in your stack configuration if needed.
+### ⚠️ SecureString NOT Supported
+
+**CRITICAL:** This stack does **NOT** support SecureString parameters. CloudFormation's `AWS::SSM::Parameter` resource only supports `String` and `StringList` types.
+
+If you include `"type": "SecureString"` in your configuration, **the synthesis will fail** with a clear error message.
+
+**For Sensitive Data (passwords, API keys, tokens):**
+
+✅ **Use AWS Secrets Manager** (recommended) - Full CloudFormation support, automatic rotation, versioning
+  - Create secrets via Secrets Manager stack or manually
+  - Reference in your application code
+  - See project `SECRETS_MANAGEMENT.md` for detailed implementation guide
+
+✅ **Pre-create SecureString manually** (if you must use SSM)
+  ```bash
+  aws ssm put-parameter --name "/path/to/secret" --value "SECRET" --type SecureString
+  ```
+  - Create before deployment
+  - Reference in app using `{{ssm-secure:/path/to/secret}}`
+  - Not managed by CDK (manual lifecycle)
+
+**Why?** CloudFormation's `AWS::SSM::Parameter` [does not include SecureString](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-parameter.html) as a valid Type value. Additionally, you cannot change a parameter's type after creation without deleting it first.
+
+**Use This Stack For:** Non-sensitive configuration values, application settings, feature flags, connection info, ARN references.
 
 ## Configuration
 

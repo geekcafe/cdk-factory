@@ -117,10 +117,14 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
         """
         Create a single SSM parameter using modern CDK patterns.
         
-        Note: CDK v2 deprecated the 'type' parameter. Parameter types are now:
-        - String: Use StringParameter (default)
-        - SecureString: Use StringParameter (encryption handled automatically)
-        - StringList: Use StringListParameter
+        Note: CDK v2 and CloudFormation limitations:
+        - String: Use StringParameter (L2 construct)
+        - StringList: Use StringListParameter (L2 construct)
+        - SecureString: Created as String (CloudFormation limitation - requires manual conversion)
+        
+        CloudFormation does NOT support creating SecureString parameters. They are created
+        as regular String parameters and must be manually updated after deployment using:
+          aws ssm put-parameter --name '<name>' --value '<value>' --type SecureString --overwrite
         
         Args:
             param_config: Parameter configuration
@@ -152,21 +156,32 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
                 tier=self._get_parameter_tier(param_config.tier),
             )
         elif param_config.type == "SecureString":
-            # SecureString parameters must use CfnParameter (L1 construct)
-            # CDK v2 removed the 'type' parameter from StringParameter
-            param = ssm.CfnParameter(
-                self,
-                construct_id,
-                name=param_name,
-                value=param_value,
-                type="SecureString",
-                description=param_config.description or f"Managed by CDK-Factory (Encrypted)",
-                tier=param_config.tier or "Standard",
+            # ERROR: CloudFormation does NOT support creating SecureString parameters!
+            # AWS::SSM::Parameter only supports "String" and "StringList" types.
+            # 
+            # DO NOT use SecureString in your configuration. Instead:
+            # 1. Use AWS Secrets Manager (recommended) - full CloudFormation support
+            # 2. Pre-create SecureString parameters manually before deployment
+            # 3. Reference them in your app using {{ssm-secure:path}}
+            #
+            # See: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ssm-parameter.html
+            
+            error_msg = (
+                f"❌ SecureString parameter '{param_name}' cannot be created via CloudFormation. "
+                f"\n   CloudFormation does not support SecureString type. "
+                f"\n   "
+                f"\n   Recommended solutions:"
+                f"\n   1. Use AWS Secrets Manager instead (supports CloudFormation)"
+                f"\n   2. Pre-create this parameter manually:"
+                f"\n      aws ssm put-parameter --name '{param_name}' --value 'SECRET' --type SecureString"
+                f"\n   "
+                f"\n   See documentation: SECRETS_MANAGEMENT.md"
             )
-            # Note: CfnParameter doesn't support Tags.of(), we'll skip tagging for L1 constructs
-            # Tagging will be skipped in _apply_tags for CfnParameter
-            self.created_parameters.append(param)
-            return param  # Return early since tagging is different for L1 constructs
+            logger.error(error_msg)
+            raise ValueError(
+                f"SecureString parameters are not supported in CloudFormation. "
+                f"Use AWS Secrets Manager or pre-create manually. Parameter: {param_name}"
+            )
         else:
             # String parameters (default) - use L2 construct
             # Build parameter creation kwargs
