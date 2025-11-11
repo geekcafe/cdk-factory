@@ -1,0 +1,63 @@
+{
+  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-parameter-store",
+  "module": "parameter_store_stack",
+  "enabled": true,
+  "parameter_store": {
+    "prefix": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}",
+    "auto_format_names": true,
+    "global_tags": {
+      "ManagedBy": "CDK-Factory",
+      "Team": "Infrastructure"
+    },
+    "parameters": [
+      {
+        "name": "app/version",
+        "value": "1.0.0",
+        "type": "String",
+        "description": "Application version number"
+      },
+      {
+        "name": "app/config/feature-flags",
+        "value": "feature1,feature2,feature3",
+        "type": "StringList",
+        "description": "Enabled feature flags"
+      },
+      {
+        "name": "app/config/max-connections",
+        "value": "100",
+        "type": "String",
+        "description": "Maximum database connections",
+        "allowed_pattern": "^[0-9]+$"
+      },
+      {
+        "name": "/custom/absolute/path/param",
+        "value": "This uses an absolute path",
+        "type": "String",
+        "description": "Parameter with absolute path (won't be prefixed)"
+      },
+      {
+        "name": "app/config/region",
+        "value": "{{AWS_REGION}}",
+        "type": "String",
+        "description": "AWS region - uses template substitution"
+      },
+      {
+        "name": "app/config/account",
+        "value": "{{AWS_ACCOUNT}}",
+        "type": "String",
+        "description": "AWS account ID"
+      },
+      {
+        "name": "app/api-key",
+        "value": "secret-value-here",
+        "type": "SecureString",
+        "description": "API key (encrypted)",
+        "tier": "Standard",
+        "tags": {
+          "Sensitive": "true",
+          "Encrypted": "true"
+        }
+      }
+    ]
+  }
+}

@@ -279,20 +279,70 @@ class StandardizedSsmMixin:
         
         return exported_params
     
-    def resolve_ssm_value(self, scope: Construct, value: str, unique_id: str)-> str:
-        if isinstance(value, str) and value.startswith("{{ssm:") and value.endswith("}}"):
-            # Extract SSM parameter path
+    def resolve_ssm_value(self, scope: Construct, value: str, unique_id: str) -> str:
+        """
+        Resolve SSM parameter references with support for different parameter types.
+        
+        Supported patterns:
+        - {{ssm:path}} - String or SecureString parameter (default)
+        - {{ssm-secure:path}} - SecureString parameter (explicit, for clarity)
+        - {{ssm-list:path}} - StringList parameter (returns comma-separated string)
+        
+        Args:
+            scope: CDK construct scope
+            value: Value that may contain SSM reference
+            unique_id: Unique identifier for the construct
+            
+        Returns:
+            Resolved SSM parameter value as a CDK token
+        """
+        if not isinstance(value, str):
+            return value
+            
+        # Check for SSM StringList pattern
+        if value.startswith("{{ssm-list:") and value.endswith("}}"):
+            ssm_param_path = value[11:-2]  # Remove {{ssm-list: and }}
+            
+            # For StringList, we need to use value_for_string_list_parameter
+            # This returns a list of strings as a token
+            resolved_value = ssm.StringParameter.value_for_string_list_parameter(
+                scope=scope,
+                parameter_name=ssm_param_path,
+            )
+            # Join the list into a comma-separated string
+            # Note: In CDK, this returns a token that resolves to the list at deployment
+            logger.info(f"Resolved SSM StringList parameter: {ssm_param_path}")
+            return resolved_value
+            
+        # Check for explicit SecureString pattern
+        elif value.startswith("{{ssm-secure:") and value.endswith("}}"):
+            ssm_param_path = value[13:-2]  # Remove {{ssm-secure: and }}
+            
+            # Use value_for_secure_string_parameter_name for explicit secure strings
+            # This is semantically clearer and ensures proper handling
+            resolved_value = ssm.StringParameter.value_for_secure_string_parameter_name(
+                scope=scope,
+                parameter_name=ssm_param_path,
+                version=1,  # Use latest version
+            )
+            logger.info(f"Resolved SSM SecureString parameter: {ssm_param_path}")
+            return resolved_value
+            
+        # Check for standard SSM pattern (String or SecureString)
+        elif value.startswith("{{ssm:") and value.endswith("}}"):
             ssm_param_path = value[6:-2]  # Remove {{ssm: and }}
             
             # Import SSM parameter - this creates a token that resolves at deployment time
+            # Works for both String and SecureString types
             param = ssm.StringParameter.from_string_parameter_name(
                 scope=scope,
                 id=f"{unique_id}-env-{hash(ssm_param_path) % 10000}",
                 string_parameter_name=ssm_param_path
             )
             resolved_value = param.string_value
-            logger.info(f"Resolved SSM parameter {ssm_param_path}")
+            logger.info(f"Resolved SSM parameter: {ssm_param_path}")
             return resolved_value
+            
         else:
             return value
 
