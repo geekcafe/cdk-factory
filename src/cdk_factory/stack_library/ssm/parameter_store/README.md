@@ -12,6 +12,16 @@ General-purpose CDK stack for managing AWS Systems Manager Parameter Store param
 - ✅ Global and per-parameter tags
 - ✅ Standard and Advanced parameter tiers
 - ✅ Parameter validation with allowed patterns
+- ✅ CDK v2 compliant (no deprecated APIs)
+
+## Implementation Notes
+
+**CDK v2 Changes:** This stack uses modern CDK v2 patterns without deprecated APIs:
+- **String parameters**: Use `StringParameter` (L2 construct)
+- **StringList parameters**: Use `StringListParameter` (L2 construct)
+- **SecureString parameters**: Use `CfnParameter` (L1 construct) since CDK v2 deprecated the `type` parameter
+
+**Tagging:** SecureString parameters (L1 constructs) don't support the standard CDK tagging mechanism. Use resource tags in your stack configuration if needed.
 
 ## Configuration
 
@@ -61,7 +71,7 @@ General-purpose CDK stack for managing AWS Systems Manager Parameter Store param
 | `description` | string | No | `Managed by CDK-Factory` | Parameter description |
 | `tier` | string | No | `Standard` | `Standard`, `Advanced`, or `Intelligent-Tiering` |
 | `allowed_pattern` | string | No | - | Regex pattern for value validation |
-| `data_type` | string | No | `text` | `text`, `aws:ec2:image`, or `aws:ssm:integration` |
+| `data_type` | string | No | `text` | `text` or `aws:ec2:image` |
 | `tags` | object | No | `{}` | Parameter-specific tags |
 
 ## Usage Examples

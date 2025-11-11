@@ -79,7 +79,7 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
                 "description": "Parameter description",    # Optional
                 "tier": "Standard|Advanced",               # Optional, default Standard
                 "allowed_pattern": "regex",                # Optional
-                "data_type": "text|aws:ec2:image|aws:ssm:integration",  # Optional
+                "data_type": "text|aws:ec2:image",  # Optional
                 "tags": {"Key": "Value"}                   # Optional
               }
             ]
@@ -115,7 +115,12 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
         self, param_config: ParameterConfig, index: int
     ) -> ssm.StringParameter:
         """
-        Create a single SSM parameter.
+        Create a single SSM parameter using modern CDK patterns.
+        
+        Note: CDK v2 deprecated the 'type' parameter. Parameter types are now:
+        - String: Use StringParameter (default)
+        - SecureString: Use StringParameter (encryption handled automatically)
+        - StringList: Use StringListParameter
         
         Args:
             param_config: Parameter configuration
@@ -132,23 +137,58 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
         safe_name = param_config.name.replace("/", "-").replace("_", "-").strip("-")
         construct_id = self._stable_id(f"param-{index}-{safe_name}")
 
-        # Determine parameter type
-        param_type = self._get_parameter_type(param_config.type)
-
         # Create the parameter
         logger.info(f"Creating parameter: {param_name} (type: {param_config.type})")
 
-        param = ssm.StringParameter(
-            self,
-            construct_id,
-            parameter_name=param_name,
-            string_value=param_value,
-            description=param_config.description or f"Managed by CDK-Factory",
-            tier=self._get_parameter_tier(param_config.tier),
-            type=param_type,
-            allowed_pattern=param_config.allowed_pattern,
-            data_type=param_config.data_type,
-        )
+        # Handle different parameter types using modern CDK patterns
+        if param_config.type == "StringList":
+            # StringList parameters use dedicated construct
+            param = ssm.StringListParameter(
+                self,
+                construct_id,
+                parameter_name=param_name,
+                string_list_value=param_value.split(",") if param_value else [],
+                description=param_config.description or f"Managed by CDK-Factory",
+                tier=self._get_parameter_tier(param_config.tier),
+            )
+        elif param_config.type == "SecureString":
+            # SecureString parameters must use CfnParameter (L1 construct)
+            # CDK v2 removed the 'type' parameter from StringParameter
+            param = ssm.CfnParameter(
+                self,
+                construct_id,
+                name=param_name,
+                value=param_value,
+                type="SecureString",
+                description=param_config.description or f"Managed by CDK-Factory (Encrypted)",
+                tier=param_config.tier or "Standard",
+            )
+            # Note: CfnParameter doesn't support Tags.of(), we'll skip tagging for L1 constructs
+            # Tagging will be skipped in _apply_tags for CfnParameter
+            self.created_parameters.append(param)
+            return param  # Return early since tagging is different for L1 constructs
+        else:
+            # String parameters (default) - use L2 construct
+            # Build parameter creation kwargs
+            param_kwargs = {
+                "parameter_name": param_name,
+                "string_value": param_value,
+                "description": param_config.description or f"Managed by CDK-Factory",
+                "tier": self._get_parameter_tier(param_config.tier),
+            }
+            
+            # Add optional fields only if specified
+            if param_config.allowed_pattern:
+                param_kwargs["allowed_pattern"] = param_config.allowed_pattern
+            
+            if param_config.data_type:
+                param_kwargs["data_type"] = self._get_parameter_data_type(param_config.data_type)
+            
+            param = ssm.StringParameter(
+                self,
+                construct_id,
+                **param_kwargs
+            )
 
         # Apply tags
         self._apply_tags(param, param_config)
@@ -196,8 +236,8 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
         replacements = {
             "{{ENVIRONMENT}}": self.deployment.environment,
             "{{WORKLOAD_NAME}}": self.deployment.workload_name,
-            "{{AWS_ACCOUNT}}": self.deployment.aws_account_id,
-            "{{AWS_REGION}}": self.deployment.aws_region,
+            "{{AWS_ACCOUNT}}": self.deployment.account,
+            "{{AWS_REGION}}": self.deployment.region,
         }
 
         result = value
@@ -205,17 +245,6 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
             result = result.replace(placeholder, replacement)
 
         return result
-
-    def _get_parameter_type(self, type_str: str) -> ssm.ParameterType:
-        """
-        Convert string parameter type to CDK ParameterType enum.
-        """
-        type_map = {
-            "String": ssm.ParameterType.STRING,
-            "StringList": ssm.ParameterType.STRING_LIST,
-            "SecureString": ssm.ParameterType.SECURE_STRING,
-        }
-        return type_map.get(type_str, ssm.ParameterType.STRING)
 
     def _get_parameter_tier(self, tier_str: str) -> ssm.ParameterTier:
         """
@@ -227,6 +256,20 @@ class ParameterStoreStack(IStack, StandardizedSsmMixin):
             "Intelligent-Tiering": ssm.ParameterTier.INTELLIGENT_TIERING,
         }
         return tier_map.get(tier_str, ssm.ParameterTier.STANDARD)
+
+    def _get_parameter_data_type(self, data_type_str: str) -> ssm.ParameterDataType:
+        """
+        Convert string parameter data type to CDK ParameterDataType enum.
+        
+        Supported values:
+        - text: Standard text parameter (default)
+        - aws:ec2:image: AMI ID parameter
+        """
+        data_type_map = {
+            "text": ssm.ParameterDataType.TEXT,
+            "aws:ec2:image": ssm.ParameterDataType.AWS_EC2_IMAGE,
+        }
+        return data_type_map.get(data_type_str, ssm.ParameterDataType.TEXT)
 
     def _apply_tags(self, param: ssm.StringParameter, param_config: ParameterConfig) -> None:
         """
