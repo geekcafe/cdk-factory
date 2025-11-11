@@ -415,24 +415,28 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
             "action": "lambda:InvokeFunction",
         }
         
-        # Optional: Add source ARN restriction if CloudFront distribution ARN is available
-        # This provides more secure permission scoping
-        distribution_arn_path = f"/{self.deployment.environment}/{self.workload.name}/cloudfront/arn"
-        try:
-            distribution_arn = ssm.StringParameter.from_string_parameter_name(
-                self,
-                "cloudfront-distribution-arn",
-                distribution_arn_path
-            ).string_value
+        # we need to apply this later as the is created before the distribution
+        # TODO: this would be created on a second pass (or in a later stage)
+        if False:
             
-            # Add source ARN condition for more secure permission scoping
-            permission_kwargs["source_arn"] = distribution_arn
-            logger.info(f"Adding CloudFront permission with source ARN restriction: {distribution_arn}")
-        except Exception:
-            # Distribution ARN not available (common during initial deployment)
-            # CloudFront will scope the permission appropriately when it associates the Lambda
-            logger.warning(f"CloudFront distribution ARN not found at {distribution_arn_path}, using open permission")
-        
+            # Optional: Add source ARN restriction if CloudFront distribution ARN is available
+            # This provides more secure permission scoping
+            distribution_arn_path = f"/{self.deployment.environment}/{self.workload.name}/cloudfront/arn"
+            try:
+                distribution_arn = ssm.StringParameter.from_string_parameter_name(
+                    self,
+                    "cloudfront-distribution-arn",
+                    distribution_arn_path
+                ).string_value
+                
+                # Add source ARN condition for more secure permission scoping
+                permission_kwargs["source_arn"] = distribution_arn
+                logger.info(f"Adding CloudFront permission with source ARN restriction: {distribution_arn}")
+            except Exception:
+                # Distribution ARN not available (common during initial deployment)
+                # CloudFront will scope the permission appropriately when it associates the Lambda
+                logger.warning(f"CloudFront distribution ARN not found at {distribution_arn_path}, using open permission")
+            
         self.function.add_permission(
             "CloudFrontInvokePermission",
             **permission_kwargs
