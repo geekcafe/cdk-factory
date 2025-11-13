@@ -475,6 +475,8 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 ) if self.ecs_config.deployment_circuit_breaker else None,
                 placement_strategies=self._get_placement_strategies(),
                 placement_constraints=self._get_placement_constraints(),
+                max_healthy_percent=self.ecs_config.deployment_configuration.get("maximum_percent"),
+                min_healthy_percent=self.ecs_config.deployment_configuration.get("minimum_healthy_percent")
             )
         else:
             # Fargate service
