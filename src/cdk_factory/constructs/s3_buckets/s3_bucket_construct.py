@@ -76,7 +76,7 @@ class S3BucketConstruct(Construct):
 
             # bucket.replication_role_arn
 
-        self.bucket = bucket
+        self.bucket: s3.IBucket = bucket
 
     def is_versioned(self) -> bool:
         """returns if this bucket is configured for versioning"""
@@ -90,3 +90,5 @@ class S3BucketConstruct(Construct):
             )
 
         return True
+
+        

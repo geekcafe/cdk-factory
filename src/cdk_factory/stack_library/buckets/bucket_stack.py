@@ -14,13 +14,14 @@ from cdk_factory.constructs.s3_buckets.s3_bucket_construct import S3BucketConstr
 from cdk_factory.interfaces.istack import IStack
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
+from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 
 logger = Logger(__name__)
 
 
 @register_stack("bucket_library_module")
 @register_stack("bucket_stack")
-class S3BucketStack(IStack):
+class S3BucketStack(IStack, StandardizedSsmMixin):
     """
     A CloudFormation Stack for an S3 Bucket
 
@@ -57,9 +58,50 @@ class S3BucketStack(IStack):
         # Bucket recreation would cause data loss, so construct ID must be stable
         stable_bucket_id = f"{deployment.workload_name}-{deployment.environment}-bucket"
 
-        S3BucketConstruct(
+        self.bucket_stack: S3BucketConstruct = S3BucketConstruct(
             self,
             id=stable_bucket_id,
             stack_config=stack_config,
             deployment=deployment,
         )
+        self.bucket = self.bucket_stack.bucket
+
+        self._exports()
+
+    def _exports(self) -> None:
+        """Exports the bucket name and ARN to SSM"""
+        ssm = self.bucket_config.ssm
+        exports = ssm.get("exports", {})
+        if not ssm:
+            return
+        auto_export = ssm.get("auto_export", False)
+
+        known_key_values = {
+            "bucket_name": self.bucket.bucket_name,
+            "bucket_arn": self.bucket.bucket_arn,
+        }
+
+        if auto_export:
+            for export_key, export_parameter in known_key_values.items():
+                value = known_key_values[export_key]
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.id}-{export_key}",
+                    value=value,
+                    parameter_name=export_parameter,
+                    description=f"Bucket {export_key}",
+                )
+        else:
+            # user specified exports
+            for export_key, export_parameter in exports.items():
+                if export_key not in known_key_values:
+                    # raise error if they specify an unknown export key
+                    raise ValueError(f"Unknown export key: {export_key}")
+                value = known_key_values[export_key]
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.id}-{export_key}",
+                    value=value,
+                    parameter_name=export_parameter,
+                    description=f"Bucket {export_key}",
+                )
