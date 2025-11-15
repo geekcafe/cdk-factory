@@ -400,7 +400,7 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     stream_prefix=container_name,
                     log_group=log_group,
                 ),
-                environment=container_config.get("environment", {}),
+                environment=self._load_environment_variables(container_config.get("environment", {})),
                 secrets=self._load_secrets(container_config.get("secrets", {})),
                 cpu=container_config.get("cpu"),
                 memory_limit_mib=container_config.get("memory"),
@@ -440,9 +440,28 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 
                 logger.info(f"Added mount point: {source_volume} -> {container_path} (read_only={read_only})")
 
+    def _load_environment_variables(self, environment_variables_config: Dict[str, str]) -> Dict[str, str]:
+        """Load environment variables from SSM Parameter Store"""
+        environment_variables = {}
+
+        for key, value in environment_variables_config.items():
+            
+            value = self.resolve_ssm_value(scope=self, value=value, unique_id=key)
+            
+            environment_variables[key] = value
+        
+        return environment_variables
+
     def _load_secrets(self, secrets_config: Dict[str, str]) -> Dict[str, ecs.Secret]:
         """Load secrets from Secrets Manager or SSM Parameter Store"""
         secrets = {}
+        # TODO
+        # for key, value in secrets_config.items():
+        #     self.logger.info(f"Loading secret: {key} -> {value}")
+        #     value = self.resolve_ssm_value(value)
+            
+        #     secrets[key] = value
+
         # Implement secret loading logic here
         # This would integrate with AWS Secrets Manager or SSM Parameter Store
         return secrets
