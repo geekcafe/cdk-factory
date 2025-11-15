@@ -525,8 +525,13 @@ class PipelineFactoryStack(IStack):
 
         # add dependencies
         for cf_stack in cf_stacks:
-            if cf_stack["stack_config"].dependencies:
-                for dependency in cf_stack["stack_config"].dependencies:
+            dependencies = cf_stack["stack_config"].dependencies
+            if cf_stack["stack_config"].dictionary.get("depends_on"):
+                # add to the array
+                dependencies.extend(cf_stack["stack_config"].dictionary.get("depends_on"))
+
+            if dependencies:
+                for dependency in dependencies:
                     # get the stack from the cf_stacks list
                     for stack in cf_stacks:
                         if stack["stack_config"].name == dependency:
