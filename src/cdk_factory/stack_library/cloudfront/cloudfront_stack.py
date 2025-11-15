@@ -299,14 +299,16 @@ class CloudFrontStack(IStack):
 
     def _create_s3_origin(self, config: Dict[str, Any]) -> cloudfront.IOrigin:
         """Create S3 origin"""
+        # Support both 'bucket_name' and 'domain_name' for S3 origins
         bucket_name = self.resolve_ssm_value(
-            self, config.get("bucket_name"), config.get("bucket_name")
+            self, config.get("bucket_name") or config.get("domain_name"), 
+            config.get("bucket_name") or config.get("domain_name")
         )
 
         origin_path = config.get("origin_path", "")
 
         if not bucket_name:
-            raise ValueError("S3 origin requires 'bucket_name' configuration")
+            raise ValueError("S3 origin requires 'bucket_name' or 'domain_name' configuration")
 
         # For S3 origins, we need to import the bucket by name
         bucket = s3.Bucket.from_bucket_name(
@@ -354,7 +356,6 @@ class CloudFrontStack(IStack):
                 logger.warning(f"Invalid cache behavior config, skipping")
                 continue
 
-            origin = self.origins_map[origin_id]
             behavior = self._build_cache_behavior_options(behavior_config)
             additional_behaviors[path_pattern] = behavior
 
@@ -484,11 +485,17 @@ class CloudFrontStack(IStack):
             edge_lambdas=edge_lambdas if edge_lambdas else None,
         )
 
-    def _build_cache_behavior_options(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Build cache behavior options dict (for additional behaviors)"""
-        # This is a simplified version - reuse logic from _build_cache_behavior
-        # For now, return basic structure
-        return {}
+    def _build_cache_behavior_options(self, config: Dict[str, Any]) -> cloudfront.BehaviorOptions:
+        """Build cache behavior options for additional behaviors"""
+        # Get the origin for this behavior
+        origin_id = config.get("target_origin_id")
+        if not origin_id or origin_id not in self.origins_map:
+            raise ValueError(f"Invalid target_origin_id for cache behavior: {origin_id}")
+        
+        origin = self.origins_map[origin_id]
+        
+        # Reuse the main cache behavior building logic
+        return self._build_cache_behavior(config, origin)
 
     def _build_cache_policy(
         self, config: Dict[str, Any]
