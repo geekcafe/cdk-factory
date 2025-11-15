@@ -367,10 +367,23 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         for idx, container_config in enumerate(container_definitions):
             container_name = container_config.get("name", f"container-{idx}")
             image_uri = container_config.get("image")
-            
+            tag_override = container_config.get("tag_override")
+            if tag_override:
+                logger.info(f"Tag override for {container_name}: {tag_override}")
+                # find the end of the image uri
+                end_of_image_uri = image_uri.rfind(":")
+                if end_of_image_uri == -1:
+                    # raise ValueError(f"Invalid image URI for {container_name}")
+                    logger.warning(f"Invalid image URI for {container_name}")
+                    # attempt to set it anyway
+                    image_uri = image_uri + ":" + tag_override
+                else:
+                    image_uri = image_uri[:end_of_image_uri] + ":" + tag_override
             if not image_uri:
                 raise ValueError(f"Container image is required for {container_name}")
             
+            logger.info(f"Adding container: {container_name} -> {image_uri}")
+
             # Create log group for container
             log_group = logs.LogGroup(
                 self,
@@ -703,4 +716,24 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 value=self.task_definition.task_definition_arn,
                 parameter_name=ssm_exports["task_definition_arn"],
                 description=f"ECS Task Definition ARN for {service_name}",
+            )
+
+        # roles
+        if "service_role_arn" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="ServiceRoleArnParam",
+                value=self.service.role.role_arn,
+                parameter_name=ssm_exports["service_role_arn"],
+                description=f"ECS Service Role ARN for {service_name}",
+            )
+
+        # task roles
+        if "task_role_arn" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="TaskRoleArnParam",
+                value=self.task_definition.task_role.role_arn,
+                parameter_name=ssm_exports["task_role_arn"],
+                description=f"ECS Task Role ARN for {service_name}",
             )
