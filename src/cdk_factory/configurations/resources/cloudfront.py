@@ -93,9 +93,9 @@ class CloudFrontConfig(EnhancedBaseConfig):
         return self._config.get("waf_web_acl_id")
 
     @property
-    def default_root_object(self) -> str:
+    def default_root_object(self) -> str | None:
         """Default root object"""
-        return self._config.get("default_root_object", "index.html")
+        return self._config.get("default_root_object")
 
     @property
     def tags(self) -> Dict[str, str]:
