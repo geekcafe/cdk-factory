@@ -143,16 +143,6 @@ class PipelineRoles:
             effect=iam.Effect.ALLOW,
         )
         role.add_to_policy(ecr_policy)
-        
-        # S3 permissions for deployment scripts (error pages, static assets, etc.)
-        s3_policy = iam.PolicyStatement(
-            sid="S3DeploymentPolicy",
-            actions=[
-                "s3:*",
-            ],
-            resources=["*"],
-            effect=iam.Effect.ALLOW,
-        )
-        role.add_to_policy(s3_policy)
+                        
 
         return role

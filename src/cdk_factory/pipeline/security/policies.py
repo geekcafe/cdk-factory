@@ -125,6 +125,18 @@ class CodeBuildPolicy:
         )
         code_build_policy.append(policy)
 
+        # S3 permissions for deployment scripts (error pages, static assets, etc.)
+        # TODO: tighten security
+        s3_policy = iam.PolicyStatement(
+            sid="S3Policy",
+            actions=[
+                "s3:*",
+            ],
+            resources=["*"],
+            effect=iam.Effect.ALLOW,
+        )
+        code_build_policy.append(s3_policy)
+
         # TODO: allow users to add their own policies
 
         return code_build_policy
