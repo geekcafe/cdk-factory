@@ -146,7 +146,12 @@ class PipelineRoles:
 
         environment: str = pipeline.workload.get("environment")
         if not environment:
-            raise ValueError("Environment not found in workload")
+            raise ValueError(
+                "Environment not found in workload. "
+                "This is a breaking change from prior versions. "
+                "Please update your config file to include the environment key "
+                "at the workload level."
+            )
         # S3 permissions for deployment scripts (error pages, static assets, etc.)
         s3_policy = iam.PolicyStatement(
             sid="S3DeploymentPolicy",
