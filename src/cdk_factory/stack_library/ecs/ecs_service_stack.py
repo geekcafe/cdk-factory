@@ -405,6 +405,12 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     start_period=cdk.Duration.seconds(health_check_config.get("start_period", 0)),
                 )
             
+            # Build linux parameters if configured
+            linux_parameters_config = container_config.get("linux_parameters")
+            linux_parameters = None
+            if linux_parameters_config:
+                linux_parameters = self._build_linux_parameters(linux_parameters_config)
+            
             # Add container to task definition
             container = self.task_definition.add_container(
                 container_name,
@@ -420,6 +426,8 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 memory_reservation_mib=container_config.get("memory_reservation"),
                 essential=container_config.get("essential", True),
                 health_check=health_check,
+                linux_parameters=linux_parameters,
+                privileged=container_config.get("privileged", False),
             )
             
             # Add port mappings
@@ -452,6 +460,42 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 )
                 
                 logger.info(f"Added mount point: {source_volume} -> {container_path} (read_only={read_only})")
+
+    def _build_linux_parameters(self, config: Dict[str, Any]) -> ecs.LinuxParameters:
+        """Build Linux parameters for container including device mappings"""
+        linux_params = ecs.LinuxParameters(self, f"LinuxParams-{id(config)}")
+        
+        # Add device mappings (e.g., /dev/fuse)
+        devices = config.get("devices", [])
+        for device in devices:
+            host_path = device.get("host_path")
+            container_path = device.get("container_path", host_path)
+            permissions = device.get("permissions", ["read", "write"])
+            
+            if not host_path:
+                logger.warning("Device mapping requires host_path, skipping")
+                continue
+            
+            # Map permissions to ECS DevicePermission
+            device_permissions = []
+            for perm in permissions:
+                if perm.lower() == "read":
+                    device_permissions.append(ecs.DevicePermission.READ)
+                elif perm.lower() == "write":
+                    device_permissions.append(ecs.DevicePermission.WRITE)
+                elif perm.lower() == "mknod":
+                    device_permissions.append(ecs.DevicePermission.MKNOD)
+            
+            linux_params.add_devices(
+                ecs.Device(
+                    host_path=host_path,
+                    container_path=container_path,
+                    permissions=device_permissions,
+                )
+            )
+            logger.info(f"Added device mapping: {host_path} -> {container_path} with permissions {permissions}")
+        
+        return linux_params
 
     def _load_environment_variables(self, environment_variables_config: Dict[str, str]) -> Dict[str, str]:
         """Load environment variables from SSM Parameter Store"""
