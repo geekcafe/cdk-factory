@@ -35,7 +35,7 @@ class PipelineRoles:
         role = iam.Role(
             scope,
             pipeline.build_resource_name(
-                "CodePipelineServiceRole-{{pipeline-name}}-{{environment}}",
+                "CodePipeline-{{pipeline-name}}-{{environment}}",
                 resource_type=ResourceTypes.IAM_ROLE,
                 lower_case=False,
             ),
@@ -109,7 +109,7 @@ class PipelineRoles:
                 iam.AccountPrincipal(f"{workload.devops.account}"),
             ),
             role_name=pipeline.build_resource_name(
-                "CodeArtifactAccessRole-{{pipeline-name}}-{{environment}}",
+                "CodeArtifact-{{pipeline-name}}-{{environment}}",
                 resource_type=ResourceTypes.IAM_ROLE,
                 lower_case=False,
             ),
@@ -143,5 +143,26 @@ class PipelineRoles:
             effect=iam.Effect.ALLOW,
         )
         role.add_to_policy(ecr_policy)
+
+        environment: str = pipeline.workload.get("environment")
+        if not environment:
+            raise ValueError("Environment not found in workload")
+        # S3 permissions for deployment scripts (error pages, static assets, etc.)
+        s3_policy = iam.PolicyStatement(
+            sid="S3DeploymentPolicy",
+            actions=[
+                "s3:ListBucket",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:PutObjectAcl",
+                "s3:DeleteObject",
+            ],
+            resources=[
+                f"arn:aws:s3:::*-{environment}-*",  # Allow access to environment-specific buckets
+                f"arn:aws:s3:::*-{environment}-*/*",
+            ],
+            effect=iam.Effect.ALLOW,
+        )
+        role.add_to_policy(s3_policy)
 
         return role
