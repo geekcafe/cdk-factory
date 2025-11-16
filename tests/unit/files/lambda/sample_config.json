@@ -86,6 +86,7 @@
     "workload": {
       "name": "factory-lambda",
       "description": "General info about this app/workload",
+      "environment": "{{ENVIRONMENT}}",
       "devops": {
         "account": "123456789012",
         "region": "us-east-1",
@@ -107,13 +108,13 @@
       ],
       "deployments": [
         {
-          "name": "factory-lambda-dev-pipeline",
-          "environment": "dev",
+          "name": "factory-lambda-{{ENVIRONMENT}}-pipeline",
+          "environment": "{{ENVIRONMENT}}",
           "account": "123456789012",
           "region": "us-east-1",
           "mode": "pipeline",
           "pipeline": {
-            "name": "factory-lambda-dev-pipeline",
+            "name": "factory-lambda-{{ENVIRONMENT}}-pipeline",
             "branch": "main",
             "enabled": true,
             "code_artifact_logins": [
@@ -137,13 +138,13 @@
                 "name": "deploy-lambdas",
                 "stacks": [
                   {
-                    "name": "factory-lambda-dev-lambdas",
+                    "name": "factory-lambda-{{ENVIRONMENT}}-lambdas",
                     "module": "lambda_stack",
                     "enabled": true,
                     "ssm": {
                       "enabled": true,
                       "workload": "factory-lambda",
-                      "environment": "dev"
+                      "environment": "{{ENVIRONMENT}}"
                     },
                     "resources": [
                       {
@@ -157,11 +158,11 @@
                         "environment_variables": [
                           {
                             "name": "ENVIRONMENT",
-                            "value": "dev"
+                            "value": "{{ENVIRONMENT}}"
                           },
                           {
                             "name": "APP_TABLE_NAME",
-                            "value": "factory-dev"
+                            "value": "factory-{{ENVIRONMENT}}"
                           },
                           {
                             "name": "COGNITO_USER_POOL",
@@ -177,21 +178,21 @@
                 "name": "deploy-api-gateway",
                 "stacks": [
                   {
-                    "name": "factory-lambda-dev-api-gateway",
+                    "name": "factory-lambda-{{ENVIRONMENT}}-api-gateway",
                     "module": "api_gateway_stack",
                     "enabled": true,
                     "api_gateway": {
-                      "name": "factory-lambda-dev-api",
+                      "name": "factory-lambda-{{ENVIRONMENT}}-api",
                       "description": "API Gateway for Lambda functions",
                       "api_type": "REST",
                       "stage_name": "prod",
                       "ssm": {
                         "enabled": true,
                         "workload": "factory-lambda",
-                        "environment": "dev",
+                        "environment": "{{ENVIRONMENT}}",
                         "imports": {
-                          "workload": "/factory-lambda/dev/lambda",
-                          "environment": "/factory-lambda/dev/environment"
+                          "workload": "/factory-lambda/{{ENVIRONMENT}}/lambda",
+                          "environment": "/factory-lambda/{{ENVIRONMENT}}/environment"
                         }
                       },
                       "routes": [
