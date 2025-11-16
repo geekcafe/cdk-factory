@@ -298,53 +298,63 @@ class StandardizedSsmMixin:
         """
         if not isinstance(value, str):
             return value
-            
-        # Check for SSM StringList pattern
-        if value.startswith("{{ssm-list:") and value.endswith("}}"):
-            ssm_param_path = value[11:-2]  # Remove {{ssm-list: and }}
-            
-            # For StringList, we need to use value_for_string_list_parameter
-            # This returns a list of strings as a token
-            resolved_value = ssm.StringParameter.value_for_string_list_parameter(
-                scope=scope,
-                parameter_name=ssm_param_path,
-            )
-            # Join the list into a comma-separated string
-            # Note: In CDK, this returns a token that resolves to the list at deployment
-            logger.info(f"Resolved SSM StringList parameter: {ssm_param_path}")
-            return resolved_value
-            
-        # Check for explicit SecureString pattern
-        elif value.startswith("{{ssm-secure:") and value.endswith("}}"):
-            ssm_param_path = value[13:-2]  # Remove {{ssm-secure: and }}
-            
-            # Use value_for_secure_string_parameter_name for explicit secure strings
-            # This is semantically clearer and ensures proper handling
-            resolved_value = ssm.StringParameter.value_for_secure_string_parameter_name(
-                scope=scope,
-                parameter_name=ssm_param_path,
-                version=1,  # Use latest version
-            )
-            logger.info(f"Resolved SSM SecureString parameter: {ssm_param_path}")
-            return resolved_value
-            
-        # Check for standard SSM pattern (String or SecureString)
-        elif value.startswith("{{ssm:") and value.endswith("}}"):
-            ssm_param_path = value[6:-2]  # Remove {{ssm: and }}
-            
-            # Import SSM parameter - this creates a token that resolves at deployment time
-            # Works for both String and SecureString types
-            param = ssm.StringParameter.from_string_parameter_name(
-                scope=scope,
-                id=f"{unique_id}-env-{hash(ssm_param_path) % 10000}",
-                string_parameter_name=ssm_param_path
-            )
-            resolved_value = param.string_value
-            logger.info(f"Resolved SSM parameter: {ssm_param_path}")
-            return resolved_value
-            
-        else:
-            return value
+        
+        import re
+        
+        # Check if SSM reference is embedded in a larger string (e.g., ARN with SSM reference)
+        # Example: "arn:aws:s3:::{{ssm:/path/to/bucket}}/*"
+        # Pattern matches: {{ssm:...}}, {{ssm-list:...}}, {{ssm-secure:...}}
+        if "{{ssm" in value and not value.startswith("{{ssm"):
+            match = re.search(r'\{\{ssm[^}]*:[^}]+\}\}', value)
+            if match:
+                ssm_ref = match.group(0)
+                # Recursively resolve the SSM reference itself (handles all types)
+                ssm_value = self.resolve_ssm_value(scope, ssm_ref, f"{unique_id}-embedded")
+                # Replace the SSM reference with resolved value in the original string
+                resolved_value = value.replace(ssm_ref, ssm_value)
+                logger.info(f"Resolved embedded SSM in string: {value} -> {resolved_value}")
+                return resolved_value
+        
+        # Define SSM patterns with their handlers
+        ssm_patterns = [
+            {
+                "prefix": "{{ssm-list:",
+                "type": "StringList",
+                "extract_path": lambda v: v[11:-2],  # Remove {{ssm-list: and }}
+                "resolve": lambda path: ssm.StringParameter.value_for_string_list_parameter(
+                    scope=scope, parameter_name=path
+                )
+            },
+            {
+                "prefix": "{{ssm-secure:",
+                "type": "SecureString",
+                "extract_path": lambda v: v[13:-2],  # Remove {{ssm-secure: and }}
+                "resolve": lambda path: ssm.StringParameter.value_for_secure_string_parameter_name(
+                    scope=scope, parameter_name=path, version=1
+                )
+            },
+            {
+                "prefix": "{{ssm:",
+                "type": "String",
+                "extract_path": lambda v: v[6:-2],  # Remove {{ssm: and }}
+                "resolve": lambda path: ssm.StringParameter.from_string_parameter_name(
+                    scope=scope,
+                    id=f"{unique_id}-env-{hash(path) % 10000}",
+                    string_parameter_name=path
+                ).string_value
+            }
+        ]
+        
+        # Try each pattern in order (most specific first)
+        for pattern in ssm_patterns:
+            if value.startswith(pattern["prefix"]) and value.endswith("}}"):
+                ssm_param_path = pattern["extract_path"](value)
+                resolved_value = pattern["resolve"](ssm_param_path)
+                logger.info(f"Resolved SSM {pattern['type']} parameter: {ssm_param_path}")
+                return resolved_value
+        
+        # No SSM pattern matched
+        return value
 
     def _resolve_ssm_import(self, import_value: Union[str, List[str]], import_key: str) -> Union[str, List[str]]:
         """

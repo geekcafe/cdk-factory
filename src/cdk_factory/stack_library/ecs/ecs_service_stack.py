@@ -264,6 +264,8 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """
         Add custom task policies to the task definition.
         """
+
+        resource_id = 1
         for policy in self.ecs_config.task_definition.get("policies", []):
 
             effect = policy.get("effect", "Allow")
@@ -271,10 +273,22 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             actions = policy.get("actions", [])
             if action:
                 actions.append(action)
+            
             resources = policy.get("resources", [])
             resource = policy.get("resource", None)
             if resource:
                 resources.append(resource)
+
+            # Resolve SSM parameters in resource ARNs (resolve_ssm_value handles embedded SSM refs)
+            resolved_resources = []
+            for resource in resources:
+                policy_name = policy.get("name", "unnamed")
+                ssm_id = f"policy-{policy_name}-{resource_id}-resource"
+                resource_id += 1
+                resolved_resource = self.resolve_ssm_value(self, str(resource), ssm_id)
+                resolved_resources.append(resolved_resource)
+            
+            resources = resolved_resources
 
             if effect == "Allow" and actions:
                 effect = iam.Effect.ALLOW
