@@ -143,29 +143,14 @@ class PipelineRoles:
             effect=iam.Effect.ALLOW,
         )
         role.add_to_policy(ecr_policy)
-
-        environment: str = pipeline.workload.get("environment")
-        if not environment:
-            raise ValueError(
-                "Environment not found in workload. "
-                "This is a breaking change from prior versions. "
-                "Please update your config file to include the environment key "
-                "at the workload level."
-            )
+        
         # S3 permissions for deployment scripts (error pages, static assets, etc.)
         s3_policy = iam.PolicyStatement(
             sid="S3DeploymentPolicy",
             actions=[
-                "s3:ListBucket",
-                "s3:GetObject",
-                "s3:PutObject",
-                "s3:PutObjectAcl",
-                "s3:DeleteObject",
+                "s3:*",
             ],
-            resources=[
-                f"arn:aws:s3:::*-{environment}-*",  # Allow access to environment-specific buckets
-                f"arn:aws:s3:::*-{environment}-*/*",
-            ],
+            resources=["*"],
             effect=iam.Effect.ALLOW,
         )
         role.add_to_policy(s3_policy)
