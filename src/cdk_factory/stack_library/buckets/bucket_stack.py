@@ -6,6 +6,7 @@ MIT License.  See Project Root for the license information.
 
 from aws_lambda_powertools import Logger
 from constructs import Construct
+from aws_cdk import aws_iam as iam
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.s3 import S3BucketConfig
@@ -66,7 +67,64 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
         )
         self.bucket = self.bucket_stack.bucket
 
+        self._apply_bucket_policy()
         self._exports()
+
+    def _apply_bucket_policy(self) -> None:
+        """Apply bucket policy statements if configured"""
+        bucket_policy_config = self.bucket_config.dictionary.get("bucket_policy", {})
+        statements = bucket_policy_config.get("statements", [])
+        
+        if not statements:
+            return
+        
+        for statement in statements:
+            # Build principals
+            principals_config = statement.get("principals", {})
+            principals = []
+            
+            if "service" in principals_config:
+                service = principals_config["service"]
+                if isinstance(service, list):
+                    principals.extend([iam.ServicePrincipal(s) for s in service])
+                else:
+                    principals.append(iam.ServicePrincipal(service))
+            
+            if "aws" in principals_config:
+                aws_principals = principals_config["aws"]
+                if isinstance(aws_principals, list):
+                    principals.extend([iam.ArnPrincipal(p) for p in aws_principals])
+                else:
+                    principals.append(iam.ArnPrincipal(aws_principals))
+            
+            # Build conditions
+            conditions = {}
+            for condition in statement.get("conditions", []):
+                test = condition.get("test")
+                variable = condition.get("variable")
+                values = condition.get("values")
+                
+                if test and variable and values:
+                    # Resolve SSM values in condition values
+                    resolved_values = []
+                    for value in values:
+                        resolved_value = self.resolve_ssm_value(self, value, value)
+                        resolved_values.append(resolved_value)
+                    
+                    conditions[test] = {variable: resolved_values}
+            
+            # Build policy statement
+            policy_statement = iam.PolicyStatement(
+                sid=statement.get("sid"),
+                effect=iam.Effect.ALLOW if statement.get("effect", "Allow") == "Allow" else iam.Effect.DENY,
+                principals=principals if principals else None,
+                actions=statement.get("actions", []),
+                resources=statement.get("resources", []),
+                conditions=conditions if conditions else None,
+            )
+            
+            self.bucket.add_to_resource_policy(policy_statement)
+            logger.info(f"Added bucket policy statement: {statement.get('sid')}")
 
     def _exports(self) -> None:
         """Exports the bucket name and ARN to SSM"""
