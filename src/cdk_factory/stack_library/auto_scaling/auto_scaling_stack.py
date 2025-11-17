@@ -363,7 +363,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Use the configured AMI ID or fall back to appropriate lookup
         if self.asg_config.ami_id:
             # Use explicit AMI ID provided by user
-            machine_image = ec2.MachineImage.lookup(name=self.asg_config.ami_id)
+            machine_image = ec2.MachineImage.generic_linux(
+                ami_map={self.deployment.region: self.asg_config.ami_id}
+            )
         elif self.asg_config.ami_type:
             # Use AMI type for dynamic lookup
             if self.asg_config.ami_type.upper() == "AMAZON-LINUX-2023":
