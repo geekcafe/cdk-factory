@@ -184,6 +184,9 @@ class AutoScalingConfig(EnhancedBaseConfig):
         return self.__config.get("ssm", {}).get("imports", {})
 
     @property
-    def associate_public_ip_address(self) -> bool:
-        """Whether to associate a public IP address with instances"""
-        return self.__config.get("associate_public_ip_address", False)
+    def associate_public_ip_address(self) -> bool | None:
+        """
+        Whether instances should have a public IP addresses associated with them.         
+        Default: - Use subnet settings
+        """
+        return self.__config.get("associate_public_ip_address")
