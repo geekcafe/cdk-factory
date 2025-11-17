@@ -388,6 +388,11 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             # Default fallback
             machine_image = ec2.MachineImage.latest_amazon_linux2023()
 
+        # Configure network interface if public IP is needed
+        # Note: When using a launch template with ASG, associate_public_ip_address
+        # must be set in the ASG's network configuration, not the launch template
+        # The launch template just defines the instance configuration
+        
         launch_template = ec2.LaunchTemplate(
             self,
             f"{asg_name}-LaunchTemplate",
@@ -398,6 +403,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             security_group=self.security_groups[0] if self.security_groups else None,
             key_name=self.asg_config.key_name,
             detailed_monitoring=self.asg_config.detailed_monitoring,
+            associate_public_ip_address=self.asg_config.associate_public_ip_address,
             block_devices=(
                 [
                     ec2.BlockDevice(

@@ -182,3 +182,8 @@ class AutoScalingConfig(EnhancedBaseConfig):
     def ssm_imports(self) -> Dict[str, Any]:
         """SSM imports for the Auto Scaling Group"""
         return self.__config.get("ssm", {}).get("imports", {})
+
+    @property
+    def associate_public_ip_address(self) -> bool:
+        """Whether to associate a public IP address with instances"""
+        return self.__config.get("associate_public_ip_address", False)
