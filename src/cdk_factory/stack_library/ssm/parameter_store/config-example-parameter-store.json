@@ -1,5 +1,5 @@
 {
-  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-parameter-store",
+  "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-parameter-store",
   "module": "parameter_store_stack",
   "enabled": true,
   "parameter_store": {

@@ -1,13 +1,13 @@
 {
-  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-rds",
+  "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-rds",
   "module": "rds_stack",
   "enabled": true,
   "dependencies": [
-    "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
-    "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-security-groups"
+    "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
+    "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-security-groups"
   ],
   "rds": {
-    "identifier": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-db",
+    "identifier": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-db",
     "engine": "mysql",
     "engine_version": "8.4.6",
     "instance_class": "db.t4g.small",
@@ -25,8 +25,8 @@
     "storage_encrypted": true,
     "deletion_protection": false,
     
-    "database_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}",
-    "master_username": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-admin",
+    "database_name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}",
+    "master_username": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-admin",
     
     "ssm": {
       "imports": {

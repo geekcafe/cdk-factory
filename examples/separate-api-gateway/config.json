@@ -38,13 +38,13 @@
     "description": "Example application with separate Lambda and API Gateway stacks",
     "deployments": [
       {
-        "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-pipeline",
+        "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-pipeline",
         "environment": "{{ENVIRONMENT}}",
         "account": "{{AWS_ACCOUNT}}",
         "region": "{{AWS_REGION}}",
         "mode": "pipeline",
         "pipeline": {
-          "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-pipeline",
+          "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-pipeline",
           "enabled": true,
           "stages": [
             {

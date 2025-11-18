@@ -90,7 +90,7 @@ class LambdaEdgeStack(IStack, StandardizedSsmMixin):
         )
         
         # Use the Lambda function name from config (supports template variables)
-        # e.g., "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ip-gate" becomes "tech-talk-dev-ip-gate"
+        # e.g., "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ip-gate" becomes "tech-talk-dev-ip-gate"
         function_name = self.edge_config.name
         logger.info(f"Lambda function name: '{function_name}'")
         

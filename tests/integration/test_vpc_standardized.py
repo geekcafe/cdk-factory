@@ -22,7 +22,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_complete_ssm_integration(self):
         """Test complete SSM integration for VPC module"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc",
@@ -126,7 +126,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_with_interface_endpoints(self):
         """Test VPC with interface endpoints enabled"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc-endpoints",
@@ -161,7 +161,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_with_isolated_subnets(self):
         """Test VPC with isolated subnets enabled"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc-isolated",
@@ -265,7 +265,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_token_resolution(self):
         """Test CDK token resolution with specific context"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc",
@@ -298,7 +298,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_template_structure(self):
         """Test that generated template has correct structure"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc",
@@ -348,7 +348,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_cross_stack_integration(self):
         """Test VPC module in cross-stack SSM integration"""
         producer_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc",
@@ -369,7 +369,7 @@ class TestVPCStandardized(SSMIntegrationTester):
         }
         
         consumer_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-auto-scaling",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-auto-scaling",
             "module": "auto_scaling_library_module",
             "auto_scaling": {
                 "name": "test-asg",
@@ -397,7 +397,7 @@ class TestVPCStandardized(SSMIntegrationTester):
     def test_vpc_with_s3_endpoint(self):
         """Test VPC with S3 gateway endpoint"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc-s3",

@@ -285,7 +285,7 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
                 continue
             
             # Determine which security group this config refers to based on the name pattern
-            # The config uses patterns like "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-rds-sg"
+            # The config uses patterns like "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-rds-sg"
             sg_resource = None
             sg_type = None
             

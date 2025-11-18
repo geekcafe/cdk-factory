@@ -420,7 +420,7 @@ class FactoryTestBase:
             Complete test configuration
         """
         config = {
-            "name": "test-{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-stack",
+            "name": "test-{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-stack",
             "module": module_name,
             "enabled": True,
             "dependencies": []

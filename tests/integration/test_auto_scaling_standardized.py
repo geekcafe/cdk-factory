@@ -21,7 +21,7 @@ class TestAutoScalingStandardized(SSMIntegrationTester):
     def test_auto_scaling_complete_ssm_integration(self):
         """Test complete SSM integration for Auto Scaling module"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-auto-scaling",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-auto-scaling",
             "module": "auto_scaling_library_module",
             "auto_scaling": {
                 "name": "test-asg",
@@ -110,7 +110,7 @@ class TestAutoScalingStandardized(SSMIntegrationTester):
     def test_auto_scaling_ssm_import_resolution(self):
         """Test SSM import resolution with mocked values"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-auto-scaling",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-auto-scaling",
             "module": "auto_scaling_library_module",
             "auto_scaling": {
                 "name": "test-asg",
@@ -145,7 +145,7 @@ class TestAutoScalingStandardized(SSMIntegrationTester):
     def test_auto_scaling_token_resolution(self):
         """Test CDK token resolution with specific context"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-auto-scaling",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-auto-scaling",
             "module": "auto_scaling_library_module",
             "auto_scaling": {
                 "name": "test-asg",
@@ -257,7 +257,7 @@ class TestAutoScalingStandardized(SSMIntegrationTester):
     def test_auto_scaling_template_structure(self):
         """Test that generated template has correct structure"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-auto-scaling",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-auto-scaling",
             "module": "auto_scaling_library_module",
             "auto_scaling": {
                 "name": "test-asg",
@@ -305,7 +305,7 @@ class TestAutoScalingStandardized(SSMIntegrationTester):
     def test_auto_scaling_cross_stack_integration(self):
         """Test Auto Scaling module in cross-stack SSM integration"""
         producer_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "cidr": "10.0.0.0/16",
@@ -319,7 +319,7 @@ class TestAutoScalingStandardized(SSMIntegrationTester):
         }
         
         consumer_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-auto-scaling",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-auto-scaling",
             "module": "auto_scaling_library_module",
             "auto_scaling": {
                 "name": "test-asg",

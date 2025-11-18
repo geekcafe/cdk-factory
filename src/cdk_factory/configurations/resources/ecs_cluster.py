@@ -25,7 +25,7 @@ class EcsClusterConfig:
     
     @property
     def name(self) -> str:
-        """Name of the ECS cluster. Supports template variables like {{WORKLOAD_NAME}}-{{ENVIRONMENT}}-cluster"""
+        """Name of the ECS cluster. Supports template variables like {{ENVIRONMENT}}-{{WORKLOAD_NAME}}-cluster"""
         return self._config.get("name", "cluster")
     
     @property

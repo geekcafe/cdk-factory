@@ -101,7 +101,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_without_instance_role(self):
         """Test ECS cluster without instance role creation"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster-no-role",
@@ -135,7 +135,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_with_container_insights(self):
         """Test ECS cluster with container insights enabled"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster-insights",
@@ -185,7 +185,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_ssm_import_resolution(self):
         """Test SSM import resolution with mocked values"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster",
@@ -215,7 +215,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_token_resolution(self):
         """Test CDK token resolution with specific context"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster",
@@ -316,7 +316,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_template_structure(self):
         """Test that generated template has correct structure"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster",
@@ -360,7 +360,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_cross_stack_integration(self):
         """Test ECS module in cross-stack SSM integration"""
         producer_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-vpc",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-vpc",
             "module": "vpc_library_module",
             "vpc": {
                 "name": "test-vpc",
@@ -375,7 +375,7 @@ class TestECSStandardized(SSMIntegrationTester):
         }
         
         consumer_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster",
@@ -402,7 +402,7 @@ class TestECSStandardized(SSMIntegrationTester):
     def test_ecs_with_cluster_settings(self):
         """Test ECS cluster with custom cluster settings"""
         test_config = {
-            "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-ecs-cluster",
+            "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-ecs-cluster",
             "module": "ecs_cluster_stack",
             "ecs_cluster": {
                 "name": "test-ecs-cluster-settings",

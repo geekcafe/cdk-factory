@@ -1,5 +1,5 @@
 {
-  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-lambdas",
+  "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-lambdas",
   "module": "lambda_stack",
   "enabled": true,
   "ssm": {
@@ -9,7 +9,7 @@
   },
   "resources": [
     {
-      "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-health-check",
+      "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-health-check",
       "src": "./src/handlers/health",
       "handler": "app.lambda_handler",
       "description": "Health check endpoint",
@@ -22,7 +22,7 @@
       }
     },
     {
-      "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-user-api",
+      "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-user-api",
       "src": "./src/handlers/user",
       "handler": "app.lambda_handler",
       "description": "User API operations",
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-admin-api",
+      "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-admin-api",
       "src": "./src/handlers/admin",
       "handler": "app.lambda_handler",
       "description": "Admin API operations",

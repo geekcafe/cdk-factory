@@ -1,9 +1,9 @@
 {
-  "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-api-gateway",
+  "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-api-gateway",
   "module": "api_gateway_stack",
   "enabled": true,
   "api_gateway": {
-    "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-api",
+    "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-api",
     "description": "API Gateway for {{WORKLOAD_NAME}} application",
     "api_type": "REST",
     "stage_name": "prod",
@@ -32,7 +32,7 @@
       {
         "path": "/health",
         "method": "GET",
-        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-health-check",
+        "lambda_name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-health-check",
         "authorization_type": "NONE",
         "allow_public_override": true,
         "cors": {
@@ -44,7 +44,7 @@
       {
         "path": "/users",
         "method": "GET",
-        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-user-api",
+        "lambda_name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-user-api",
         "authorization_type": "NONE",
         "allow_public_override": true,
         "cors": {
@@ -56,7 +56,7 @@
       {
         "path": "/users",
         "method": "POST",
-        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-user-api",
+        "lambda_name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-user-api",
         "authorization_type": "NONE",
         "allow_public_override": true,
         "cors": {
@@ -68,7 +68,7 @@
       {
         "path": "/admin/stats",
         "method": "GET",
-        "lambda_name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-admin-api",
+        "lambda_name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-admin-api",
         "authorization_type": "COGNITO",
         "cors": {
           "origins": ["https://admin.example.com"],
