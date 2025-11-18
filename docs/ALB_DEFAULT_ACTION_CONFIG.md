@@ -94,6 +94,38 @@ Route all unmatched traffic to a specific target group:
 
 **Note:** This is equivalent to using `default_target_group` but allows more explicit configuration.
 
+### Redirect (HTTP to HTTPS)
+
+Redirect all traffic to HTTPS:
+
+```json
+{
+  "listeners": [
+    {
+      "name": "http",
+      "port": 80,
+      "protocol": "HTTP",
+      "default_action": {
+        "type": "redirect",
+        "redirect": {
+          "protocol": "HTTPS",
+          "port": "443",
+          "status_code": "HTTP_301"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Redirect Options:**
+- `protocol`: Target protocol (HTTP, HTTPS)
+- `port`: Target port (e.g., "443")
+- `host`: Target host (optional, defaults to original host)
+- `path`: Target path (optional, defaults to original path)
+- `query`: Query string (optional)
+- `status_code`: "HTTP_301" (permanent) or "HTTP_302" (temporary)
+
 ## Common Patterns
 
 ### Secure ALB Behind CloudFront
@@ -252,6 +284,25 @@ def _parse_listener_action(self, action_config: Dict[str, Any]) -> elbv2.Listene
             return elbv2.ListenerAction.forward([self.target_groups[target_group_name]])
         else:
             raise ValueError(f"Target group '{target_group_name}' not found")
+    elif action_type == "redirect":
+        redirect_config = action_config.get("redirect", {})
+        # Get status code and determine if permanent (301 vs 302)
+        status_code_str = redirect_config.get("status_code", "HTTP_301")
+        if status_code_str in ["HTTP_301", "301"]:
+            permanent = True
+        elif status_code_str in ["HTTP_302", "302"]:
+            permanent = False
+        else:
+            permanent = True  # Default to permanent redirect
+        
+        return elbv2.ListenerAction.redirect(
+            protocol=redirect_config.get("protocol"),
+            port=redirect_config.get("port"),
+            host=redirect_config.get("host"),
+            path=redirect_config.get("path"),
+            query=redirect_config.get("query"),
+            permanent=permanent,
+        )
     else:
         raise ValueError(f"Unsupported action type: {action_type}")
 ```
@@ -281,6 +332,7 @@ else:
 ## Benefits
 
 - ✅ Configure custom default responses (403, 503, etc.)
+- ✅ HTTP to HTTPS redirects with custom status codes
 - ✅ Implement security patterns (header validation)
 - ✅ Custom error pages with HTML
 - ✅ Backward compatible (still defaults to 404)
@@ -289,5 +341,5 @@ else:
 ## Version
 
 - **Added:** 2025-11-18
-- **Version:** 0.36.0
-- **Related:** Also added `enabled` field support for ALB listener rules
+- **Version:** 0.37.0
+- **Related:** Also added `enabled` field support for ALB listener rules and `redirect` action support

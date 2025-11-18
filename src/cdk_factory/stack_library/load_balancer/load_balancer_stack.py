@@ -475,6 +475,27 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 return elbv2.ListenerAction.forward([self.target_groups[target_group_name]])
             else:
                 raise ValueError(f"Target group '{target_group_name}' not found for forward action")
+        elif action_type == "redirect":
+            redirect_config = action_config.get("redirect", {})
+            # Get status code and determine if permanent (301 vs 302)
+            status_code_str = redirect_config.get("status_code", "HTTP_301")
+            # Normalize to just the number
+            if status_code_str in ["HTTP_301", "301"]:
+                permanent = True
+            elif status_code_str in ["HTTP_302", "302"]:
+                permanent = False
+            else:
+                # Default to permanent redirect
+                permanent = True
+            
+            return elbv2.ListenerAction.redirect(
+                protocol=redirect_config.get("protocol"),
+                port=redirect_config.get("port"),
+                host=redirect_config.get("host"),
+                path=redirect_config.get("path"),
+                query=redirect_config.get("query"),
+                permanent=permanent,
+            )
         else:
             raise ValueError(f"Unsupported listener action type: {action_type}")
 
