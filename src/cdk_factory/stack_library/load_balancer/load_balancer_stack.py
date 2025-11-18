@@ -376,6 +376,24 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     logger.warning(message)
                     raise ValueError(message)
 
+                # Determine default action from config or use default target group
+                default_action = None
+                if default_target_group:
+                    # If there's a default target group, CDK will use it automatically
+                    default_action = None
+                else:
+                    # Check if config specifies a custom default_action
+                    default_action_config = listener_config.get("default_action")
+                    if default_action_config:
+                        default_action = self._parse_listener_action(default_action_config)
+                    else:
+                        # Fallback to 404 if no config provided
+                        default_action = elbv2.ListenerAction.fixed_response(
+                            status_code=404,
+                            content_type="text/plain",
+                            message_body="CDK-Factory - ALB: Default Response: Not Found",
+                        )
+
                 listener = elbv2.ApplicationListener(
                     self,
                     listener_id,
@@ -391,15 +409,7 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     default_target_groups=(
                         [default_target_group] if default_target_group else None
                     ),
-                    default_action=(
-                        elbv2.ListenerAction.fixed_response(
-                            status_code=404,
-                            content_type="text/plain",
-                            message_body="Not Found",
-                        )
-                        if not default_target_group
-                        else None
-                    ),
+                    default_action=default_action,
                 )
 
                 # Add rules if specified
@@ -447,6 +457,26 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             )
 
         return certificates
+
+    def _parse_listener_action(self, action_config: Dict[str, Any]) -> elbv2.ListenerAction:
+        """Parse a listener action from configuration."""
+        action_type = action_config.get("type", "fixed-response")
+        
+        if action_type == "fixed-response":
+            fixed_response = action_config.get("fixed_response", {})
+            return elbv2.ListenerAction.fixed_response(
+                status_code=int(fixed_response.get("status_code", 404)),
+                content_type=fixed_response.get("content_type", "text/plain"),
+                message_body=fixed_response.get("message_body", "Not Found"),
+            )
+        elif action_type == "forward":
+            target_group_name = action_config.get("target_group")
+            if target_group_name and target_group_name in self.target_groups:
+                return elbv2.ListenerAction.forward([self.target_groups[target_group_name]])
+            else:
+                raise ValueError(f"Target group '{target_group_name}' not found for forward action")
+        else:
+            raise ValueError(f"Unsupported listener action type: {action_type}")
 
     def _add_listener_rules(
         self, listener: elbv2.ApplicationListener, rules: List[Dict[str, Any]]
