@@ -204,8 +204,8 @@ class PipelineFactoryStack(IStack):
             if not stage.enabled:
                 print(f"\t\t ⚠️ Stage {stage.name} is disabled - skipping.")
                 continue
-            # create the stage
-            pipeline_stage = PipelineStage(self, stage.name, **kwargs)
+            # create the stage using stable_id to prevent logical ID changes when stage name changes
+            pipeline_stage = PipelineStage(self, stage.stable_id, **kwargs)
 
             self.__setup_stacks(
                 stage_config=stage, pipeline_stage=pipeline_stage, deployment=deployment
