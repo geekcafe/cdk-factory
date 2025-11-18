@@ -453,6 +453,11 @@ class LoadBalancerStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     ) -> None:
         """Add rules to an Application Load Balancer listener"""
         for idx, rule_config in enumerate(rules):
+            
+            # if the enabled field isn't available we default to true
+            if str(rule_config.get("enabled", True)).lower() == "false":
+                continue
+
             rule_id = f"{listener.node.id}-rule-{idx}"
             priority = rule_config.get("priority", 100 + idx)
 
