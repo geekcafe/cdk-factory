@@ -212,7 +212,7 @@ class StaticWebSiteStack(IStack):
         restrict_to_known_hosts = cloudfront_config.get("restrict_to_known_hosts", True)
         
         # Determine version/path for CloudFront origin
-        version = "live"  # Default non-versioned path
+        version = None  # Default to no subdirectory (bucket root)
         assets_path = None
         
         if deploy_assets:
@@ -220,21 +220,28 @@ class StaticWebSiteStack(IStack):
             if enable_versioning and assets_path:
                 version = self.__get_version_number(assets_path)
                 logger.info(f"👉 WEBSITE VERSION NUMBER: {version}")
+                logger.info(f"👉 CloudFront origin path: /{version}")
             else:
-                logger.info("👉 Asset versioning disabled - using 'live' path")
+                logger.info("👉 Asset versioning disabled - CloudFront serving from bucket root")
         else:
-            logger.info("👉 Asset deployment disabled - CloudFront will serve existing bucket content")
+            logger.info("👉 Asset deployment disabled - CloudFront serving from bucket root")
 
-        cloudfront_distribution = CloudFrontDistributionConstruct(
-            scope=self,
-            id=deployment.build_resource_name("CloudFrontDistribution"),
-            source_bucket=bucket,
-            aliases=aliases,
-            source_bucket_sub_directory=version if enable_versioning else None,
-            certificate=certificate,
-            restrict_to_known_hosts=restrict_to_known_hosts,
-            stack_config=stack_config,
-        )
+        # Build CloudFront distribution kwargs
+        cf_kwargs = {
+            "scope": self,
+            "id": deployment.build_resource_name("CloudFrontDistribution"),
+            "source_bucket": bucket,
+            "aliases": aliases,
+            "certificate": certificate,
+            "restrict_to_known_hosts": restrict_to_known_hosts,
+            "stack_config": stack_config,
+        }
+        
+        # Only set source_bucket_sub_directory if we have a version
+        if version:
+            cf_kwargs["source_bucket_sub_directory"] = version
+        
+        cloudfront_distribution = CloudFrontDistributionConstruct(**cf_kwargs)
 
         # Deploy website assets to S3 if configured
         if deploy_assets and assets_path:
