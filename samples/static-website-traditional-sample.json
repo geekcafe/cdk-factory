@@ -1,0 +1,57 @@
+{
+  "_comment": "Sample configuration for traditional static website deployment",
+  "_description": "This configuration creates a complete static website: S3 bucket, CloudFront distribution, certificate, and deploys versioned assets. This is the default behavior.",
+  
+  "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-website",
+  "module": "static_website_stack",
+  "enabled": true,
+  
+  "bucket": {
+    "_comment": "Create new S3 bucket (default behavior)",
+    "create": true,
+    "_note": "Can omit this entire section for default behavior"
+  },
+  
+  "assets": {
+    "_comment": "Deploy assets with versioning (default behavior)",
+    "deploy": true,
+    "enable_versioning": true,
+    "path": "www",
+    "_note": "Can also use legacy 'src.path' instead of 'assets.path'"
+  },
+  
+  "cloudfront": {
+    "_comment": "CloudFront configuration",
+    "invalidate_on_deploy": true,
+    "restrict_to_known_hosts": true,
+    "_note": "invalidate_on_deploy defaults to true when assets.deploy=true"
+  },
+  
+  "dns": {
+    "_comment": "DNS configuration for custom domain",
+    "hosted_zone_id": "{{HOSTED_ZONE_ID}}",
+    "hosted_zone_name": "{{HOSTED_ZONE_NAME}}",
+    "aliases": [
+      "www.example.com",
+      "example.com"
+    ]
+  },
+  
+  "cert": {
+    "_comment": "Create wildcard certificate",
+    "domain_name": "*.example.com",
+    "alternate_names": [
+      "example.com"
+    ]
+  },
+  
+  "ssm": {
+    "_comment": "Export website details to SSM",
+    "exports": {
+      "bucket_name": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/website/bucket-name",
+      "cloudfront_domain": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/website/domain",
+      "cloudfront_distribution_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/website/distribution-id",
+      "dns_alias": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/website/alias"
+    }
+  }
+}

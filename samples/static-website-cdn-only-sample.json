@@ -1,0 +1,50 @@
+{
+  "_comment": "Sample configuration for CDN-only CloudFront distribution",
+  "_description": "This configuration creates a CloudFront distribution with optional certificate but does NOT create a bucket or deploy assets. Useful for CDN distributions that serve content from existing S3 buckets.",
+  
+  "name": "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-cdn",
+  "module": "static_website_stack",
+  "enabled": true,
+  
+  "bucket": {
+    "_comment": "Use existing bucket instead of creating new one",
+    "create": false,
+    "name": "{{CDN_BUCKET_NAME}}",
+    "_alternative": "import_arn: arn:aws:s3:::my-existing-bucket"
+  },
+  
+  "_assets_note": "Assets section omitted - this is the cleanest approach for CDN-only distributions. Equivalent to {\"deploy\": false}",
+  
+  "cloudfront": {
+    "_comment": "CloudFront configuration",
+    "invalidate_on_deploy": false,
+    "restrict_to_known_hosts": true,
+    "_note": "Additional CloudFront options can be added here"
+  },
+  
+  "dns": {
+    "_comment": "DNS configuration for custom domain",
+    "hosted_zone_id": "{{HOSTED_ZONE_ID}}",
+    "hosted_zone_name": "{{HOSTED_ZONE_NAME}}",
+    "aliases": [
+      "cdn.example.com"
+    ]
+  },
+  
+  "cert": {
+    "_comment": "Create certificate for custom domain",
+    "domain_name": "cdn.example.com",
+    "alternate_names": [
+      "*.cdn.example.com"
+    ]
+  },
+  
+  "ssm": {
+    "_comment": "Export CloudFront details to SSM for use by other stacks",
+    "exports": {
+      "cloudfront_domain": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cdn/domain",
+      "cloudfront_distribution_id": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cdn/distribution-id",
+      "dns_alias": "/{{ENVIRONMENT}}/{{WORKLOAD_NAME}}/cdn/alias"
+    }
+  }
+}
