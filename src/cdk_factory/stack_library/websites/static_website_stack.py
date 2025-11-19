@@ -339,6 +339,15 @@ class StaticWebSiteStack(IStack):
                 description=f"S3 bucket name for {stack_config.name}",
             )
         
+        if "bucket_arn" in ssm_exports:
+            self.export_ssm_parameter(
+                scope=self,
+                id="SsmExportBucketArn",
+                value=bucket.bucket_arn,
+                parameter_name=ssm_exports["bucket_arn"],
+                description=f"S3 bucket ARN for {stack_config.name}",
+            )
+
         # Export CloudFront domain if configured
         if "cloudfront_domain" in ssm_exports and cloudfront_distribution.distribution:
             self.export_ssm_parameter(
