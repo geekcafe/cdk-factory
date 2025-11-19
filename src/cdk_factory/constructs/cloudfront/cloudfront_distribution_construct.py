@@ -179,11 +179,17 @@ class CloudFrontDistributionConstruct(Construct):
         """
         # print(f"cloudfront dist {self.aliases}")
         # print(f"cert: {self.certificate}")
+        
+        # Prepare origin_path - only set if we have a subdirectory
+        origin_kwargs = {}
+        if self.source_bucket_sub_directory:
+            origin_kwargs["origin_path"] = f"/{self.source_bucket_sub_directory}"
+        
         origin: origins.S3Origin | cloudfront.IOrigin
         if self.use_oac:
             origin = origins.S3BucketOrigin.with_origin_access_control(
                 self.source_bucket,
-                origin_path=f"/{self.source_bucket_sub_directory}",
+                **origin_kwargs,
                 origin_access_levels=[
                     cloudfront.AccessLevel.READ,
                     cloudfront.AccessLevel.LIST,
@@ -192,7 +198,7 @@ class CloudFrontDistributionConstruct(Construct):
         else:
             origin = origins.S3Origin(
                 self.source_bucket,
-                origin_path=f"/{self.source_bucket_sub_directory}",
+                **origin_kwargs,
                 origin_access_identity=self.oai,
             )
 
