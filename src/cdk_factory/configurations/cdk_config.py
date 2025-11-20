@@ -224,6 +224,14 @@ class CdkConfig:
         if environment_variable_name is not None and value is not None:
             self._env_vars[environment_variable_name] = value
 
+        if not value:
+            # check for a default value
+            value = parameter.get("default_value", None)
+            if value is not None:
+                print(f"\t\t🔀 Using default value for {cdk_parameter_name}: {value}")
+            else:
+                print(f"\t\t⚠️  No value found for {cdk_parameter_name}, no default provided")
+
         if value is None and not required:
             return None
 
