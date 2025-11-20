@@ -569,10 +569,17 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             logger.warning("No Auto Scaling Group to export")
             return
 
+        # Get the underlying CfnAutoScalingGroup
+        cfn_asg = self.auto_scaling_group.node.default_child
+        
+        # Use Fn::GetAtt to get the actual ARN (includes the UUID)
+        # This resolves to the full ARN at deployment time
+        asg_arn = cfn_asg.get_att("Arn").to_string()
+
         # Prepare resource values for export
         resource_values = {
             "auto_scaling_group_name": self.auto_scaling_group.auto_scaling_group_name,
-            "auto_scaling_group_arn": self.auto_scaling_group.auto_scaling_group_arn,
+            "auto_scaling_group_arn": asg_arn,
         }
 
         # Export using standardized SSM mixin
