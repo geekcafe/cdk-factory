@@ -236,11 +236,8 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 logger.warning(f"Skipping capacity provider - missing name or ASG ARN: {cp_config}")
                 continue
             
-            # Resolve SSM parameter if ASG ARN is an SSM reference
-            if isinstance(asg_arn, str) and asg_arn.startswith("{{ssm:") and asg_arn.endswith("}}"):
-                ssm_param_path = asg_arn[6:-2]  # Extract parameter path
-                logger.info(f"Resolving ASG ARN from SSM parameter: {ssm_param_path}")
-                asg_arn = self.resolve_ssm_value(scope=self, value=ssm_param_path, unique_id=ssm_param_path)
+            # Resolve SSM parameter if ASG ARN is an SSM reference            
+            resolved_asg_arn = self.resolve_ssm_value(scope=self, value=asg_arn, unique_id=asg_arn)
             
             # Extract configuration with defaults
             target_capacity = cp_config.get("target_capacity", 100)
@@ -259,7 +256,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 f"CapacityProvider-{cp_name}",
                 name=cp_name,
                 auto_scaling_group_provider=ecs.CfnCapacityProvider.AutoScalingGroupProviderProperty(
-                    auto_scaling_group_arn=asg_arn,
+                    auto_scaling_group_arn=resolved_asg_arn,
                     managed_scaling=ecs.CfnCapacityProvider.ManagedScalingProperty(
                         status="ENABLED",
                         target_capacity=target_capacity,
