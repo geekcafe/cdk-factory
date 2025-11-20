@@ -100,18 +100,18 @@ class EcsCapacityProviderStack(IStack):
         """Create the ECS capacity provider and associate with cluster."""
         cp_name = self.cp_config.name
         cluster_name = self.cp_config.cluster_name
-        asg_arn = self.cp_config.auto_scaling_group_arn
+        asg_identifier = self.cp_config.auto_scaling_group_arn  # Can be ARN or name
 
-        if not cp_name or not cluster_name or not asg_arn:
+        if not cp_name or not cluster_name or not asg_identifier:
             raise ValueError(
-                "Capacity provider requires name, cluster_name, and auto_scaling_group_arn"
+                "Capacity provider requires name, cluster_name, and auto_scaling_group_arn (or name)"
             )
 
-        # Resolve SSM parameter if ASG ARN is a reference
-        resolved_asg_arn = self.resolve_ssm_value(
+        # Resolve SSM parameter if ASG identifier is a reference
+        resolved_asg_identifier = self.resolve_ssm_value(
             scope=self,
-            value=asg_arn,
-            unique_id="asg-arn"
+            value=asg_identifier,
+            unique_id="asg-identifier"
         )
 
         logger.info(
@@ -120,12 +120,13 @@ class EcsCapacityProviderStack(IStack):
         )
 
         # Create the capacity provider
+        # Note: auto_scaling_group_arn accepts either the full ARN or just the ASG name
         self.capacity_provider = ecs.CfnCapacityProvider(
             self,
             "CapacityProvider",
             name=cp_name,
             auto_scaling_group_provider=ecs.CfnCapacityProvider.AutoScalingGroupProviderProperty(
-                auto_scaling_group_arn=resolved_asg_arn,
+                auto_scaling_group_arn=resolved_asg_identifier,
                 managed_scaling=ecs.CfnCapacityProvider.ManagedScalingProperty(
                     status="ENABLED",
                     target_capacity=self.cp_config.target_capacity,

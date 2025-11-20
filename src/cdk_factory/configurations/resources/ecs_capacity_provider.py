@@ -30,8 +30,12 @@ class EcsCapacityProviderConfig(EnhancedBaseConfig):
     @property
     def auto_scaling_group_arn(self) -> str:
         """
-        ARN of the Auto Scaling Group to manage.
-        Can be a direct ARN or SSM parameter reference like {{ssm:/path/to/arn}}
+        ARN or name of the Auto Scaling Group to manage.
+        ECS accepts either the full ARN or just the ASG name.
+        Can be a direct value or SSM parameter reference like {{ssm:/path/to/name}}
+        
+        Note: CloudFormation doesn't expose the ASG ARN attribute, so typically
+        you'll use the ASG name here.
         """
         return self.__config.get("auto_scaling_group_arn", "")
 
