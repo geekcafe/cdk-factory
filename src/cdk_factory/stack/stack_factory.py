@@ -26,6 +26,8 @@ class StackFactory:
         "s3_bucket_stack": "S3 bucket for object storage",
         "media_bucket_stack": "S3 bucket for media asset storage with CDN integration",
         "static_website_stack": "Static website hosted on S3 with CloudFront distribution",
+        "ecs_cluster_stack": "ECS cluster with container insights and IAM roles",
+        "ecs_capacity_provider_stack": "ECS capacity provider for automatic ASG scaling",
         "ecs_service_stack": "ECS service with auto-scaling and load balancing",
         "lambda_stack": "Lambda function for serverless compute",
         "api_gateway_stack": "API Gateway for REST API endpoints",
