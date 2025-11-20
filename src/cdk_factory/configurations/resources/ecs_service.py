@@ -194,3 +194,24 @@ class EcsServiceConfig:
         - efs: {...} for EFS volumes
         """
         return self.task_definition.get("volumes", [])
+
+    @property
+    def capacity_provider_strategy(self) -> List[Dict[str, Any]]:
+        """
+        Capacity provider strategy for the service.
+        When specified, overrides launch_type.
+        Each strategy should have:
+        - capacity_provider: Name of the capacity provider
+        - weight: Relative weight for task placement (default: 1)
+        - base: Number of tasks to place on this provider before distributing (default: 0)
+        
+        Example:
+        [
+          {
+            "capacity_provider": "my-capacity-provider",
+            "weight": 1,
+            "base": 2
+          }
+        ]
+        """
+        return self._config.get("capacity_provider_strategy", [])

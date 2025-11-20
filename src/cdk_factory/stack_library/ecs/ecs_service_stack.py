@@ -546,27 +546,38 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Load subnets
         subnets = self._load_subnets()
         
-        # Create service based on launch type
+        # Build capacity provider strategy if configured
+        capacity_provider_strategies = self._build_capacity_provider_strategy()
+        
+        # Create service based on launch type or capacity provider
         if self.ecs_config.launch_type == "EC2":
-            self.service = ecs.Ec2Service(
-                self,
-                "Service",
-                service_name=service_name,
-                cluster=self.cluster,
-                task_definition=self.task_definition,
-                desired_count=self.ecs_config.desired_count,
-                enable_execute_command=self.ecs_config.enable_execute_command,
-                health_check_grace_period=cdk.Duration.seconds(
+            service_kwargs = {
+                "service_name": service_name,
+                "cluster": self.cluster,
+                "task_definition": self.task_definition,
+                "desired_count": self.ecs_config.desired_count,
+                "enable_execute_command": self.ecs_config.enable_execute_command,
+                "health_check_grace_period": cdk.Duration.seconds(
                     self.ecs_config.health_check_grace_period
                 ) if self.ecs_config.target_group_arns else None,
-                circuit_breaker=ecs.DeploymentCircuitBreaker(
+                "circuit_breaker": ecs.DeploymentCircuitBreaker(
                     enable=self.ecs_config.deployment_circuit_breaker.get("enable", True),
                     rollback=self.ecs_config.deployment_circuit_breaker.get("rollback", True)
                 ) if self.ecs_config.deployment_circuit_breaker else None,
-                placement_strategies=self._get_placement_strategies(),
-                placement_constraints=self._get_placement_constraints(),
-                max_healthy_percent=self.ecs_config.deployment_configuration.get("maximum_percent"),
-                min_healthy_percent=self.ecs_config.deployment_configuration.get("minimum_healthy_percent")
+                "placement_strategies": self._get_placement_strategies(),
+                "placement_constraints": self._get_placement_constraints(),
+                "max_healthy_percent": self.ecs_config.deployment_configuration.get("maximum_percent"),
+                "min_healthy_percent": self.ecs_config.deployment_configuration.get("minimum_healthy_percent")
+            }
+            
+            # Add capacity provider strategy if configured (overrides launch_type)
+            if capacity_provider_strategies:
+                service_kwargs["capacity_provider_strategies"] = capacity_provider_strategies
+            
+            self.service = ecs.Ec2Service(
+                self,
+                "Service",
+                **service_kwargs
             )
         else:
             # Fargate service
@@ -637,6 +648,36 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 constraints.append(ecs.PlacementConstraint.member_of(expression))
         
         return constraints
+    
+    def _build_capacity_provider_strategy(self) -> Optional[List[ecs.CapacityProviderStrategy]]:
+        """Build capacity provider strategy for the service"""
+        strategy_config = self.ecs_config.capacity_provider_strategy
+        
+        if not strategy_config:
+            return None
+        
+        strategies = []
+        for strategy in strategy_config:
+            cp_name = strategy.get("capacity_provider")
+            if not cp_name:
+                continue
+            
+            # Resolve SSM reference if present
+            resolved_cp_name = self.resolve_ssm_value(
+                scope=self,
+                value=cp_name,
+                unique_id=f"cp-{cp_name}"
+            )
+            
+            strategies.append(
+                ecs.CapacityProviderStrategy(
+                    capacity_provider=resolved_cp_name,
+                    weight=strategy.get("weight", 1),
+                    base=strategy.get("base", 0)
+                )
+            )
+        
+        return strategies if strategies else None
 
     def _load_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Load security groups from IDs"""
