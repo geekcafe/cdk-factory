@@ -106,3 +106,29 @@ class EcsClusterConfig:
     def ssm_imports(self) -> Dict[str, Any]:
         """SSM parameter imports"""
         return self.ssm.get("imports", {})
+    
+    @property
+    def capacity_providers(self) -> List[Dict[str, Any]]:
+        """
+        Capacity provider configurations for ECS cluster.
+        Each provider should have:
+        - name: Provider name
+        - auto_scaling_group_arn: ARN of the ASG (can use SSM reference)
+        - target_capacity: Target utilization % (default: 100)
+        - minimum_scaling_step_size: Min instances to add/remove (default: 1)
+        - maximum_scaling_step_size: Max instances to add/remove (default: 10)
+        - instance_warmup_period: Seconds for instance warmup (default: 300)
+        """
+        return self._config.get("capacity_providers", [])
+    
+    @property
+    def default_capacity_provider_strategy(self) -> List[Dict[str, Any]]:
+        """
+        Default capacity provider strategy for the cluster.
+        Used when services don't specify their own strategy.
+        Each strategy should have:
+        - capacity_provider: Name of the provider
+        - weight: Relative weight (default: 1)
+        - base: Number of tasks to run on this provider before distributing (default: 0)
+        """
+        return self._config.get("default_capacity_provider_strategy", [])

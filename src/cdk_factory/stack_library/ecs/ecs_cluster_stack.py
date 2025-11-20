@@ -117,6 +117,9 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Create IAM roles if needed
         self._create_iam_roles()
         
+        # Create capacity providers if configured
+        self._create_capacity_providers()
+        
         # Export cluster information
         self._export_cluster_info()
         
@@ -214,6 +217,92 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         logger.info(f"Created ECS instance profile: {self.instance_profile.instance_profile_name}")
 
         logger.info("ECS instance role and profile created")
+
+    def _create_capacity_providers(self):
+        """Create ECS capacity providers for ASG-based auto-scaling."""
+        if not self.ecs_config.capacity_providers:
+            logger.info("No capacity providers configured - skipping")
+            return
+        
+        logger.info(f"Creating {len(self.ecs_config.capacity_providers)} capacity provider(s)")
+        
+        capacity_provider_names = []
+        
+        for cp_config in self.ecs_config.capacity_providers:
+            cp_name = cp_config.get("name")
+            asg_arn = cp_config.get("auto_scaling_group_arn")
+            
+            if not cp_name or not asg_arn:
+                logger.warning(f"Skipping capacity provider - missing name or ASG ARN: {cp_config}")
+                continue
+            
+            # Resolve SSM parameter if ASG ARN is an SSM reference
+            if isinstance(asg_arn, str) and asg_arn.startswith("{{ssm:") and asg_arn.endswith("}}"):
+                ssm_param_path = asg_arn[6:-2]  # Extract parameter path
+                logger.info(f"Resolving ASG ARN from SSM parameter: {ssm_param_path}")
+                asg_arn = self.resolve_ssm_value(scope=self, value=ssm_param_path, unique_id=ssm_param_path)
+            
+            # Extract configuration with defaults
+            target_capacity = cp_config.get("target_capacity", 100)
+            min_scaling_step = cp_config.get("minimum_scaling_step_size", 1)
+            max_scaling_step = cp_config.get("maximum_scaling_step_size", 10)
+            instance_warmup = cp_config.get("instance_warmup_period", 300)
+            
+            logger.info(
+                f"Creating capacity provider '{cp_name}' with target_capacity={target_capacity}%, "
+                f"scaling_steps={min_scaling_step}-{max_scaling_step}, warmup={instance_warmup}s"
+            )
+            
+            # Create the capacity provider
+            capacity_provider = ecs.CfnCapacityProvider(
+                self,
+                f"CapacityProvider-{cp_name}",
+                name=cp_name,
+                auto_scaling_group_provider=ecs.CfnCapacityProvider.AutoScalingGroupProviderProperty(
+                    auto_scaling_group_arn=asg_arn,
+                    managed_scaling=ecs.CfnCapacityProvider.ManagedScalingProperty(
+                        status="ENABLED",
+                        target_capacity=target_capacity,
+                        minimum_scaling_step_size=min_scaling_step,
+                        maximum_scaling_step_size=max_scaling_step,
+                        instance_warmup_period=instance_warmup
+                    ),
+                    managed_termination_protection="ENABLED"
+                )
+            )
+            
+            capacity_provider_names.append(capacity_provider.ref)
+            logger.info(f"Created capacity provider: {cp_name}")
+        
+        # Associate capacity providers with cluster if any were created
+        if capacity_provider_names and self.ecs_config.default_capacity_provider_strategy:
+            logger.info(f"Associating {len(capacity_provider_names)} capacity provider(s) with cluster")
+            
+            # Build capacity provider strategy
+            strategies = []
+            for strategy_config in self.ecs_config.default_capacity_provider_strategy:
+                strategy = ecs.CfnClusterCapacityProviderAssociations.CapacityProviderStrategyProperty(
+                    capacity_provider=strategy_config.get("capacity_provider"),
+                    weight=strategy_config.get("weight", 1),
+                    base=strategy_config.get("base", 0)
+                )
+                strategies.append(strategy)
+            
+            # Associate with cluster
+            ecs.CfnClusterCapacityProviderAssociations(
+                self,
+                "ClusterCapacityProviderAssociations",
+                cluster=self.ecs_cluster.cluster_name,
+                capacity_providers=capacity_provider_names,
+                default_capacity_provider_strategy=strategies
+            )
+            
+            logger.info(f"Capacity providers associated with cluster: {', '.join(capacity_provider_names)}")
+        elif capacity_provider_names:
+            logger.warning(
+                "Capacity providers created but no default strategy defined. "
+                "Services must explicitly specify capacity provider strategy."
+            )
 
     def _export_cluster_info(self):
         """Export cluster information as CloudFormation outputs."""
