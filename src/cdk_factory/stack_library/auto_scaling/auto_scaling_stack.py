@@ -467,6 +467,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 getattr(autoscaling.TerminationPolicy, policy.upper())
                 for policy in self.asg_config.termination_policies
             ],
+            new_instances_protected_from_scale_in=self.asg_config.new_instances_protected_from_scale_in,
         )
 
         # Add instance refresh if configured

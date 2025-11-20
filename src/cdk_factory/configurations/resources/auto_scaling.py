@@ -190,3 +190,12 @@ class AutoScalingConfig(EnhancedBaseConfig):
         Default: - Use subnet settings
         """
         return self.__config.get("associate_public_ip_address")
+
+    @property
+    def new_instances_protected_from_scale_in(self) -> bool:
+        """
+        Whether newly launched instances are protected from scale-in.
+        Required when using ECS Capacity Providers with managed termination protection.
+        Default: False
+        """
+        return self.__config.get("new_instances_protected_from_scale_in", False)
