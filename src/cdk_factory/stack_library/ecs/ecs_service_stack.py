@@ -78,7 +78,14 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             stack_config.dictionary.get("ecs_service") or stack_config.dictionary.get("ecs", {})
         )
         
-        service_name = deployment.build_resource_name(self.ecs_config.name)
+        # Build service name - use explicit service_name if provided, otherwise auto-generate
+        # Auto-generation allows CloudFormation to safely replace the service if needed
+        service_name = None
+        if self.ecs_config.service_name:
+            service_name = deployment.build_resource_name(self.ecs_config.service_name)
+            logger.info(f"Using explicit service name: {service_name}")
+        else:
+            logger.info("Service name not specified - CloudFormation will auto-generate for safe replacement")
         
         # Process SSM imports first
         self._process_ssm_imports()
@@ -90,7 +97,7 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self._create_or_load_cluster()
         
         # Create task definition
-        self._create_task_definition(service_name)
+        self._create_task_definition(service_name or deployment.build_resource_name(self.ecs_config.name))
         
         # Create ECS service
         self._create_service(service_name)
@@ -537,7 +544,7 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # This would integrate with AWS Secrets Manager or SSM Parameter Store
         return secrets
 
-    def _create_service(self, service_name: str) -> None:
+    def _create_service(self, service_name: Optional[str]) -> None:
         """Create ECS service (Fargate or EC2)"""
         
         # Load security groups
@@ -552,7 +559,6 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Create service based on launch type or capacity provider
         if self.ecs_config.launch_type == "EC2":
             service_kwargs = {
-                "service_name": service_name,
                 "cluster": self.cluster,
                 "task_definition": self.task_definition,
                 "desired_count": self.ecs_config.desired_count,
@@ -570,6 +576,10 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 "min_healthy_percent": self.ecs_config.deployment_configuration.get("minimum_healthy_percent")
             }
             
+            # Only add service_name if explicitly provided (allows CloudFormation auto-naming)
+            if service_name:
+                service_kwargs["service_name"] = service_name
+            
             # Add capacity provider strategy if configured (overrides launch_type)
             if capacity_provider_strategies:
                 service_kwargs["capacity_provider_strategies"] = capacity_provider_strategies
@@ -581,24 +591,31 @@ class EcsServiceStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             )
         else:
             # Fargate service
-            self.service = ecs.FargateService(
-                self,
-                "Service",
-                service_name=service_name,
-                cluster=self.cluster,
-                task_definition=self.task_definition,
-                desired_count=self.ecs_config.desired_count,
-                security_groups=security_groups,
-                vpc_subnets=ec2.SubnetSelection(subnets=subnets) if subnets else None,
-                assign_public_ip=self.ecs_config.assign_public_ip,
-                enable_execute_command=self.ecs_config.enable_execute_command,
-                health_check_grace_period=cdk.Duration.seconds(
+            fargate_kwargs = {
+                "cluster": self.cluster,
+                "task_definition": self.task_definition,
+                "desired_count": self.ecs_config.desired_count,
+                "security_groups": security_groups,
+                "vpc_subnets": ec2.SubnetSelection(subnets=subnets) if subnets else None,
+                "assign_public_ip": self.ecs_config.assign_public_ip,
+                "enable_execute_command": self.ecs_config.enable_execute_command,
+                "health_check_grace_period": cdk.Duration.seconds(
                     self.ecs_config.health_check_grace_period
                 ) if self.ecs_config.target_group_arns else None,
-                circuit_breaker=ecs.DeploymentCircuitBreaker(
+                "circuit_breaker": ecs.DeploymentCircuitBreaker(
                     enable=self.ecs_config.deployment_circuit_breaker.get("enable", True),
                     rollback=self.ecs_config.deployment_circuit_breaker.get("rollback", True)
                 ) if self.ecs_config.deployment_circuit_breaker else None,
+            }
+            
+            # Only add service_name if explicitly provided (allows CloudFormation auto-naming)
+            if service_name:
+                fargate_kwargs["service_name"] = service_name
+            
+            self.service = ecs.FargateService(
+                self,
+                "Service",
+                **fargate_kwargs
             )
         
         # Attach to load balancer target groups

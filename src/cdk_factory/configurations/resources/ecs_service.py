@@ -19,6 +19,14 @@ class EcsServiceConfig:
         return self._config.get("name", "")
 
     @property
+    def service_name(self) -> Optional[str]:
+        """
+        Explicit service name. If not provided, CloudFormation will auto-generate.
+        Auto-generation is recommended for services that may need replacement.
+        """
+        return self._config.get("service_name")
+    
+    @property
     def cluster_name(self) -> Optional[str]:
         """ECS Cluster name"""
         return self._config.get("cluster_name")
