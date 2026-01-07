@@ -201,3 +201,5 @@ activate.sh
 .pip/
 **/.debug/*
 **/.dynamic/*
+
+.test_version.txt

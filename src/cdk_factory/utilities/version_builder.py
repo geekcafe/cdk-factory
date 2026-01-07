@@ -13,6 +13,13 @@ class VersionSource(Enum):
     GIT_TAG = "git_tag"  # Read from latest git tag
 
 
+class VersionStrategy(Enum):
+    """Strategy for version increment."""
+
+    PATCH = "patch"  # Increment patch version (e.g., 1.2.3 → 1.2.4)
+    MINOR = "minor"  # Increment minor version (e.g., 1.2.3 → 1.3.0)
+
+
 class VersionBuilder:
     def __init__(self, version_source: VersionSource = VersionSource.FILE):
         """
@@ -237,19 +244,23 @@ class VersionBuilder:
         return new_version
 
     def update_version_file(
-        self, version_file_path: str, use_auto_increment: bool = False
+        self,
+        version_file_path: str,
+        strategy: VersionStrategy = VersionStrategy.PATCH,
     ):
         """
         Update version file with new version.
 
         Args:
             version_file_path: Path to version file to update
-            use_auto_increment: If True, auto-increment minor version; if False, append patch number
+            strategy: Version increment strategy (PATCH or MINOR)
         """
-        if use_auto_increment:
+        if strategy == VersionStrategy.MINOR:
             new_version = self.build_version_with_auto_increment(version_file_path)
-        else:
+        elif strategy == VersionStrategy.PATCH:
             new_version = self.build_version_with_patch(version_file_path)
+        else:
+            raise ValueError(f"Unknown version strategy: {strategy}")
 
         try:
             with open(version_file_path, "w") as f:
@@ -267,7 +278,9 @@ class VersionBuilder:
 
 def main():
     vb: VersionBuilder = VersionBuilder(VersionSource.GIT_TAG)
-    version = vb.update_version_file(".test_version.txt", use_auto_increment=True)
+    version = vb.update_version_file(
+        ".test_version.txt", strategy=VersionStrategy.PATCH
+    )
     print(f"Final version: {version}")
 
 
