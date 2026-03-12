@@ -103,7 +103,7 @@ Based on grep search results, the following files reference the unused mixins:
    - `tests/unit/test_enhanced_ssm_config_paths.py`
    - Action: Remove tests for deleted mixins
 
-4. **External project references** (trav-talks-real-estate-iac)
+4. **External project references** (my-app-real-estate-iac)
    - These are in a separate project directory
    - Action: Document but do not modify (out of scope)
 
@@ -481,7 +481,7 @@ echo "Searching for LiveSsmResolver references..."
 grep -r "LiveSsmResolver" --include="*.py" --include="*.md" src/ docs/ tests/ samples/ || echo "✓ No references found"
 ```
 
-Expected: No matches (or only matches in external project directories like trav-talks-real-estate-iac, which are out of scope)
+Expected: No matches (or only matches in external project directories like my-app-real-estate-iac, which are out of scope)
 
 **Step 4.2: Verify Imports**
 ```python

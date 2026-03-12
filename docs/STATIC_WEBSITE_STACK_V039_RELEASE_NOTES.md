@@ -147,8 +147,8 @@ All existing configurations work without changes:
 - ✅ `/samples/static-website-hybrid-sample.json` - Hybrid deployment example
 
 ### Project Configurations
-- ✅ `/source-code/trav-talks-real-estate-iac/config-00-main.json` - CDN pipeline config
-- ✅ `/source-code/trav-talks-real-estate-iac/config-00-stage-01-cdn.json` - CDN stack config
+- ✅ `/source-code/my-app-real-estate-iac/config-00-main.json` - CDN pipeline config
+- ✅ `/source-code/my-app-real-estate-iac/config-00-stage-01-cdn.json` - CDN stack config
 
 ## Implementation Details
 

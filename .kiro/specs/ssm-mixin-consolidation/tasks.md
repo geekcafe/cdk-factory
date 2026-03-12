@@ -151,4 +151,4 @@ This plan implements the safe removal of unused SSM parameter mixins (EnhancedSs
 - The cleanup is designed to be safe with no breaking changes to existing stacks
 - All stacks continue to use StandardizedSsmMixin via IStack inheritance
 - Rollback is available at any point via git reset
-- External project references (trav-talks-real-estate-iac) are out of scope and should be ignored
+- External project references (my-app-real-estate-iac) are out of scope and should be ignored
