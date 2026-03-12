@@ -21,14 +21,23 @@ class VersionStrategy(Enum):
 
 
 class VersionBuilder:
-    def __init__(self, version_source: VersionSource = VersionSource.FILE):
+    def __init__(
+        self,
+        version_source: VersionSource = VersionSource.FILE,
+        strict: bool = False,
+    ):
         """
         Initialize VersionBuilder with specified version source.
 
         Args:
             version_source: Source for base version (FILE or GIT_TAG)
+            strict: When True, raise an error instead of silently falling back
+                to CODEBUILD_BUILD_NUMBER when git commands fail.  Use this in
+                CI/CD pipelines where a git failure indicates a real problem
+                that should stop the build.
         """
         self.version_source = version_source
+        self.strict = strict
 
     def get_version_from_file(self, version_file_path: str) -> str:
         """Read version from a file (e.g., version.txt)."""
@@ -169,10 +178,20 @@ class VersionBuilder:
                 return commit_count
 
         except subprocess.CalledProcessError as e:
+            if self.strict:
+                raise RuntimeError(
+                    f"Git command failed while determining build number for v{major_minor_version}.*: {e}\n"
+                    "Ensure this is a git repository with proper history. "
+                    "Use VersionBuilder(strict=False) to fall back to CODEBUILD_BUILD_NUMBER instead."
+                ) from e
             print(f"⚠️ Git command failed: {e}")
             print(f"💬 Falling back to build number from environment or 0")
             return int(os.getenv("CODEBUILD_BUILD_NUMBER", "0"))
         except Exception as e:
+            if self.strict:
+                raise RuntimeError(
+                    f"Unexpected error getting git build number: {e}"
+                ) from e
             print(f"⚠️ Error getting git build number: {e}")
             return int(os.getenv("CODEBUILD_BUILD_NUMBER", "0"))
 
