@@ -13,7 +13,7 @@ from boto3_assist.ssm.parameter_store.parameter_store import ParameterStore
 from boto3_assist.s3.s3_object import S3Object
 from cdk_factory.utilities.json_loading_utility import JsonLoadingUtility
 
-logger = Logger()
+logger = Logger(__name__)
 
 parameters = ParameterStore()
 
@@ -73,7 +73,7 @@ class CdkConfig:
             # Ensure both paths are absolute to avoid mixing absolute and relative paths
             abs_config_path = os.path.abspath(config_path)
             abs_runtime_directory = os.path.abspath(runtime_directory)
-            
+
             root_path = os.path.commonpath([abs_config_path, abs_runtime_directory])
             if root_path in abs_config_path:
                 relative_config_path = abs_config_path.replace(root_path, ".")
@@ -183,9 +183,11 @@ class CdkConfig:
         if self._resolved_config_file_path is None:
             raise ValueError("Config file path is not set")
 
-        file_name = os.path.join(".dynamic", os.path.basename(self._resolved_config_file_path))
+        file_name = os.path.join(
+            ".dynamic", os.path.basename(self._resolved_config_file_path)
+        )
         path = os.path.join(Path(self._resolved_config_file_path).parent, file_name)
-        
+
         if not os.path.exists(Path(path).parent):
             os.makedirs(Path(path).parent)
         cdk = config.get("cdk", {})
@@ -230,7 +232,9 @@ class CdkConfig:
             if value is not None:
                 print(f"\t\t🔀 Using default value for {cdk_parameter_name}: {value}")
             else:
-                print(f"\t\t⚠️  No value found for {cdk_parameter_name}, no default provided")
+                print(
+                    f"\t\t⚠️  No value found for {cdk_parameter_name}, no default provided"
+                )
 
         if value is None and not required:
             return None

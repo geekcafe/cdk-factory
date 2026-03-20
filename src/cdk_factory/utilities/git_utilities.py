@@ -8,7 +8,7 @@ import os
 import subprocess
 from aws_lambda_powertools import Logger
 
-logger = Logger()
+logger = Logger(__name__)
 
 
 class GitUtilities:

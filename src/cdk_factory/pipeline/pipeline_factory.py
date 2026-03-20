@@ -29,7 +29,7 @@ from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
 from cdk_factory.interfaces.istack import IStack
 from cdk_factory.pipeline.path_utils import convert_app_file_to_relative_directory
 
-logger = Logger()
+logger = Logger(__name__)
 
 
 class PipelineFactoryStack(IStack):
@@ -250,7 +250,9 @@ class PipelineFactoryStack(IStack):
     ) -> List[pipelines.ShellStep]:
         return self._get_steps("post_steps", stage_config, deployment)
 
-    def _get_steps(self, key: str, stage_config: PipelineStageConfig, deployment: DeploymentConfig):
+    def _get_steps(
+        self, key: str, stage_config: PipelineStageConfig, deployment: DeploymentConfig
+    ):
         """
         Gets the build steps from the config.json.
 
@@ -259,7 +261,7 @@ class PipelineFactoryStack(IStack):
         - A single multi-line string (treated as a single script block)
 
         This allows support for complex shell constructs like if blocks, loops, etc.
-        
+
         For builds with source/buildspec/environment, creates CodeBuildStep instead of ShellStep.
         """
         shell_steps: List[pipelines.Step] = []
@@ -271,9 +273,15 @@ class PipelineFactoryStack(IStack):
         for build in stage_config.builds:
             if str(build.get("enabled", "true")).lower() == "true":
                 # Check if this is a CodeBuild step (has source, buildspec, or environment)
-                if build.get("source") or build.get("buildspec") or build.get("environment"):
+                if (
+                    build.get("source")
+                    or build.get("buildspec")
+                    or build.get("environment")
+                ):
                     # Create CodeBuildStep for external builds
-                    codebuild_step = self._create_codebuild_step(build, key, deployment, stage_config.name)
+                    codebuild_step = self._create_codebuild_step(
+                        build, key, deployment, stage_config.name
+                    )
                     if codebuild_step:
                         shell_steps.append(codebuild_step)
                 else:
@@ -296,11 +304,17 @@ class PipelineFactoryStack(IStack):
                         shell_steps.append(shell_step)
 
         return shell_steps
-    
-    def _create_codebuild_step(self, build: Dict[str, Any], key: str, deployment: DeploymentConfig, stage_name: str) -> pipelines.CodeBuildStep:
+
+    def _create_codebuild_step(
+        self,
+        build: Dict[str, Any],
+        key: str,
+        deployment: DeploymentConfig,
+        stage_name: str,
+    ) -> pipelines.CodeBuildStep:
         """
         Creates a CodeBuildStep for builds that specify source, buildspec, or environment.
-        
+
         Supports:
         - External GitHub repositories (public and private)
         - Custom buildspec files
@@ -309,23 +323,25 @@ class PipelineFactoryStack(IStack):
         - GitHub authentication via CodeConnections
         """
         build_name = build.get("name", "custom-build")
-        
+
         # Parse source configuration
         source_config = build.get("source", {})
         source_type = source_config.get("type", "GITHUB").upper()
         source_location = source_config.get("location")
         source_branch = source_config.get("branch", "main")
-        
+
         # Determine if this is the right step type (pre or post)
         # Only create the step if it's supposed to run at this point
         # For now, assume CodeBuild steps run as pre_steps by default
         if key != "pre_steps":
             return None
-        
+
         if not source_location:
-            logger.warning(f"Build '{build_name}' has no source location specified, skipping")
+            logger.warning(
+                f"Build '{build_name}' has no source location specified, skipping"
+            )
             return None
-        
+
         # Parse buildspec
         # If a buildspec path is specified, try to load it locally and convert to from_object()
         buildspec_path = build.get("buildspec")
@@ -345,9 +361,13 @@ class PipelineFactoryStack(IStack):
                     else:
                         raise ValueError("Parsed buildspec YAML is not a dictionary")
                 else:
-                    raise FileNotFoundError(f"Buildspec file not found: {buildspec_path}")
+                    raise FileNotFoundError(
+                        f"Buildspec file not found: {buildspec_path}"
+                    )
             except Exception as exc:
-                raise RuntimeError(f"Failed to load buildspec from '{buildspec_path}': {exc}")
+                raise RuntimeError(
+                    f"Failed to load buildspec from '{buildspec_path}': {exc}"
+                )
         else:
             # No buildspec specified - check for inline commands
             inline_commands = build.get("commands", [])
@@ -355,19 +375,17 @@ class PipelineFactoryStack(IStack):
                 inline_commands = [inline_commands]
             if inline_commands:
                 # Create inline buildspec from commands
-                buildspec = codebuild.BuildSpec.from_object({
-                    "version": "0.2",
-                    "phases": {
-                        "build": {
-                            "commands": inline_commands
-                        }
+                buildspec = codebuild.BuildSpec.from_object(
+                    {
+                        "version": "0.2",
+                        "phases": {"build": {"commands": inline_commands}},
                     }
-                })
-        
+                )
+
         # Parse environment configuration
         env_config = build.get("environment", {})
         compute_type_str = env_config.get("compute_type", "BUILD_GENERAL1_SMALL")
-        
+
         # Map string to CDK enum
         compute_type_map = {
             "BUILD_GENERAL1_SMALL": codebuild.ComputeType.SMALL,
@@ -375,18 +393,24 @@ class PipelineFactoryStack(IStack):
             "BUILD_GENERAL1_LARGE": codebuild.ComputeType.LARGE,
             "BUILD_GENERAL1_2XLARGE": codebuild.ComputeType.X2_LARGE,
         }
-        compute_type = compute_type_map.get(compute_type_str, codebuild.ComputeType.SMALL)
-        
+        compute_type = compute_type_map.get(
+            compute_type_str, codebuild.ComputeType.SMALL
+        )
+
         build_image_str = env_config.get("image", "aws/codebuild/standard:7.0")
         privileged_mode = env_config.get("privileged_mode", False)
-        
+
         # Parse build image
         if build_image_str.startswith("aws/codebuild/standard:"):
             version = build_image_str.split(":")[-1]
-            build_image = codebuild.LinuxBuildImage.from_code_build_image_id(f"aws/codebuild/standard:{version}")
+            build_image = codebuild.LinuxBuildImage.from_code_build_image_id(
+                f"aws/codebuild/standard:{version}"
+            )
         else:
-            build_image = codebuild.LinuxBuildImage.from_code_build_image_id(build_image_str)
-        
+            build_image = codebuild.LinuxBuildImage.from_code_build_image_id(
+                build_image_str
+            )
+
         # Parse environment variables
         env_vars_list = build.get("environment_variables", [])
         env_vars = {}
@@ -394,29 +418,31 @@ class PipelineFactoryStack(IStack):
             var_name = env_var.get("name")
             var_value = env_var.get("value")
             var_type = env_var.get("type", "PLAINTEXT")
-            
+
             if var_name and var_value is not None:
                 if var_type == "PLAINTEXT":
-                    env_vars[var_name] = codebuild.BuildEnvironmentVariable(value=str(var_value))
+                    env_vars[var_name] = codebuild.BuildEnvironmentVariable(
+                        value=str(var_value)
+                    )
                 elif var_type == "PARAMETER_STORE":
                     env_vars[var_name] = codebuild.BuildEnvironmentVariable(
                         value=str(var_value),
-                        type=codebuild.BuildEnvironmentVariableType.PARAMETER_STORE
+                        type=codebuild.BuildEnvironmentVariableType.PARAMETER_STORE,
                     )
                 elif var_type == "SECRETS_MANAGER":
                     env_vars[var_name] = codebuild.BuildEnvironmentVariable(
                         value=str(var_value),
-                        type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER
+                        type=codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
                     )
-        
+
         # Create build environment
         build_environment = codebuild.BuildEnvironment(
             build_image=build_image,
             compute_type=compute_type,
             privileged=privileged_mode,
-            environment_variables=env_vars
+            environment_variables=env_vars,
         )
-        
+
         # Determine input source
         if source_type == "GITHUB":
             # GitHub source - supports both public and private repos
@@ -433,16 +459,20 @@ class PipelineFactoryStack(IStack):
                 )
                 self._source_cache[cache_key] = input_source
         else:
-            logger.warning(f"Unsupported source type '{source_type}' for build '{build_name}'")
+            logger.warning(
+                f"Unsupported source type '{source_type}' for build '{build_name}'"
+            )
             return None
-        
+
         # Create CodeBuildStep
-        logger.info(f"Creating CodeBuildStep '{build_name}' with source from {source_location}")
-        
+        logger.info(
+            f"Creating CodeBuildStep '{build_name}' with source from {source_location}"
+        )
+
         # CodeBuildStep requires 'commands' param; when using a buildspec (repo or inline)
         # we pass an empty list so only the buildspec runs
         commands: List[str] = []
-        
+
         codebuild_step = pipelines.CodeBuildStep(
             id=f"{build_name}-{stage_name}",
             input=input_source,
@@ -450,13 +480,13 @@ class PipelineFactoryStack(IStack):
             build_environment=build_environment,
             partial_build_spec=buildspec,
         )
-        
+
         return codebuild_step
-    
+
     def _parse_github_repo_string(self, location: str) -> str:
         """
         Converts GitHub URL to org/repo format.
-        
+
         Examples:
         - https://github.com/geekcafe/myrepo.git -> geekcafe/myrepo
         - https://github.com/geekcafe/myrepo -> geekcafe/myrepo
@@ -528,7 +558,9 @@ class PipelineFactoryStack(IStack):
             dependencies = cf_stack["stack_config"].dependencies
             if cf_stack["stack_config"].dictionary.get("depends_on"):
                 # add to the array
-                dependencies.extend(cf_stack["stack_config"].dictionary.get("depends_on"))
+                dependencies.extend(
+                    cf_stack["stack_config"].dictionary.get("depends_on")
+                )
 
             if dependencies:
                 for dependency in dependencies:

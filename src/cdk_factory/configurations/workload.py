@@ -20,7 +20,7 @@ from cdk_factory.configurations.resources.cloudfront import CloudFrontConfig
 from cdk_factory.configurations.stack import StackConfig
 import json
 
-logger = Logger()
+logger = Logger(__name__)
 
 
 class WorkloadConfig:
@@ -78,17 +78,17 @@ class WorkloadConfig:
         # Handle missing devops section gracefully
         if "devops" not in workload:
             logger.warning("Devops configuration not found in workload, using defaults")
-            
+
             # Get environment variables for defaults
             devops_account = os.environ.get("DEVOPS_AWS_ACCOUNT")
             devops_region = os.environ.get("DEVOPS_REGION")
-            
+
             # Validate required environment variables
             if not devops_account or not devops_region:
                 raise ValueError(
                     "DEVOPS_AWS_ACCOUNT and DEVOPS_REGION environment variables must be set when devops config is missing"
                 )
-            
+
             # Use a separate defaults object instead of mutating the original
             devops_defaults = {
                 "account": devops_account,
@@ -96,11 +96,14 @@ class WorkloadConfig:
                 "code_repository": {
                     "name": os.environ.get("CODE_REPOSITORY_NAME", "default-repo"),
                     "type": "connector_arn",
-                    "connector_arn": os.environ.get("CODE_REPOSITORY_ARN", f"arn:aws:codeconnections:{os.environ.get('DEVOPS_REGION', 'us-east-1')}:{os.environ.get('DEVOPS_AWS_ACCOUNT')}:connection/default")
+                    "connector_arn": os.environ.get(
+                        "CODE_REPOSITORY_ARN",
+                        f"arn:aws:codeconnections:{os.environ.get('DEVOPS_REGION', 'us-east-1')}:{os.environ.get('DEVOPS_AWS_ACCOUNT')}:connection/default",
+                    ),
                 },
-                "commands": []
+                "commands": [],
             }
-            
+
             workload["devops"] = devops_defaults
 
         self.__devops = DevOps(workload["devops"])

@@ -17,7 +17,7 @@ from cdk_factory.configurations.workload import WorkloadConfig
 from cdk_factory.pipeline.pipeline_factory import PipelineFactoryStack
 from cdk_factory.stack.stack_factory import StackFactory
 
-logger = Logger()
+logger = Logger(__name__)
 VERBOSE = True
 
 

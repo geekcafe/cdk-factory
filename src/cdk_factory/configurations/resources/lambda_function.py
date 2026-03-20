@@ -27,7 +27,7 @@ from cdk_factory.configurations.resources.resource_mapping import (
 )
 from cdk_factory.configurations.deployment import DeploymentConfig
 
-logger = Logger()
+logger = Logger(__name__)
 
 
 class LambdaFunctionConfig(EnhancedBaseConfig):

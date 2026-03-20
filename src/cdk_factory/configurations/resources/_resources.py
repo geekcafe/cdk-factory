@@ -15,7 +15,7 @@ from cdk_factory.configurations.resources.lambda_function import (
 from cdk_factory.configurations.resources.s3 import S3BucketConfig
 from cdk_factory.configurations.resources.sqs import SQS
 
-logger = Logger()
+logger = Logger(__name__)
 
 
 class Resources:
