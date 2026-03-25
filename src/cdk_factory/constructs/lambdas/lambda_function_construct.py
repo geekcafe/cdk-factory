@@ -67,7 +67,9 @@ class LambdaConstruct(Construct):
         # create the standard role
         role = self.__check_role(role=role, unique_id=id, lambda_config=lambda_config)
 
-        utilities = LambdaFunctionUtilities(deployment=self.deployment, workload=self.workload)
+        utilities = LambdaFunctionUtilities(
+            deployment=self.deployment, workload=self.workload
+        )
 
         function = utilities.create(
             scope=self.scope,
@@ -130,6 +132,26 @@ class LambdaConstruct(Construct):
                     scope=self.scope,
                     id=f"{unique_id}-{name}",
                     layer_version_arn=arn,
+                )
+            )
+
+        # Resolve SSM-based layer ARNs
+        for ssm_layer in lambda_config.ssm_layer_arns:
+            name = ssm_layer.get("name")
+            ssm_path = ssm_layer.get("ssm_path")
+            if not name or not ssm_path:
+                logger.warning(
+                    f"SSM layer is missing name or ssm_path. skipping name: {name}, ssm_path: {ssm_path}"
+                )
+                continue
+            resolved_arn = ssm.StringParameter.value_for_string_parameter(
+                self.scope, ssm_path
+            )
+            layers.append(
+                aws_lambda.LayerVersion.from_layer_version_arn(
+                    scope=self.scope,
+                    id=f"{unique_id}-ssm-{name}",
+                    layer_version_arn=resolved_arn,
                 )
             )
 

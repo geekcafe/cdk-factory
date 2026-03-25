@@ -9,6 +9,8 @@ import aws_cdk
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as _lambda
 
+from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_s3_notifications
 from aws_cdk import aws_sqs as sqs
 from aws_cdk import aws_lambda_event_sources as event_sources
 from aws_cdk import aws_events as events
@@ -100,7 +102,7 @@ class LambdaStack(IStack):
             lambda_functions.append(config)
 
         self.functions = self.__setup_lambdas(lambda_functions)
-        
+
         # Export Lambda ARNs to SSM Parameter Store for API Gateway integration
         self.__export_lambda_arns_to_ssm()
 
@@ -143,6 +145,12 @@ class LambdaStack(IStack):
                             lambda_function=lambda_function,
                             sqs_config=queue,
                         )
+                    elif queue.is_dlq_consumer:
+                        self.__bind_lambda_to_dlq_consumer(
+                            lambda_function=lambda_function,
+                            sqs_config=queue,
+                            function_config=function_config,
+                        )
                     elif queue.is_producer:
                         self.__permit_adding_message_to_sqs(
                             lambda_function=lambda_function,
@@ -156,7 +164,11 @@ class LambdaStack(IStack):
                 for trigger in function_config.triggers:
                     trigger_id += 1
                     if trigger.resource_type.lower() == "s3":
-                        raise NotImplementedError("S3 triggers are implemented yet.")
+                        self.__setup_s3_trigger(
+                            trigger=trigger,
+                            lambda_function=lambda_function,
+                            function_name=f"{function_config.name}-{trigger_id}",
+                        )
 
                     elif trigger.resource_type == "event-bridge":
                         self.__set_event_bridge_event(
@@ -294,6 +306,139 @@ class LambdaStack(IStack):
 
             rule.add_target(aws_events_targets.LambdaFunction(lambda_function))
 
+    def __setup_s3_trigger(
+        self,
+        trigger: LambdaTriggersConfig,
+        lambda_function: _lambda.Function | _lambda.DockerImageFunction,
+        function_name: str,
+    ) -> None:
+        """
+        Set up an S3 bucket event notification trigger for a Lambda function.
+        Imports an existing bucket by name (direct or SSM-resolved) and wires
+        notifications with optional prefix/suffix filters.
+        """
+        # Resolve bucket name from direct config or SSM
+        bucket_name = trigger.bucket_name
+        if trigger.bucket_ssm_path:
+            bucket_name = ssm.StringParameter.value_for_string_parameter(
+                self, trigger.bucket_ssm_path
+            )
+        if not bucket_name:
+            raise ValueError(
+                f"S3 trigger on Lambda '{function_name}' requires either "
+                "'bucket_name' or 'bucket_ssm_path'"
+            )
+
+        # Import the existing bucket
+        bucket = s3.Bucket.from_bucket_name(
+            self,
+            id=f"{function_name}-s3-bucket",
+            bucket_name=bucket_name,
+        )
+
+        # Build notification key filters
+        filters = s3.NotificationKeyFilter(
+            prefix=trigger.prefix or None,
+            suffix=trigger.suffix or None,
+        )
+
+        # Map event type strings to S3 EventType enum values
+        event_type_map = {
+            "s3:ObjectCreated:*": s3.EventType.OBJECT_CREATED,
+            "s3:ObjectCreated:Put": s3.EventType.OBJECT_CREATED_PUT,
+            "s3:ObjectCreated:Post": s3.EventType.OBJECT_CREATED_POST,
+            "s3:ObjectCreated:Copy": s3.EventType.OBJECT_CREATED_COPY,
+            "s3:ObjectCreated:CompleteMultipartUpload": s3.EventType.OBJECT_CREATED_COMPLETE_MULTIPART_UPLOAD,
+            "s3:ObjectRemoved:*": s3.EventType.OBJECT_REMOVED,
+            "s3:ObjectRemoved:Delete": s3.EventType.OBJECT_REMOVED_DELETE,
+            "s3:ObjectRemoved:DeleteMarkerCreated": s3.EventType.OBJECT_REMOVED_DELETE_MARKER_CREATED,
+        }
+
+        event_types = trigger.events
+        destination = aws_s3_notifications.LambdaDestination(lambda_function)
+
+        for event_str in event_types:
+            s3_event = event_type_map.get(event_str)
+            if not s3_event:
+                raise ValueError(f"Unsupported S3 event type: '{event_str}'")
+            bucket.add_event_notification(
+                s3_event,
+                destination,
+                filters,
+            )
+
+        # Grant S3 permission to invoke the Lambda function
+        lambda_function.add_permission(
+            id=f"{function_name}-s3-invoke",
+            principal=iam.ServicePrincipal("s3.amazonaws.com"),
+            source_arn=bucket.bucket_arn,
+        )
+
+    def __bind_lambda_to_dlq_consumer(
+        self,
+        lambda_function: _lambda.Function | _lambda.DockerImageFunction,
+        sqs_config: SQSConfig,
+        function_config: LambdaFunctionConfig,
+    ) -> None:
+        """
+        Bind a Lambda function as a consumer of an existing Dead Letter Queue.
+        Resolves the queue ARN from SSM or constructs it from queue name + deployment context.
+        Creates an EventSourceMapping (no queue creation) and grants consume permissions.
+        """
+        queue_arn: str = ""
+
+        if sqs_config.queue_ssm_path:
+            # Resolve queue ARN from SSM parameter
+            queue_arn = ssm.StringParameter.value_for_string_parameter(
+                self, sqs_config.queue_ssm_path
+            )
+        elif sqs_config.name:
+            # Construct ARN from queue name + deployment context
+            name = self.deployment.build_resource_name(
+                sqs_config.name, ResourceTypes.SQS
+            )
+            queue_arn = (
+                f"arn:aws:sqs:{self.deployment.region}:{self.deployment.account}:{name}"
+            )
+        else:
+            raise ValueError(
+                f"DLQ consumer on Lambda '{function_config.name}' requires either "
+                "'queue_name' or 'queue_ssm_path'"
+            )
+
+        construct_id = (
+            sqs_config.resource_id
+            or f"{function_config.name}-{sqs_config.name or 'dlq'}-dlq-consumer"
+        )
+
+        # Import the existing DLQ by ARN
+        dlq = sqs.Queue.from_queue_arn(
+            self,
+            id=construct_id,
+            queue_arn=queue_arn,
+        )
+
+        # Create EventSourceMapping between DLQ and Lambda
+        _lambda.EventSourceMapping(
+            self,
+            id=f"{construct_id}-esm",
+            target=lambda_function,
+            event_source_arn=dlq.queue_arn,
+            batch_size=sqs_config.batch_size,
+        )
+
+        # Grant consume permissions
+        lambda_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:GetQueueAttributes",
+                ],
+                resources=[dlq.queue_arn],
+            )
+        )
+
     def __check_for_deprecated_api_config(self, stack_config: StackConfig) -> None:
         """
         Check for deprecated API Gateway configuration in lambda resources.
@@ -302,13 +447,13 @@ class LambdaStack(IStack):
         resources = stack_config.dictionary.get("resources", [])
         if not resources:
             resources = stack_config.dictionary.get("lambdas", [])
-        
+
         deprecated_configs = []
         for resource in resources:
             # Check for 'api' key in resource configuration
             if "api" in resource or "api_gateway" in stack_config.dictionary:
                 deprecated_configs.append(resource.get("name", "unnamed"))
-        
+
         if deprecated_configs:
             error_msg = f"""
 ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -364,21 +509,25 @@ See examples: cdk-factory/examples/separate-api-gateway/
         if not self.exported_lambda_arns:
             logger.info("No Lambda functions to export to SSM")
             return
-        
+
         # Get SSM export configuration
         ssm_config = self.stack_config.dictionary.get("ssm", {})
         if not ssm_config.get("enabled", False):
             logger.info("SSM export is not enabled for this stack")
             return
-        
+
         # Build SSM parameter prefix
         # Try 'workload' first, fall back to 'organization' for backward compatibility
-        workload = ssm_config.get("workload", ssm_config.get("organization", self.deployment.workload_name))
+        workload = ssm_config.get(
+            "workload", ssm_config.get("organization", self.deployment.workload_name)
+        )
         environment = ssm_config.get("environment", self.deployment.environment)
         prefix = f"/{workload}/{environment}/lambda"
-        
-        logger.info(f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}")
-        
+
+        logger.info(
+            f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}"
+        )
+
         for lambda_name, lambda_info in self.exported_lambda_arns.items():
             # Create SSM parameter for Lambda ARN
             param_name = f"{prefix}/{lambda_name}/arn"
@@ -390,7 +539,7 @@ See examples: cdk-factory/examples/separate-api-gateway/
                 description=f"Lambda ARN for {lambda_name}",
                 tier=ssm.ParameterTier.STANDARD,
             )
-            
+
             # Also export function name for convenience
             param_name_fname = f"{prefix}/{lambda_name}/function-name"
             ssm.StringParameter(
@@ -401,10 +550,12 @@ See examples: cdk-factory/examples/separate-api-gateway/
                 description=f"Lambda function name for {lambda_name}",
                 tier=ssm.ParameterTier.STANDARD,
             )
-            
+
             logger.info(f"✅ Exported Lambda '{lambda_name}' to SSM: {param_name}")
-        
-        print(f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store")
+
+        print(
+            f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store"
+        )
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig
@@ -435,7 +586,20 @@ See examples: cdk-factory/examples/separate-api-gateway/
             id=f"{lambda_config.name}-construct",
             deployment=self.deployment,
         )
-        repo_arn = lambda_config.ecr.arn
+
+        # Check for SSM-resolved ECR — takes precedence over explicit fields
+        if lambda_config.ecr.ecr_ssm_path:
+            base_path = lambda_config.ecr.ecr_ssm_path
+            repo_name = ssm.StringParameter.value_for_string_parameter(
+                self, f"{base_path}/name"
+            )
+            repo_arn = ssm.StringParameter.value_for_string_parameter(
+                self, f"{base_path}/arn"
+            )
+        else:
+            repo_arn = lambda_config.ecr.arn
+            repo_name = lambda_config.ecr.name
+
         # TODO: techdebt
         # our current logic defaults to us-east-1 but we need to make sure the
         # ecr repo is in the same region as our lambda function
@@ -448,7 +612,6 @@ See examples: cdk-factory/examples/separate-api-gateway/
                 }
             )
         repo_arn = repo_arn.replace("us-east-1", self.deployment.region)
-        repo_name = lambda_config.ecr.name
 
         # default to the environment
         tag_or_digest: str = self.deployment.environment

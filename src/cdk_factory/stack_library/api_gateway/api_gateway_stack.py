@@ -75,7 +75,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         api_name = self.api_config.name or "api-gateway"
         # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
         # API recreation would cause downtime, so construct ID must be stable
-        stable_api_id = f"{deployment.workload_name}-{deployment.environment}-api-gateway"
+        stable_api_id = (
+            f"{deployment.workload_name}-{deployment.environment}-api-gateway"
+        )
         api_id = deployment.build_resource_name(api_name)
 
         routes = self.api_config.routes or [
@@ -420,6 +422,11 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # Setup CORS using centralized utility
         self.integration_utility.setup_route_cors(resource, route_path, route)
 
+        # Process additional routes pointing to the same Lambda
+        self._setup_additional_routes(
+            api_gateway, api_id, route, lambda_fn, authorizer, is_imported=True
+        )
+
     def _get_lambda_arn_from_ssm(self, route: dict) -> str:
         """
         Get Lambda ARN from SSM Parameter Store.
@@ -509,6 +516,73 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
 
         # Setup CORS using centralized utility
         self.integration_utility.setup_route_cors(resource, route_path, route)
+
+        # Process additional routes pointing to the same Lambda
+        self._setup_additional_routes(
+            api_gateway, api_id, route, lambda_fn, authorizer, is_imported=False
+        )
+
+    def _setup_additional_routes(
+        self,
+        api_gateway,
+        api_id,
+        primary_route,
+        lambda_fn,
+        authorizer,
+        is_imported=False,
+    ):
+        """
+        Process additional_routes on a primary route config, creating new API Gateway
+        resource + method integrations pointing to the same Lambda function.
+        """
+        additional_routes = primary_route.get("additional_routes", [])
+        if not additional_routes:
+            return
+
+        for add_route in additional_routes:
+            add_path = add_route["path"]
+            add_method = add_route.get(
+                "method", primary_route.get("method", "GET")
+            ).upper()
+
+            # Build a merged route dict: inherit from primary, override with additional
+            merged_route = dict(primary_route)
+            merged_route.update(add_route)
+            # Ensure method is set
+            merged_route["method"] = add_method
+            # Remove additional_routes to avoid recursion
+            merged_route.pop("additional_routes", None)
+
+            add_suffix = self._get_route_suffix(merged_route)
+
+            # Create API Gateway resource for the additional route
+            resource = (
+                api_gateway.root.resource_for_path(add_path)
+                if add_path != "/"
+                else api_gateway.root
+            )
+
+            # Add CfnPermission for this additional route
+            _lambda.CfnPermission(
+                self,
+                f"lambda-permission-{add_suffix}",
+                action="lambda:InvokeFunction",
+                function_name=lambda_fn.function_arn,
+                principal="apigateway.amazonaws.com",
+                source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{add_method}{add_path}",
+            )
+
+            # Setup Lambda integration for the additional route
+            self._setup_lambda_integration(
+                api_gateway, api_id, merged_route, lambda_fn, authorizer, add_suffix
+            )
+
+            # Setup CORS
+            self.integration_utility.setup_route_cors(resource, add_path, merged_route)
+
+            logger.info(
+                f"Added additional route {add_method} {add_path} -> same Lambda"
+            )
 
     def _validate_authorization_configuration(self, route, has_cognito_authorizer):
         """

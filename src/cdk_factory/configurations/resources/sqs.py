@@ -86,6 +86,19 @@ class SQS:
         return False
 
     @property
+    def is_dlq_consumer(self) -> bool:
+        """Whether this queue config represents a DLQ consumer binding"""
+        return str(self.type) == "dlq_consumer"
+
+    @property
+    def queue_ssm_path(self) -> str:
+        """SSM parameter path to resolve the queue ARN"""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("queue_ssm_path", "")
+
+        return ""
+
+    @property
     def visibility_timeout_seconds(self) -> int:
         """
         Visibility Timeout

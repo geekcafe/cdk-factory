@@ -55,6 +55,13 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
 
         self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
 
+        # Validate: if exists is true, name must be provided
+        if self.bucket_config.exists:
+            try:
+                _ = self.bucket_config.name
+            except ValueError:
+                raise ValueError("Bucket import requires 'name' when 'exists' is true")
+
         # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
         # Bucket recreation would cause data loss, so construct ID must be stable
         stable_bucket_id = f"{deployment.workload_name}-{deployment.environment}-bucket"
@@ -74,55 +81,59 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
         """Apply bucket policy statements if configured"""
         bucket_policy_config = self.bucket_config.dictionary.get("bucket_policy", {})
         statements = bucket_policy_config.get("statements", [])
-        
+
         if not statements:
             return
-        
+
         for statement in statements:
             # Build principals
             principals_config = statement.get("principals", {})
             principals = []
-            
+
             if "service" in principals_config:
                 service = principals_config["service"]
                 if isinstance(service, list):
                     principals.extend([iam.ServicePrincipal(s) for s in service])
                 else:
                     principals.append(iam.ServicePrincipal(service))
-            
+
             if "aws" in principals_config:
                 aws_principals = principals_config["aws"]
                 if isinstance(aws_principals, list):
                     principals.extend([iam.ArnPrincipal(p) for p in aws_principals])
                 else:
                     principals.append(iam.ArnPrincipal(aws_principals))
-            
+
             # Build conditions
             conditions = {}
             for condition in statement.get("conditions", []):
                 test = condition.get("test")
                 variable = condition.get("variable")
                 values = condition.get("values")
-                
+
                 if test and variable and values:
                     # Resolve SSM values in condition values
                     resolved_values = []
                     for value in values:
                         resolved_value = self.resolve_ssm_value(self, value, value)
                         resolved_values.append(resolved_value)
-                    
+
                     conditions[test] = {variable: resolved_values}
-            
+
             # Build policy statement
             policy_statement = iam.PolicyStatement(
                 sid=statement.get("sid"),
-                effect=iam.Effect.ALLOW if statement.get("effect", "Allow") == "Allow" else iam.Effect.DENY,
+                effect=(
+                    iam.Effect.ALLOW
+                    if statement.get("effect", "Allow") == "Allow"
+                    else iam.Effect.DENY
+                ),
                 principals=principals if principals else None,
                 actions=statement.get("actions", []),
                 resources=statement.get("resources", []),
                 conditions=conditions if conditions else None,
             )
-            
+
             self.bucket.add_to_resource_policy(policy_statement)
             logger.info(f"Added bucket policy statement: {statement.get('sid')}")
 

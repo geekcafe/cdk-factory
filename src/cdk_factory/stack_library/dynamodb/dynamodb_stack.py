@@ -51,9 +51,18 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
             stack_config.dictionary.get("dynamodb", {}), deployment
         )
 
+        # Validate: if use_existing is true, name must be provided
+        if self.db_config.use_existing:
+            raw_name = stack_config.dictionary.get("dynamodb", {}).get("name")
+            if not raw_name:
+                raise ValueError(
+                    "DynamoDB import requires 'name' when 'use_existing' is true"
+                )
+
         # Determine if we're using an existing table or creating a new one
         if self.db_config.use_existing:
             self._import_existing_table()
+            self._export_ssm_parameters()
         else:
             self._create_new_table()
 

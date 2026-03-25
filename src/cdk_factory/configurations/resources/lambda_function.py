@@ -393,6 +393,14 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
         return []
 
     @property
+    def ssm_layer_arns(self) -> list[dict]:
+        """SSM parameter paths for Lambda layer ARNs resolved at synth time"""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("ssm_layer_arns", [])
+
+        return []
+
+    @property
     def execution_role_arn(self) -> str | None:
         """Execution Role Arn"""
         if (
