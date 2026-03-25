@@ -10,6 +10,7 @@ import yaml
 import aws_cdk as cdk
 from aws_cdk import aws_codebuild as codebuild
 from aws_cdk import aws_codecommit as codecommit
+from aws_cdk import aws_codepipeline_actions as codepipeline_actions
 from aws_cdk import pipelines
 from aws_cdk.aws_codepipeline import PipelineType
 from aws_lambda_powertools import Logger
@@ -659,6 +660,9 @@ class PipelineFactoryStack(IStack):
         code_repo: codecommit.IRepository
         source_artifact: pipelines.CodePipelineSource
 
+        # Determine if pipeline should auto-trigger on branch changes
+        trigger_on_push = self.pipeline.trigger_on_branch_change
+
         if self.workload.devops.code_repository.type == "connector_arn":
             code_repository = self.workload.devops.code_repository
             if code_repository.connector_arn:
@@ -668,6 +672,7 @@ class PipelineFactoryStack(IStack):
                     connection_arn=code_repository.connector_arn,
                     action_name=code_repository.type,
                     code_build_clone_output=True,  # gets us branch and meta data info
+                    trigger_on_push=trigger_on_push,
                 )
             else:
                 raise RuntimeError(
@@ -680,9 +685,18 @@ class PipelineFactoryStack(IStack):
                 self, f"{repo_id}", repo_name
             )
             # Define the source artifact
-            source_artifact = pipelines.CodePipelineSource.code_commit(
-                code_repo, branch, code_build_clone_output=True
-            )
+            # For CodeCommit, trigger=NONE disables auto-trigger on push
+            if trigger_on_push:
+                source_artifact = pipelines.CodePipelineSource.code_commit(
+                    code_repo, branch, code_build_clone_output=True
+                )
+            else:
+                source_artifact = pipelines.CodePipelineSource.code_commit(
+                    code_repo,
+                    branch,
+                    code_build_clone_output=True,
+                    trigger=codepipeline_actions.CodeCommitTrigger.NONE,
+                )
         else:
             raise RuntimeError("Unknown code repository type.")
 

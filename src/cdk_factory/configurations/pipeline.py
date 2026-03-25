@@ -88,6 +88,16 @@ class PipelineConfig:
         return str(value).lower() == "true" or value is True
 
     @property
+    def trigger_on_branch_change(self) -> bool:
+        """
+        Controls whether the pipeline auto-triggers on source branch changes.
+        When false, the pipeline must be triggered manually or via API.
+        Defaults to true for backward compatibility.
+        """
+        value = self.pipeline.get("trigger_on_branch_change", True)
+        return str(value).lower() == "true" or value is True
+
+    @property
     def verbose_output(self) -> bool:
         # todo: add to config
         return False
@@ -148,15 +158,17 @@ class PipelineConfig:
         """
         Returns the code artifact logins (if any)
         """
-        from cdk_factory.configurations.resources.code_artifact_login import CodeArtifactLoginConfig
-        
+        from cdk_factory.configurations.resources.code_artifact_login import (
+            CodeArtifactLoginConfig,
+        )
+
         logins_config = self.pipeline.get("code_artifact_logins", [])
-        
+
         if not logins_config:
             return []
-        
+
         # Create enhanced config object
         login_config = CodeArtifactLoginConfig(logins_config)
-        
+
         # Return commands appropriate for current environment
         return login_config.get_commands_for_environment()
