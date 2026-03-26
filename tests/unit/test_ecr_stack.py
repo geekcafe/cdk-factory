@@ -437,3 +437,173 @@ class TestECRStack:
         # At least one SSM parameter should have a dependency on the ECR repo
         assert len(ecr_repos) > 0
         assert len(ssm_params) == 3
+
+    def test_ecr_repository_with_accounts_with_access_object_array(
+        self, app, deployment_config, workload_config
+    ):
+        """Test ECR repository with accounts_with_access using object array format"""
+        stack_config = StackConfig(
+            {
+                "name": "test-ecr-stack",
+                "resources": [
+                    {
+                        "name": "multi-account-repo",
+                        "image_scan_on_push": "false",
+                        "empty_on_delete": "false",
+                        "accounts_with_access": [
+                            {
+                                "id": "111111111111",
+                                "region": "us-east-1",
+                                "description": "dev",
+                            },
+                            {
+                                "id": "222222222222",
+                                "region": "us-west-2",
+                                "description": "prod",
+                            },
+                            {
+                                "id": "333333333333",
+                                "region": "eu-west-1",
+                                "description": "eu",
+                            },
+                        ],
+                    }
+                ],
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = ECRStack(
+            app,
+            "TestAccountsWithAccessECR",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+        stack.build(stack_config, deployment_config, workload_config)
+        template = Template.from_stack(stack)
+
+        # Verify repository has inline policy with cross-account permissions
+        template.resource_count_is("AWS::ECR::Repository", 1)
+
+        # Verify we have 3 account principals in the policy
+        template_dict = template.to_json()
+        ecr_repos = [
+            r
+            for r in template_dict["Resources"].values()
+            if r["Type"] == "AWS::ECR::Repository"
+        ]
+        assert len(ecr_repos) == 1
+        policy_text = ecr_repos[0]["Properties"]["RepositoryPolicyText"]
+        # Find the account principal statement
+        account_statement = [
+            s for s in policy_text["Statement"] if "AWS" in s.get("Principal", {})
+        ]
+        assert len(account_statement) >= 1
+        assert len(account_statement[0]["Principal"]["AWS"]) == 3
+
+    def test_ecr_repository_with_cross_account_access_string_array(
+        self, app, deployment_config, workload_config
+    ):
+        """Test ECR repository with cross_account_access.accounts using string array format"""
+        stack_config = StackConfig(
+            {
+                "name": "test-ecr-stack",
+                "resources": [
+                    {
+                        "name": "string-array-repo",
+                        "image_scan_on_push": "false",
+                        "empty_on_delete": "false",
+                        "cross_account_access": {
+                            "enabled": True,
+                            "accounts": ["444444444444", "555555555555"],
+                        },
+                    }
+                ],
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = ECRStack(
+            app,
+            "TestStringArrayECR",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+        stack.build(stack_config, deployment_config, workload_config)
+        template = Template.from_stack(stack)
+
+        # Verify repository has inline policy with cross-account permissions
+        template.resource_count_is("AWS::ECR::Repository", 1)
+
+        # Verify we have 2 account principals in the policy
+        template_dict = template.to_json()
+        ecr_repos = [
+            r
+            for r in template_dict["Resources"].values()
+            if r["Type"] == "AWS::ECR::Repository"
+        ]
+        assert len(ecr_repos) == 1
+        policy_text = ecr_repos[0]["Properties"]["RepositoryPolicyText"]
+        # Find the account principal statement
+        account_statement = [
+            s for s in policy_text["Statement"] if "AWS" in s.get("Principal", {})
+        ]
+        assert len(account_statement) >= 1
+        assert len(account_statement[0]["Principal"]["AWS"]) == 2
+
+    def test_ecr_config_accounts_with_access_extraction(
+        self, deployment_config, workload_config
+    ):
+        """Test that ECRConfig correctly extracts account IDs from different formats"""
+        from cdk_factory.configurations.resources.ecr import ECRConfig
+
+        # Test object array format
+        config1 = ECRConfig(
+            {
+                "name": "test-repo",
+                "accounts_with_access": [
+                    {"id": "111111111111", "region": "us-east-1", "description": "dev"},
+                    {
+                        "id": "222222222222",
+                        "region": "us-west-2",
+                        "description": "prod",
+                    },
+                ],
+            },
+            deployment=deployment_config,
+        )
+        assert config1.accounts_with_access == ["111111111111", "222222222222"]
+
+        # Test string array format
+        config2 = ECRConfig(
+            {
+                "name": "test-repo",
+                "cross_account_access": {
+                    "accounts": ["333333333333", "444444444444"],
+                },
+            },
+            deployment=deployment_config,
+        )
+        assert config2.accounts_with_access == ["333333333333", "444444444444"]
+
+        # Test mixed format (object array in cross_account_access)
+        config3 = ECRConfig(
+            {
+                "name": "test-repo",
+                "cross_account_access": {
+                    "accounts": [
+                        {"id": "555555555555", "description": "test"},
+                        {"id": "666666666666", "description": "staging"},
+                    ],
+                },
+            },
+            deployment=deployment_config,
+        )
+        assert config3.accounts_with_access == ["555555555555", "666666666666"]
+
+        # Test empty accounts
+        config4 = ECRConfig(
+            {
+                "name": "test-repo",
+            },
+            deployment=deployment_config,
+        )
+        assert config4.accounts_with_access == []

@@ -35,6 +35,31 @@ When no `cross_account_access` is specified, the stack automatically configures 
 
 ---
 
+### Simple Multi-Account Access (New Pattern)
+
+For granting access to multiple AWS accounts without service-specific configuration:
+
+```json
+{
+  "name": "shared-repo",
+  "image_scan_on_push": "true",
+  "auto_delete_untagged_images_in_days": 7,
+  "accounts_with_access": [
+    {"id": "111111111111", "region": "us-east-1", "description": "development"},
+    {"id": "222222222222", "region": "us-west-2", "description": "production"},
+    {"id": "333333333333", "region": "eu-west-1", "description": "eu-production"}
+  ]
+}
+```
+
+**Notes:**
+- The `region` field is **ignored** - ECR policies are region-agnostic
+- The `description` field is for documentation only
+- Only the `id` field is used to grant account access
+- This pattern automatically grants standard ECR pull permissions to all listed accounts
+
+---
+
 ### Multi-Service Configuration
 
 For advanced use cases with multiple services:
@@ -69,6 +94,19 @@ For advanced use cases with multiple services:
           "ecr:BatchCheckLayerAvailability"
         ]
       }
+    ]
+  }
+}
+```
+
+**Alternative format with object array:**
+```json
+{
+  "cross_account_access": {
+    "enabled": true,
+    "accounts": [
+      {"id": "123456789012", "description": "dev"},
+      {"id": "987654321098", "description": "prod"}
     ]
   }
 }

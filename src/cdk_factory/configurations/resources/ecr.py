@@ -207,6 +207,73 @@ class ECRConfig(EnhancedBaseConfig):
             return str(access_config.get("enabled", "true")).lower() == "true"
         return True  # Default to enabled for backward compatibility
 
+    @property
+    def accounts_with_access(self) -> list[str]:
+        """
+        Get list of AWS account IDs that should have access to this ECR repository.
+
+        Supports multiple configuration patterns:
+        1. Direct "accounts_with_access" field with array of objects containing "id" field
+        2. "cross_account_access.accounts" field with simple string array
+        3. "cross_account_access.accounts" field with array of objects containing "id" field
+
+        Returns:
+            List of AWS account ID strings (region field is ignored as it's not relevant for ECR policies)
+
+        Examples:
+            # Pattern 1: accounts_with_access with objects
+            {
+                "accounts_with_access": [
+                    {"id": "123456789012", "description": "dev"},
+                    {"id": "987654321098", "description": "prod"}
+                ]
+            }
+
+            # Pattern 2: cross_account_access.accounts with strings
+            {
+                "cross_account_access": {
+                    "accounts": ["123456789012", "987654321098"]
+                }
+            }
+        """
+        if not self.__config or not isinstance(self.__config, dict):
+            return []
+
+        # Check for direct "accounts_with_access" field first
+        accounts_with_access = self.__config.get("accounts_with_access")
+        if accounts_with_access and isinstance(accounts_with_access, list):
+            return self._extract_account_ids(accounts_with_access)
+
+        # Fall back to cross_account_access.accounts
+        access_config = self.cross_account_access
+        if access_config and isinstance(access_config, dict):
+            accounts = access_config.get("accounts", [])
+            if accounts and isinstance(accounts, list):
+                return self._extract_account_ids(accounts)
+
+        return []
+
+    def _extract_account_ids(self, accounts: list) -> list[str]:
+        """
+        Extract account IDs from a list that may contain either strings or objects.
+
+        Args:
+            accounts: List of either strings (account IDs) or objects with "id" field
+
+        Returns:
+            List of account ID strings
+        """
+        account_ids = []
+        for account in accounts:
+            if isinstance(account, str):
+                # Simple string account ID
+                account_ids.append(account)
+            elif isinstance(account, dict) and "id" in account:
+                # Object with "id" field (region is ignored)
+                account_ids.append(account["id"])
+
+        return account_ids
+
     # SSM properties are now inherited from EnhancedBaseConfig
     # Keeping these for any direct access patterns in existing code
     @property

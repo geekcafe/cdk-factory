@@ -80,17 +80,17 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
         This method uses the new configurable SSM parameter prefix system.
         """
         # Check if SSM exports are configured
-        if not hasattr(self.repo, 'ssm_exports') or not self.repo.ssm_exports:
+        if not hasattr(self.repo, "ssm_exports") or not self.repo.ssm_exports:
             logger.debug("No SSM exports configured for ECR repository")
             return
-        
+
         # Create a dictionary of resource values to export
         resource_values = {
             "name": self.ecr.repository_name,
             "uri": self.ecr.repository_uri,
-            "arn": self.ecr.repository_arn
+            "arn": self.ecr.repository_arn,
         }
-        
+
         # Use the export_resource_to_ssm method from SsmParameterMixin
         params = self.export_resource_to_ssm(
             scope=self,
@@ -101,14 +101,19 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
             context={
                 "deployment_name": self.deployment.name,
                 "environment": self.deployment.environment,
-                "workload_name": self.deployment.workload_name
-            }
+                "workload_name": self.deployment.workload_name,
+            },
         )
-        
+
         # Add dependencies to ensure SSM parameters are created after the ECR repository
         if params:
             for param in params.values():
-                if param and hasattr(param, 'node') and param.node.default_child and isinstance(param.node.default_child, CfnResource):
+                if (
+                    param
+                    and hasattr(param, "node")
+                    and param.node.default_child
+                    and isinstance(param.node.default_child, CfnResource)
+                ):
                     param.node.default_child.add_dependency(
                         cast(CfnResource, self.ecr.node.default_child)
                     )
@@ -116,7 +121,7 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
     def __set_life_cycle_rules(self) -> None:
         # Note: tag_pattern_list is deprecated and causes circular dependencies in CDK synthesis
         # Only add lifecycle rule for untagged images if configured
-        
+
         if not self.auto_delete_untagged_images_in_days:
             return None
 
@@ -142,7 +147,7 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
     def __setup_cross_account_access_permissions(self):
         """
         Setup cross-account access permissions with flexible configuration support.
-        
+
         Supports both legacy (default Lambda access) and new configurable approach.
         """
         # Check if cross-account access is disabled
@@ -151,31 +156,50 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
             return
 
         # Check if we're in the same account as devops
-        if self.deployment.account == self.deployment.workload.get("devops", {}).get("account"):
-            logger.info(f"Same account as devops, skipping cross-account permissions for {self.ecr_name}")
+        if self.deployment.account == self.deployment.workload.get("devops", {}).get(
+            "account"
+        ):
+            logger.info(
+                f"Same account as devops, skipping cross-account permissions for {self.ecr_name}"
+            )
             return
 
         access_config = self.repo.cross_account_access
-        
-        if access_config and access_config.get("services"):
+
+        # Use configurable access if:
+        # 1. Services are explicitly defined, OR
+        # 2. accounts_with_access field is present (new pattern)
+        has_accounts_with_access = bool(self.repo.accounts_with_access)
+        has_services = access_config and access_config.get("services")
+
+        if has_services or has_accounts_with_access:
             # New configurable approach
-            logger.info(f"Setting up configurable cross-account access for {self.ecr_name}")
+            logger.info(
+                f"Setting up configurable cross-account access for {self.ecr_name}"
+            )
             self.__setup_configurable_access(access_config)
         else:
             # Legacy approach - default Lambda access for backward compatibility
-            logger.info(f"Setting up legacy cross-account access (Lambda only) for {self.ecr_name}")
+            logger.info(
+                f"Setting up legacy cross-account access (Lambda only) for {self.ecr_name}"
+            )
             self.__setup_legacy_lambda_access()
 
     def __setup_configurable_access(self, access_config: dict):
         """Setup cross-account access using configuration"""
-        
-        # Get list of accounts (default to deployment account)
-        accounts = access_config.get("accounts", [self.deployment.account])
-        
+
+        # Get list of accounts using the accounts_with_access property
+        # This supports both "accounts_with_access" and "cross_account_access.accounts" patterns
+        accounts = self.repo.accounts_with_access
+
+        # Default to deployment account if no accounts specified
+        if not accounts:
+            accounts = [self.deployment.account]
+
         # Add account principal policies if accounts are specified
         if accounts:
             self.__add_account_principal_policy(accounts)
-        
+
         # Add service-specific policies
         services = access_config.get("services", [])
         for service_config in services:
@@ -184,7 +208,7 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
     def __add_account_principal_policy(self, accounts: list):
         """Add policy for AWS account principals"""
         principals = [iam.AccountPrincipal(account) for account in accounts]
-        
+
         policy_statement = iam.PolicyStatement(
             actions=[
                 "ecr:GetDownloadUrlForLayer",
@@ -197,15 +221,21 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
 
         response = self.ecr.add_to_resource_policy(policy_statement)
         if not response.statement_added:
-            logger.warning(f"Failed to add account principal policy for {', '.join(accounts)}")
+            logger.warning(
+                f"Failed to add account principal policy for {', '.join(accounts)}"
+            )
         else:
-            logger.info(f"Added account principal policy for accounts: {', '.join(accounts)}")
+            logger.info(
+                f"Added account principal policy for accounts: {', '.join(accounts)}"
+            )
 
     def __add_service_principal_policy(self, service_config: dict):
         """Add policy for service principal (Lambda, ECS, CodeBuild, etc.)"""
         service_name = service_config.get("name", "unknown")
         service_principal = service_config.get("service_principal")
-        actions = service_config.get("actions", ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"])
+        actions = service_config.get(
+            "actions", ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+        )
         conditions = service_config.get("condition")
 
         if not service_principal:
@@ -219,7 +249,7 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
                 "ec2": "ec2.amazonaws.com",
             }
             service_principal = service_principal_map.get(service_name.lower())
-            
+
         if not service_principal:
             logger.warning(f"Unknown service principal for service: {service_name}")
             return
@@ -229,7 +259,7 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
             actions=actions,
             principals=[iam.ServicePrincipal(service_principal)],
         )
-        
+
         # Add conditions if specified
         if conditions:
             for condition_key, condition_value in conditions.items():
@@ -239,28 +269,30 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
         if not response.statement_added:
             logger.warning(f"Failed to add service principal policy for {service_name}")
         else:
-            logger.info(f"Added service principal policy for {service_name} ({service_principal})")
+            logger.info(
+                f"Added service principal policy for {service_name} ({service_principal})"
+            )
 
     def __setup_legacy_lambda_access(self):
         """Legacy method: Setup default Lambda-only cross-account access"""
-        
+
         # Add account principal policy
         self.__add_account_principal_policy([self.deployment.account])
-        
+
         # Add Lambda service principal policy with default condition
         lambda_policy = iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
             principals=[iam.ServicePrincipal("lambda.amazonaws.com")],
         )
-        
+
         lambda_policy.add_condition(
             "StringLike",
             {
                 "aws:sourceArn": [
                     f"arn:aws:lambda:{self.deployment.region}:{self.deployment.account}:function:*"
                 ]
-            }
+            },
         )
 
         response = self.ecr.add_to_resource_policy(lambda_policy)
