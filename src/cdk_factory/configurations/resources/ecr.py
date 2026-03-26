@@ -98,9 +98,40 @@ class ECRConfig(EnhancedBaseConfig):
 
     @property
     def ecr_ssm_path(self) -> str | None:
-        """SSM parameter base path for resolving ECR repository details at synth time"""
+        """SSM parameter base path for resolving ECR repository details at synth time.
+
+        Can be set explicitly, or auto-derived from ``ecr_ref`` when a deployment
+        context is available.  Resolution order:
+
+        1. Explicit ``ecr_ssm_path`` in config (highest priority)
+        2. ``ecr_ref`` + deployment context → ``/{workload}/{environment}/ecr/{ecr_ref}``
+        3. ``None`` (fall back to explicit name/arn/uri fields)
+        """
         if self.__config and isinstance(self.__config, dict):
-            return self.__config.get("ecr_ssm_path")
+            # Explicit path takes priority
+            explicit = self.__config.get("ecr_ssm_path")
+            if explicit:
+                return explicit
+
+            # Auto-derive from ecr_ref + deployment context
+            ref = self.__config.get("ecr_ref")
+            if ref and self.__deployment:
+                workload = self.__deployment.workload_name
+                env = self.__deployment.environment
+                return f"/{workload}/{env}/ecr/{ref}"
+
+        return None
+
+    @property
+    def ecr_ref(self) -> str | None:
+        """Logical ECR repository key name for name-based lookup.
+
+        When set, the Lambda stack resolves the ECR repository details from
+        SSM using the convention ``/{workload}/{environment}/ecr/{ecr_ref}``.
+        This replaces fragile array-index-based ``__inherits__`` references.
+        """
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("ecr_ref")
 
         return None
 
