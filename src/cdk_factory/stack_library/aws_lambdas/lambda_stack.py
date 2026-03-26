@@ -700,7 +700,9 @@ See examples: cdk-factory/examples/separate-api-gateway/
                 enforce_ssl=True,
             )
 
-            dlq_config = sqs.DeadLetterQueue(max_receive_count=5, queue=dlq)
+            dlq_config = sqs.DeadLetterQueue(
+                max_receive_count=sqs_config.max_receive_count or 5, queue=dlq
+            )
             # Add a policy to enforce HTTPS (TLS) connections for the DLQ
             result = dlq.add_to_resource_policy(SqsPolicies.get_tls_policy(dlq))
             assert result.statement_added

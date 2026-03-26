@@ -115,12 +115,14 @@ class SQS:
 
     @property
     def max_receive_count(self) -> int:
-        """Max Receive Count"""
+        """Max Receive Count — number of times a message can be received before
+        being sent to the DLQ. Default is 5 for backward compatibility.
+        For polling/requeue patterns (like calculation_aggregator), set higher."""
         if self.__config and isinstance(self.__config, dict):
-            value = self.__config.get("max_receive_count", 1)
+            value = self.__config.get("max_receive_count", 5)
             return int(str(value))
 
-        return 0
+        return 5
 
     @property
     def message_retention_period_days(self) -> int:
