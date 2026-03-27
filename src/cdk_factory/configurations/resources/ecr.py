@@ -244,10 +244,15 @@ class ECRConfig(EnhancedBaseConfig):
         if accounts_with_access and isinstance(accounts_with_access, list):
             return self._extract_account_ids(accounts_with_access)
 
-        # Fall back to cross_account_access.accounts
+        # Fall back to cross_account_access.accounts_with_access or cross_account_access.accounts
         access_config = self.cross_account_access
         if access_config and isinstance(access_config, dict):
-            accounts = access_config.get("accounts", [])
+            # Try accounts_with_access first (new pattern)
+            accounts = access_config.get("accounts_with_access", [])
+            if not accounts:
+                # Fall back to accounts (legacy pattern)
+                accounts = access_config.get("accounts", [])
+
             if accounts and isinstance(accounts, list):
                 return self._extract_account_ids(accounts)
 
