@@ -57,6 +57,7 @@ For granting access to multiple AWS accounts without service-specific configurat
 - The `description` field is for documentation only
 - Only the `id` field is used to grant account access
 - This pattern automatically grants standard ECR pull permissions to all listed accounts
+- **Works even when deploying ECR in the devops account** - if you explicitly specify `accounts_with_access`, cross-account permissions will be created regardless of which account the ECR repository is deployed to
 
 ---
 

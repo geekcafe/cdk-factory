@@ -155,15 +155,6 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
             logger.info(f"Cross-account access disabled for {self.ecr_name}")
             return
 
-        # Check if we're in the same account as devops
-        if self.deployment.account == self.deployment.workload.get("devops", {}).get(
-            "account"
-        ):
-            logger.info(
-                f"Same account as devops, skipping cross-account permissions for {self.ecr_name}"
-            )
-            return
-
         access_config = self.repo.cross_account_access
 
         # Use configurable access if:
@@ -171,6 +162,19 @@ class ECRConstruct(Construct, StandardizedSsmMixin):
         # 2. accounts_with_access field is present (new pattern)
         has_accounts_with_access = bool(self.repo.accounts_with_access)
         has_services = access_config and access_config.get("services")
+
+        # Check if we're in the same account as devops AND no explicit accounts specified
+        # Only skip if we're in devops account AND using legacy mode (no explicit config)
+        if (
+            self.deployment.account
+            == self.deployment.workload.get("devops", {}).get("account")
+            and not has_accounts_with_access
+            and not has_services
+        ):
+            logger.info(
+                f"Same account as devops with no explicit accounts, skipping cross-account permissions for {self.ecr_name}"
+            )
+            return
 
         if has_services or has_accounts_with_access:
             # New configurable approach

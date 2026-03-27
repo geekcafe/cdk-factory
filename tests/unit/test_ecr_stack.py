@@ -607,3 +607,66 @@ class TestECRStack:
             deployment=deployment_config,
         )
         assert config4.accounts_with_access == []
+
+    def test_ecr_repository_same_account_as_devops_with_explicit_accounts(
+        self, app, workload_config
+    ):
+        """Test that cross-account permissions are created even when deployment account equals devops account if accounts_with_access is explicitly specified"""
+        # Create deployment config where deployment account matches devops account
+        devops_account = workload_config.dictionary["devops"]["account"]
+
+        deployment_config_dict = {
+            "name": "test-deployment",
+            "account": devops_account,  # Same as devops account
+            "region": "us-east-1",
+            "environment": "test",
+        }
+
+        modified_deployment = DeploymentConfig(
+            deployment_config_dict, workload_config.dictionary
+        )
+
+        stack_config = StackConfig(
+            {
+                "name": "test-ecr-stack",
+                "resources": [
+                    {
+                        "name": "same-account-repo",
+                        "image_scan_on_push": "false",
+                        "empty_on_delete": "false",
+                        "accounts_with_access": [
+                            {"id": "111111111111", "description": "external-account-1"},
+                            {"id": "222222222222", "description": "external-account-2"},
+                        ],
+                    }
+                ],
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = ECRStack(
+            app,
+            "TestSameAccountECR",
+            env=cdk.Environment(account=devops_account, region="us-east-1"),
+        )
+        stack.build(stack_config, modified_deployment, workload_config)
+        template = Template.from_stack(stack)
+
+        # Verify repository has inline policy with cross-account permissions
+        template.resource_count_is("AWS::ECR::Repository", 1)
+
+        # Verify we have 2 account principals in the policy
+        template_dict = template.to_json()
+        ecr_repos = [
+            r
+            for r in template_dict["Resources"].values()
+            if r["Type"] == "AWS::ECR::Repository"
+        ]
+        assert len(ecr_repos) == 1
+        policy_text = ecr_repos[0]["Properties"]["RepositoryPolicyText"]
+        # Find the account principal statement
+        account_statement = [
+            s for s in policy_text["Statement"] if "AWS" in s.get("Principal", {})
+        ]
+        assert len(account_statement) >= 1
+        assert len(account_statement[0]["Principal"]["AWS"]) == 2
