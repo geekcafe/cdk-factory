@@ -101,6 +101,8 @@ class CodeBuildPolicy:
                 "codeartifact:GetAuthorizationToken",
                 "codeartifact:GetRepositoryEndpoint",
                 "codeartifact:ReadFromRepository",
+                "codeartifact:PublishPackageVersion",
+                "codeartifact:PutPackageMetadata",
                 "sts:GetServiceBearerToken",
             ],
             resources=["*"],
