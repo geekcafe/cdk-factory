@@ -16,6 +16,7 @@ from cdk_factory.configurations.resources.apigateway_route_config import (
     ApiGatewayConfigRouteConfig,
 )
 from cdk_factory.configurations.resources.ecr import ECRConfig
+from cdk_factory.configurations.resources.image_config import ImageConfig
 from cdk_factory.configurations.resources.sqs import SQS
 from cdk_factory.configurations.resources.lambda_triggers import LambdaTriggersConfig
 from cdk_factory.configurations.resources.cloudwatch_widget import (
@@ -53,6 +54,9 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
             config=config.get("ecr", {}), deployment=deployment
         )
         self.sqs: SQS = SQS(config=config.get("sqs", {}))
+        self.image_config: ImageConfig = ImageConfig(
+            config=config.get("image_config", {})
+        )
         self.triggers: List[LambdaTriggersConfig] = []
         self.cloudwatch_widget: CloudWatchWidgetConfig = CloudWatchWidgetConfig(
             config=config.get("cloudwatch_widget", {})

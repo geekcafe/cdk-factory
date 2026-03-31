@@ -125,9 +125,15 @@ class LambdaDockerConstruct(Construct):
                 function_name=lambda_config.name,
             )
             # important this needs to match an existing ECR
+            cmd = (
+                lambda_config.image_config.command
+                if lambda_config.image_config and lambda_config.image_config.command
+                else None
+            )
             code = aws_lambda.DockerImageCode.from_ecr(
                 repository=ecr_repository,
                 tag_or_digest=tag_or_digest,
+                cmd=cmd,
             )
 
         function_name: str | None = None
