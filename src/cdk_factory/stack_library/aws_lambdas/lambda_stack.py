@@ -86,6 +86,9 @@ class LambdaStack(IStack):
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
+        self._sqs_decoupled_mode = stack_config.dictionary.get(
+            "sqs_decoupled_mode", False
+        )
 
         # Check for deprecated API Gateway configuration in lambda resources
         self.__check_for_deprecated_api_config(stack_config)
@@ -144,6 +147,7 @@ class LambdaStack(IStack):
                         self.__trigger_lambda_by_sqs(
                             lambda_function=lambda_function,
                             sqs_config=queue,
+                            function_config=function_config,
                         )
                     elif queue.is_dlq_consumer:
                         self.__bind_lambda_to_dlq_consumer(
@@ -758,12 +762,18 @@ See examples: cdk-factory/examples/separate-api-gateway/
         self,
         lambda_function: _lambda.Function | _lambda.DockerImageFunction,
         sqs_config: SQSConfig,
+        function_config: LambdaFunctionConfig,
     ):
         # typically you have one (scalable) consumer and 1 or more producers
         # TODO: I don't think we should do this here.  It's too tightly bound to this
         # lambda and it's deployment.  It should be in a different stack and probably a different
         # pipeline.
-        queue: sqs.Queue = self.__create_sqs(sqs_config=sqs_config)
+        if self._sqs_decoupled_mode:
+            queue: sqs.IQueue = self.__get_queue(
+                sqs_config=sqs_config, function_config=function_config
+            )
+        else:
+            queue: sqs.Queue = self.__create_sqs(sqs_config=sqs_config)
 
         grant = queue.grant_consume_messages(lambda_function)
         grant.assert_success()
