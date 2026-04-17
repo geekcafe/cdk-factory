@@ -36,6 +36,7 @@ from cdk_factory.configurations.resources.lambda_function import (
     SQS as SQSConfig,
 )
 
+from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_ssm as ssm
 
 from cdk_factory.utilities.docker_utilities import DockerUtilities
@@ -207,6 +208,7 @@ class LambdaStack(IStack):
                 "arn": lambda_function.function_arn,
                 "name": lambda_function.function_name,
                 "function": lambda_function,
+                "config": function_config,
             }
 
             functions.append(lambda_function)
@@ -557,6 +559,35 @@ See examples: cdk-factory/examples/separate-api-gateway/
 
             logger.info(f"✅ Exported Lambda '{lambda_name}' to SSM: {param_name}")
 
+            # Docker lambdas also register under /docker-lambdas/ path
+            function_config = lambda_info.get("config")
+            if function_config and (
+                function_config.docker.file or function_config.docker.image
+            ):
+                docker_prefix = f"/{workload}/{environment}/docker-lambdas"
+
+                ssm.StringParameter(
+                    self,
+                    f"ssm-docker-{lambda_name}-arn",
+                    parameter_name=f"{docker_prefix}/{lambda_name}/arn",
+                    string_value=lambda_info["arn"],
+                    description=f"Docker Lambda ARN for {lambda_name}",
+                    tier=ssm.ParameterTier.STANDARD,
+                )
+
+                ssm.StringParameter(
+                    self,
+                    f"ssm-docker-{lambda_name}-name",
+                    parameter_name=f"{docker_prefix}/{lambda_name}/function-name",
+                    string_value=lambda_info["name"],
+                    description=f"Docker Lambda function name for {lambda_name}",
+                    tier=ssm.ParameterTier.STANDARD,
+                )
+
+                logger.info(
+                    f"✅ Exported Docker Lambda '{lambda_name}' to SSM: {docker_prefix}/{lambda_name}"
+                )
+
         print(
             f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store"
         )
@@ -710,6 +741,26 @@ See examples: cdk-factory/examples/separate-api-gateway/
             # Add a policy to enforce HTTPS (TLS) connections for the DLQ
             result = dlq.add_to_resource_policy(SqsPolicies.get_tls_policy(dlq))
             assert result.statement_added
+
+            # CloudWatch alarm: fires when any message lands in the DLQ
+            cloudwatch.Alarm(
+                self,
+                id=f"{stable_sqs_dlq_id}-alarm",
+                alarm_name=f"{name_dlq}-messages",
+                alarm_description=(
+                    f"DLQ alarm for {name_dlq}. "
+                    f"Messages in this queue indicate Lambda failures "
+                    f"that exhausted SQS retries."
+                ),
+                metric=dlq.metric_approximate_number_of_messages_visible(
+                    period=aws_cdk.Duration.minutes(1),
+                    statistic="Sum",
+                ),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            )
 
         retention_period = sqs_config.message_retention_period_days
         visibility_timeout = sqs_config.visibility_timeout_seconds
