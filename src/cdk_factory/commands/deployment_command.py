@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class EnvironmentConfig:
     """Describes one deployment environment (e.g., dev, uat, prod)."""
@@ -54,6 +55,7 @@ class EnvironmentConfig:
 # ---------------------------------------------------------------------------
 # Base command
 # ---------------------------------------------------------------------------
+
 
 class CdkDeploymentCommand:
     """
@@ -205,8 +207,15 @@ class CdkDeploymentCommand:
         self.run_cdk_synth(config_file)
         self._print("Running CDK deployment...", "blue")
         self._run(
-            ["cdk", "deploy", "--all", "--require-approval", "never",
-             "--app", f"python3 app.py --config {config_file}"]
+            [
+                "cdk",
+                "deploy",
+                "--all",
+                "--require-approval",
+                "never",
+                "--app",
+                f"python3 app.py --config {config_file}",
+            ]
         )
         self._print("CDK deployment completed successfully", "green")
 
@@ -221,32 +230,49 @@ class CdkDeploymentCommand:
     # Interactive helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _interactive_select(title: str, options: List[str]) -> int:
+        """Present an arrow-key scrollable menu if possible, else numbered fallback.
+
+        Returns the 0-based index of the selected option.
+        """
+        try:
+            from simple_term_menu import TerminalMenu
+
+            menu = TerminalMenu(options, title=title)
+            idx = menu.show()
+            if idx is None:
+                # User pressed Escape / Ctrl-C
+                print("\nAborted.")
+                sys.exit(1)
+            return idx
+        except ImportError:
+            # Fallback: numbered list
+            print(title)
+            for i, opt in enumerate(options, 1):
+                print(f"  {i}) {opt}")
+            raw = input(f"Enter choice [default 1]: ").strip() or "1"
+            try:
+                return int(raw) - 1
+            except (ValueError, IndexError):
+                print("Invalid choice.")
+                sys.exit(1)
+
     def select_environment(self) -> EnvironmentConfig:
-        """Prompt the user to select an environment."""
+        """Prompt the user to select an environment (arrow-key menu)."""
         envs = self.environments
         keys = list(envs.keys())
-        self._print("Select deployment environment:", "blue")
-        for i, key in enumerate(keys, 1):
-            print(f"  {i}) {key}")
-        raw = input(f"Enter choice [default 1]: ").strip() or "1"
-        try:
-            idx = int(raw) - 1
-            name = keys[idx]
-        except (ValueError, IndexError):
-            self._print("Invalid choice.", "red")
-            sys.exit(1)
+        options = [key for key in keys]
+        idx = self._interactive_select("Select deployment environment:", options)
+        name = keys[idx]
         self._print(f"Using {name.upper()} environment...", "blue")
         return envs[name]
 
     def select_operation(self) -> str:
-        """Prompt the user to select synth / deploy / diff."""
-        self._print("Select operation:", "blue")
-        print("  1) synth")
-        print("  2) deploy")
-        print("  3) diff")
-        raw = input("Enter choice [default 1]: ").strip() or "1"
-        ops = {"1": "synth", "2": "deploy", "3": "diff"}
-        op = ops.get(raw, "synth")
+        """Prompt the user to select synth / deploy / diff (arrow-key menu)."""
+        ops = ["synth", "deploy", "diff"]
+        idx = self._interactive_select("Select operation:", ops)
+        op = ops[idx]
         self._print(f"Using {op.upper()}...", "blue")
         return op
 
@@ -338,16 +364,19 @@ class CdkDeploymentCommand:
         )
         parser.add_argument("--config", "-c", help="Configuration file to use")
         parser.add_argument(
-            "--dry-run", action="store_true",
-            help="Validate configuration without running CDK"
+            "--dry-run",
+            action="store_true",
+            help="Validate configuration without running CDK",
         )
         parser.add_argument(
-            "--environment", "-e",
+            "--environment",
+            "-e",
             choices=env_choices,
             help="Skip environment selection prompt",
         )
         parser.add_argument(
-            "--operation", "-o",
+            "--operation",
+            "-o",
             choices=["synth", "deploy", "diff"],
             help="Skip operation selection prompt",
         )
@@ -371,14 +400,16 @@ class CdkDeploymentCommand:
 
     def _print(self, message: str, color: str = "white") -> None:
         _colors = {
-            "red":    "\033[0;31m",
-            "green":  "\033[0;32m",
+            "red": "\033[0;31m",
+            "green": "\033[0;32m",
             "yellow": "\033[0;33m",
-            "blue":   "\033[0;34m",
-            "cyan":   "\033[0;36m",
-            "white":  "\033[0m",
+            "blue": "\033[0;34m",
+            "cyan": "\033[0;36m",
+            "white": "\033[0m",
         }
-        prefix = {"red": "✗ ", "green": "✓ ", "yellow": "⚠ ", "blue": "ℹ "}.get(color, "")
+        prefix = {"red": "✗ ", "green": "✓ ", "yellow": "⚠ ", "blue": "ℹ "}.get(
+            color, ""
+        )
         code = _colors.get(color, _colors["white"])
         reset = _colors["white"]
         print(f"{code}{prefix}{message}{reset}")
