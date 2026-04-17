@@ -29,6 +29,7 @@ from cdk_factory.configurations.cdk_config import CdkConfig
 from cdk_factory.configurations.pipeline_stage import PipelineStageConfig
 from cdk_factory.interfaces.istack import IStack
 from cdk_factory.pipeline.path_utils import convert_app_file_to_relative_directory
+from cdk_factory.utilities.lambda_group_loader import load_and_group_lambda_configs
 
 logger = Logger(__name__)
 
@@ -516,35 +517,100 @@ class PipelineFactoryStack(IStack):
         cf_stacks: List[IStack] = []
         for stack_config in stage_config.stacks:
             if stack_config.enabled:
-                print(
-                    f"\t\t 👉 Adding stack_config: {stack_config.name} to Stage: {stage_config.name}"
-                )
-                kwargs = {}
-                if stack_config.kwargs:
-                    kwargs = stack_config.kwargs
-                else:
-                    kwargs["stack_name"] = stack_config.name
+                # Check if this stack config uses lambda_config_dir for auto-grouping
+                lambda_config_dir = stack_config.dictionary.get("lambda_config_dir")
+                if lambda_config_dir and stack_config.module == "lambda_stack":
+                    # Load and group individual Lambda JSON files
+                    groups = load_and_group_lambda_configs(lambda_config_dir)
+                    for group_name, resources in groups.items():
+                        group_stack_name = f"lambda-stack-{group_name}"
+                        # Build a stack config dict inheriting properties from the parent
+                        group_dict = dict(stack_config.dictionary)
+                        group_dict.pop("lambda_config_dir", None)
+                        group_dict["name"] = group_stack_name
+                        group_dict["resources"] = resources
 
-                cf_stack = factory.load_module(
-                    module_name=stack_config.module,
-                    scope=pipeline_stage,
-                    id=stack_config.name,
-                    deployment=deployment,
-                    stack_config=stack_config,
-                    add_env_context=self.add_env_context,
-                    **kwargs,
-                )
-                cf_stack.build(
-                    stack_config=stack_config,
-                    deployment=deployment,
-                    workload=self.workload,
-                )
-                stack = {
-                    "stack": cf_stack,
-                    "stack_config": stack_config,
-                    "stack_name": stack_config.name,
-                }
-                cf_stacks.append(stack)
+                        group_stack_config = StackConfig(
+                            group_dict, workload=stack_config.workload
+                        )
+
+                        print(
+                            f"\t\t 👉 Adding grouped stack: {group_stack_name} "
+                            f"({len(resources)} lambdas) to Stage: {stage_config.name}"
+                        )
+
+                        kwargs = {}
+                        if group_stack_config.kwargs:
+                            kwargs = group_stack_config.kwargs
+                        else:
+                            # Check for explicit stack_name override first
+                            cf_stack_name = group_stack_config.dictionary.get(
+                                "stack_name"
+                            )
+                            if not cf_stack_name:
+                                cf_stack_name = deployment.build_stack_name(
+                                    stage_name=stage_config.name,
+                                    stack_name=group_stack_config.name,
+                                )
+                            kwargs["stack_name"] = cf_stack_name
+
+                        cf_stack = factory.load_module(
+                            module_name=group_stack_config.module,
+                            scope=pipeline_stage,
+                            id=group_stack_config.name,
+                            deployment=deployment,
+                            stack_config=group_stack_config,
+                            add_env_context=self.add_env_context,
+                            **kwargs,
+                        )
+                        cf_stack.build(
+                            stack_config=group_stack_config,
+                            deployment=deployment,
+                            workload=self.workload,
+                        )
+                        stack = {
+                            "stack": cf_stack,
+                            "stack_config": group_stack_config,
+                            "stack_name": group_stack_config.name,
+                        }
+                        cf_stacks.append(stack)
+                else:
+                    print(
+                        f"\t\t 👉 Adding stack_config: {stack_config.name} to Stage: {stage_config.name}"
+                    )
+                    kwargs = {}
+                    if stack_config.kwargs:
+                        kwargs = stack_config.kwargs
+                    else:
+                        # Check for explicit stack_name override first
+                        cf_stack_name = stack_config.dictionary.get("stack_name")
+                        if not cf_stack_name:
+                            cf_stack_name = deployment.build_stack_name(
+                                stage_name=stage_config.name,
+                                stack_name=stack_config.name,
+                            )
+                        kwargs["stack_name"] = cf_stack_name
+
+                    cf_stack = factory.load_module(
+                        module_name=stack_config.module,
+                        scope=pipeline_stage,
+                        id=stack_config.name,
+                        deployment=deployment,
+                        stack_config=stack_config,
+                        add_env_context=self.add_env_context,
+                        **kwargs,
+                    )
+                    cf_stack.build(
+                        stack_config=stack_config,
+                        deployment=deployment,
+                        workload=self.workload,
+                    )
+                    stack = {
+                        "stack": cf_stack,
+                        "stack_config": stack_config,
+                        "stack_name": stack_config.name,
+                    }
+                    cf_stacks.append(stack)
             else:
                 print(
                     f"\t\t ⚠️ Stack {stack_config.name} is disabled in stage: {stage_config.name}"

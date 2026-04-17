@@ -4,6 +4,8 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import json
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 import aws_cdk as cdk
@@ -64,6 +66,36 @@ class SQSStack(IStack):
         # Load SQS configuration
         self.sqs_config = SQSConfig(stack_config.dictionary.get("sqs", {}))
 
+        # Auto-discover consumer queues from lambda configs
+        lambda_config_paths = stack_config.dictionary.get("lambda_config_paths", [])
+        if lambda_config_paths:
+            discovered = self._discover_consumer_queues_from_lambda_configs(
+                lambda_config_paths, stack_config
+            )
+            # Merge: explicit queues take precedence
+            explicit_names = {q.name for q in self.sqs_config.queues}
+            for dq in discovered:
+                if dq.name in explicit_names:
+                    logger.info(
+                        f"Explicit queue '{dq.name}' overrides auto-discovered definition"
+                    )
+                else:
+                    self.sqs_config.queues.append(dq)
+
+        # Validate discovered consumer queues have required fields
+        for queue_config in self.sqs_config.queues:
+            if queue_config.is_consumer:
+                if queue_config.visibility_timeout_seconds <= 0:
+                    raise ValueError(
+                        f"Consumer queue '{queue_config.name}' is missing or has "
+                        f"invalid 'visibility_timeout_seconds' (must be > 0)"
+                    )
+                if queue_config.message_retention_period_days <= 0:
+                    raise ValueError(
+                        f"Consumer queue '{queue_config.name}' is missing or has "
+                        f"invalid 'message_retention_period_days' (must be > 0)"
+                    )
+
         # Process each queue in the configuration
         for queue_config in self.sqs_config.queues:
             queue_name = deployment.build_resource_name(queue_config.name)
@@ -77,6 +109,62 @@ class SQSStack(IStack):
 
         # Add outputs
         self._add_outputs()
+
+    def _discover_consumer_queues_from_lambda_configs(
+        self,
+        lambda_config_paths: List[str],
+        stack_config: StackConfig,
+    ) -> List[SQSConfig]:
+        """Scan Lambda stack config files and extract consumer-type queue definitions.
+
+        For each referenced Lambda config file, loads the JSON and iterates
+        resources[].sqs.queues[]. Extracts entries where type == "consumer",
+        deduplicates by queue_name (first occurrence wins), and returns a list
+        of SQSConfig objects with preserved properties.
+
+        Args:
+            lambda_config_paths: List of relative paths to Lambda stack config JSON files.
+            stack_config: The current stack's configuration (used for path resolution).
+
+        Returns:
+            List of SQSConfig objects for discovered consumer queues.
+        """
+        discovered: Dict[str, SQSConfig] = {}
+
+        # Resolve paths relative to the workload config directory
+        base_dir = "."
+        if self.workload and self.workload.config_path:
+            base_dir = str(Path(self.workload.config_path).parent)
+        elif self.workload and self.workload.paths:
+            base_dir = self.workload.paths[0]
+
+        for config_path in lambda_config_paths:
+            full_path = Path(base_dir) / config_path
+            if not full_path.exists():
+                logger.warning(f"Lambda config not found: {full_path}")
+                continue
+
+            try:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    lambda_stack_config = json.load(f)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"Invalid JSON in Lambda config {full_path}: {e}")
+                continue
+
+            for resource in lambda_stack_config.get("resources", []):
+                for queue in resource.get("sqs", {}).get("queues", []):
+                    if queue.get("type") == "consumer":
+                        name = queue.get("queue_name", "")
+                        if name and name not in discovered:
+                            discovered[name] = SQSConfig(queue)
+                        elif name in discovered:
+                            logger.warning(
+                                f"Duplicate consumer queue '{name}' in "
+                                f"{config_path} resource '{resource.get('name')}' — "
+                                f"using first occurrence"
+                            )
+
+        return list(discovered.values())
 
     def _publish_queue_to_ssm(
         self, queue: sqs.Queue, queue_config: SQSConfig, is_dlq: bool = False
