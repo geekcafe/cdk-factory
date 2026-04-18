@@ -431,10 +431,19 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         """
         Get Lambda ARN from SSM Parameter Store.
         Supports both explicit SSM paths and auto-discovery via lambda_name.
+        Caches lookups to avoid duplicate construct IDs when the same lambda
+        is referenced by multiple routes.
         """
+        # Lazy-init the cache
+        if not hasattr(self, "_lambda_arn_cache"):
+            self._lambda_arn_cache: dict = {}
+
         # Option 1: Explicit SSM path provided
         lambda_arn_ssm_path = route.get("lambda_arn_ssm_path")
         if lambda_arn_ssm_path:
+            if lambda_arn_ssm_path in self._lambda_arn_cache:
+                return self._lambda_arn_cache[lambda_arn_ssm_path]
+
             logger.info(f"Looking up Lambda ARN from SSM: {lambda_arn_ssm_path}")
             try:
                 param = ssm.StringParameter.from_string_parameter_name(
@@ -442,6 +451,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                     f"lambda-arn-param-{hash(lambda_arn_ssm_path) % 10000}",
                     lambda_arn_ssm_path,
                 )
+                self._lambda_arn_cache[lambda_arn_ssm_path] = param.string_value
                 return param.string_value
             except Exception as e:
                 logger.error(
@@ -452,13 +462,15 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # Option 2: Auto-discovery via lambda_name
         lambda_name = route.get("lambda_name")
         if lambda_name:
+            if lambda_name in self._lambda_arn_cache:
+                return self._lambda_arn_cache[lambda_name]
+
             # Build SSM path using convention from lambda_stack
             ssm_imports_config = (
                 self.stack_config.dictionary.get("api_gateway", {})
                 .get("ssm", {})
                 .get("imports", {})
             )
-            # Try 'workload' first, fall back to 'organization' for backward compatibility
             workload = ssm_imports_config.get(
                 "workload",
                 ssm_imports_config.get("organization", self.deployment.workload_name),
@@ -474,6 +486,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 param = ssm.StringParameter.from_string_parameter_name(
                     self, f"lambda-arn-{lambda_name}-param", ssm_path
                 )
+                self._lambda_arn_cache[lambda_name] = param.string_value
                 return param.string_value
             except Exception as e:
                 logger.error(

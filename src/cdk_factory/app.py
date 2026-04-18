@@ -121,7 +121,33 @@ class CdkAppFactory:
             add_env_context=self.add_env_context,
         )
 
-        assembly: CloudAssembly = workload.synth()
+        try:
+            assembly: CloudAssembly = workload.synth()
+        except RuntimeError as e:
+            error_msg = str(e)
+            # Catch JSII validation errors and present them cleanly
+            if "ValidationError" in error_msg or "jsii" in str(
+                type(e).__module__ or ""
+            ):
+                print(f"\n  ✗ CDK Synthesis Failed\n")
+                for line in error_msg.split("\n"):
+                    line = line.strip()
+                    if line and not line.startswith("at "):
+                        print(f"    {line}")
+                print()
+                sys.exit(1)
+            # Unknown RuntimeError
+            self._print_unexpected_error(e)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"\n  ✗ Configuration Error\n")
+            print(f"    {e}")
+            print()
+            sys.exit(1)
+        except Exception as e:
+            self._print_unexpected_error(e)
+            sys.exit(1)
+            sys.exit(1)
 
         print("☁️ cloud assembly dir", assembly.directory)
 
@@ -183,6 +209,172 @@ class CdkAppFactory:
             stack_names = [stack.stack_name for stack in assembly.stacks]
             for stack_name in stack_names:
                 print(f"      • {stack_name}")
+
+        # Resource summary report
+        self._print_resource_summary(assembly)
+
+    def _print_unexpected_error(self, error: Exception) -> None:
+        """Format an unexpected error with a clean, readable output."""
+        import re
+        import traceback
+
+        error_type = type(error).__name__
+        error_msg = str(error)
+
+        # Extract clean message, filtering JS/JSII noise
+        clean_lines = []
+        for line in error_msg.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("at ") and (
+                "program.js" in stripped or "node:" in stripped
+            ):
+                continue
+            if stripped:
+                clean_lines.append(stripped)
+
+        message = clean_lines[0] if clean_lines else error_msg
+        details = clean_lines[1:] if len(clean_lines) > 1 else []
+
+        # Color codes
+        red = "\033[0;31m"
+        yellow = "\033[0;33m"
+        cyan = "\033[0;36m"
+        dim = "\033[2m"
+        reset = "\033[0m"
+
+        print(f"\n{red}{'━' * 60}{reset}")
+        print(f"{red}  ✗ CDK Synthesis Failed{reset}")
+        print(f"{red}{'━' * 60}{reset}")
+        print(f"\n  {message}")
+        for line in details:
+            print(f"  {line}")
+
+        # Actionable context for known error patterns
+        if "Stack name must match" in error_msg:
+            match = re.search(r"got '([^']+)'", error_msg)
+            bad_name = match.group(1) if match else "unknown"
+            print(f"\n{yellow}  Cause:{reset}")
+            print(f"    The stack name '{bad_name}' contains invalid characters.")
+            print(f"    Stack names can only use letters, numbers, and hyphens.")
+            print(f"\n{cyan}  Fix:{reset}")
+            print(
+                f"    Check naming.prefix and naming.stack_pattern in your deployment config,"
+            )
+            print(f"    or add a stack_name override in the stack config.")
+        elif "Unable to determine ARN separator" in error_msg:
+            print(f"\n{yellow}  Cause:{reset}")
+            print(f"    An SSM parameter name contains an unresolved CDK token.")
+            print(f"\n{cyan}  Fix:{reset}")
+            print(
+                f"    Check SSM export configs — parameter_name should be a path string,"
+            )
+            print(f"    not a resource attribute.")
+        elif "Invalid S3 bucket name" in error_msg:
+            print(f"\n{yellow}  Cause:{reset}")
+            print(
+                f"    A bucket name has invalid characters (likely a <TODO> placeholder)."
+            )
+            print(f"\n{cyan}  Fix:{reset}")
+            print(f"    Fill in all <TODO> values in your deployment JSON.")
+        elif "Failed to get value for" in error_msg:
+            print(f"\n{cyan}  Fix:{reset}")
+            print(f"    Add the missing value to your deployment JSON parameters.")
+        else:
+            print(f"\n{yellow}  Error type: {error_type}{reset}")
+
+        # Show only project-relevant frames, skip library internals
+        tb_lines = traceback.format_tb(error.__traceback__)
+        project_frames = [
+            f
+            for f in tb_lines
+            if "site-packages" not in f and "jsii" not in f and "node:" not in f
+        ]
+        if project_frames:
+            print(f"\n{dim}  Origin:{reset}")
+            for line in project_frames[-1].strip().split("\n"):
+                print(f"    {dim}{line}{reset}")
+
+        print(f"\n{dim}  Tip: set CDK_FACTORY_DEBUG=1 for full traceback{reset}")
+        print(f"{red}{'━' * 60}{reset}\n")
+
+        if os.environ.get("CDK_FACTORY_DEBUG") == "1":
+            print("--- Full Traceback ---")
+            traceback.print_exc()
+
+    def _print_resource_summary(self, assembly: CloudAssembly) -> None:
+        """Print a summary of CloudFormation resources by type across all stacks."""
+        import json as _json
+        from collections import Counter
+
+        # Friendly display names for common AWS resource types
+        FRIENDLY_NAMES = {
+            "AWS::Lambda::Function": "Lambda Functions",
+            "AWS::SQS::Queue": "SQS Queues",
+            "AWS::DynamoDB::Table": "DynamoDB Tables",
+            "AWS::S3::Bucket": "S3 Buckets",
+            "AWS::ApiGateway::RestApi": "API Gateways",
+            "AWS::ApiGatewayV2::Api": "API Gateways (v2)",
+            "AWS::Cognito::UserPool": "Cognito User Pools",
+            "AWS::StepFunctions::StateMachine": "Step Functions",
+            "AWS::CloudWatch::Alarm": "CloudWatch Alarms",
+            "AWS::CloudWatch::Dashboard": "CloudWatch Dashboards",
+            "AWS::ECR::Repository": "ECR Repositories",
+            "AWS::Route53::HostedZone": "Route53 Hosted Zones",
+            "AWS::Route53::RecordSet": "Route53 Records",
+            "AWS::SSM::Parameter": "SSM Parameters",
+            "AWS::IAM::Role": "IAM Roles",
+            "AWS::IAM::Policy": "IAM Policies",
+            "AWS::Lambda::EventSourceMapping": "Lambda Event Source Mappings",
+            "AWS::Lambda::LayerVersion": "Lambda Layers",
+            "AWS::CertificateManager::Certificate": "ACM Certificates",
+            "AWS::ECS::Service": "ECS Services",
+            "AWS::ECS::TaskDefinition": "ECS Task Definitions",
+            "AWS::ElasticLoadBalancingV2::LoadBalancer": "Load Balancers",
+            "AWS::CloudFront::Distribution": "CloudFront Distributions",
+            "AWS::CodePipeline::Pipeline": "CodePipelines",
+        }
+
+        resource_counts: Counter = Counter()
+        total_resources = 0
+        stack_resource_counts: dict = {}
+
+        assembly_dir = Path(assembly.directory)
+
+        # Walk all template files in the assembly (including nested assemblies)
+        for template_file in assembly_dir.rglob("*.template.json"):
+            try:
+                with open(template_file, "r", encoding="utf-8") as f:
+                    template = _json.load(f)
+                resources = template.get("Resources", {})
+                stack_name = template_file.stem.replace(".template", "")
+                stack_count = 0
+                for _logical_id, resource in resources.items():
+                    resource_type = resource.get("Type", "Unknown")
+                    resource_counts[resource_type] += 1
+                    total_resources += 1
+                    stack_count += 1
+                stack_resource_counts[stack_name] = stack_count
+            except (ValueError, _json.JSONDecodeError):
+                continue
+
+        if not resource_counts:
+            return
+
+        print(f"\n📊 Resource Summary ({total_resources} total resources)")
+        print(f"   {'─' * 45}")
+
+        # Sort by count descending, show friendly names
+        for resource_type, count in resource_counts.most_common():
+            friendly = FRIENDLY_NAMES.get(resource_type, resource_type)
+            print(f"   {count:>4}  {friendly}")
+
+        # Per-stack breakdown (warn if any stack is near the 500 limit)
+        print(f"\n   📦 Per-Stack Resource Counts:")
+        for stack_name, count in sorted(
+            stack_resource_counts.items(), key=lambda x: -x[1]
+        ):
+            warning = " ⚠️  approaching 500 limit!" if count > 400 else ""
+            print(f"   {count:>4}  {stack_name}{warning}")
 
     def _detect_project_root(self) -> str:
         """

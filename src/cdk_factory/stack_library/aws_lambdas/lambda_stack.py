@@ -237,18 +237,32 @@ class LambdaStack(IStack):
         name: str,
     ):
         if trigger.resource_type == "event-bridge":
-            schedule_config = (
-                trigger.schedule
-            )  # e.g., {'type': 'rate', 'value': '15 minutes'}
+            schedule_config = trigger.schedule
 
-            if (
-                not schedule_config
-                or "type" not in schedule_config
-                or "value" not in schedule_config
-            ):
+            if not schedule_config:
                 raise ValueError(
                     "Invalid or missing EventBridge schedule configuration. "
-                    " {'type': 'rate|cron|expressions', 'value': '15 minutes'}"
+                    "Expected: {'type': 'rate', 'value': '15 minutes'} "
+                    "or {'rate': {'type': 'minutes', 'duration': 15}}"
+                )
+
+            # Normalize nested rate format to flat format
+            # {"rate": {"type": "minutes", "duration": 15}} → {"type": "rate", "value": "15 minutes"}
+            if "rate" in schedule_config and isinstance(schedule_config["rate"], dict):
+                rate = schedule_config["rate"]
+                duration = rate.get("duration", 0)
+                unit = rate.get("type", "minutes")
+                schedule_config = {"type": "rate", "value": f"{duration} {unit}"}
+            elif "cron" in schedule_config and isinstance(
+                schedule_config["cron"], dict
+            ):
+                schedule_config = {"type": "cron", "value": schedule_config["cron"]}
+
+            if "type" not in schedule_config or "value" not in schedule_config:
+                raise ValueError(
+                    "Invalid or missing EventBridge schedule configuration. "
+                    "Expected: {'type': 'rate', 'value': '15 minutes'} "
+                    "or {'rate': {'type': 'minutes', 'duration': 15}}"
                 )
 
             schedule_type = schedule_config["type"].lower()
@@ -342,11 +356,14 @@ class LambdaStack(IStack):
             bucket_name=bucket_name,
         )
 
-        # Build notification key filters
-        filters = s3.NotificationKeyFilter(
-            prefix=trigger.prefix or None,
-            suffix=trigger.suffix or None,
-        )
+        # Build notification key filters (only if prefix or suffix is specified)
+        has_filters = bool(trigger.prefix or trigger.suffix)
+        filters = None
+        if has_filters:
+            filters = s3.NotificationKeyFilter(
+                prefix=trigger.prefix or None,
+                suffix=trigger.suffix or None,
+            )
 
         # Map event type strings to S3 EventType enum values
         event_type_map = {
@@ -367,11 +384,10 @@ class LambdaStack(IStack):
             s3_event = event_type_map.get(event_str)
             if not s3_event:
                 raise ValueError(f"Unsupported S3 event type: '{event_str}'")
-            bucket.add_event_notification(
-                s3_event,
-                destination,
-                filters,
-            )
+            if filters:
+                bucket.add_event_notification(s3_event, destination, filters)
+            else:
+                bucket.add_event_notification(s3_event, destination)
 
         # Grant S3 permission to invoke the Lambda function
         lambda_function.add_permission(
@@ -446,66 +462,9 @@ class LambdaStack(IStack):
         )
 
     def __check_for_deprecated_api_config(self, stack_config: StackConfig) -> None:
-        """
-        Check for deprecated API Gateway configuration in lambda resources.
-        Raises an error with migration guidance if found.
-        """
-        resources = stack_config.dictionary.get("resources", [])
-        if not resources:
-            resources = stack_config.dictionary.get("lambdas", [])
-
-        deprecated_configs = []
-        for resource in resources:
-            # Check for 'api' key in resource configuration
-            if "api" in resource or "api_gateway" in stack_config.dictionary:
-                deprecated_configs.append(resource.get("name", "unnamed"))
-
-        if deprecated_configs:
-            error_msg = f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║ 🚨 DEPRECATED CONFIGURATION DETECTED                                         ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-Your lambda_stack configuration includes API Gateway setup, which is now 
-deprecated. This pattern caused deployment issues and violated AWS best practices.
-
-📋 AFFECTED RESOURCES:
-{chr(10).join(f"   • {name}" for name in deprecated_configs)}
-
-🔧 REQUIRED MIGRATION (Breaking Change v2.0+):
-
-Lambda stacks should ONLY create Lambda functions. API Gateway integration 
-should be handled in a separate api_gateway_stack.
-
-NEW PATTERN:
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 1. Lambda Stack (lambda_stack)                                              │
-│    • Creates Lambda functions                                               │
-│    • Exports Lambda ARNs to SSM Parameter Store                             │
-│    • NO API Gateway configuration                                           │
-│                                                                              │
-│ 2. API Gateway Stack (api_gateway_stack)                                    │
-│    • Imports Lambda ARNs from SSM                                           │
-│    • Creates API Gateway                                                    │
-│    • Wires Lambda integrations                                              │
-│    • Manages stages, deployments, and domains                               │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-📚 MIGRATION GUIDE:
-https://github.com/geek-cafe/cdk-factory/blob/main/docs/MIGRATION_V2.md
-
-💡 QUICK FIX:
-1. Remove 'api' configuration from lambda resources
-2. Remove 'api_gateway' from stack config  
-3. Create new api_gateway_stack configuration
-4. Update pipeline: lambdas deploy first, then api_gateway
-
-❓ NEED HELP?
-See examples: cdk-factory/examples/separate-api-gateway/
-
-════════════════════════════════════════════════════════════════════════════════
-"""
-            raise ValueError(error_msg)
+        """No-op — the 'api' field on lambda resources is route metadata
+        consumed by the API Gateway stack.  It is not deprecated."""
+        pass
 
     def __export_lambda_arns_to_ssm(self) -> None:
         """
@@ -620,6 +579,7 @@ See examples: cdk-factory/examples/separate-api-gateway/
             scope=self,
             id=f"{lambda_config.name}-construct",
             deployment=self.deployment,
+            workload=self.workload,
         )
 
         # Check for SSM-resolved ECR — takes precedence over explicit fields
@@ -789,21 +749,24 @@ See examples: cdk-factory/examples/separate-api-gateway/
         return queue
 
     def __get_queue(
-        self, sqs_config: SQSConfig, function_config: LambdaFunctionConfig
+        self,
+        sqs_config: SQSConfig,
+        function_config: LambdaFunctionConfig,
+        binding_type: str = "ref",
     ) -> sqs.IQueue:
         name = self.deployment.build_resource_name(sqs_config.name, ResourceTypes.SQS)
         queue_arn = (
             f"arn:aws:sqs:{self.deployment.region}:{self.deployment.account}:{name}"
         )
 
-        # if an id was provided in the settings use that one, otherwise build an id
-        construct_id = (
-            sqs_config.resource_id
-            or f"{self.deployment.build_resource_name(function_config.name)}-{sqs_config.name}-sqs-arn"
-        )
+        # Include function name, queue name, and binding type in construct ID
+        # to avoid collisions when multiple lambdas reference the same queue.
+        # Even if resource_id is set, we prefix with function name for uniqueness.
+        base_id = sqs_config.resource_id or sqs_config.name
+        construct_id = f"{function_config.name}-{base_id}-{binding_type}-ref"
         queue = sqs.Queue.from_queue_arn(
             self,
-            id=f"{construct_id}",
+            id=construct_id,
             queue_arn=queue_arn,
         )
 
@@ -821,7 +784,9 @@ See examples: cdk-factory/examples/separate-api-gateway/
         # pipeline.
         if self._sqs_decoupled_mode:
             queue: sqs.IQueue = self.__get_queue(
-                sqs_config=sqs_config, function_config=function_config
+                sqs_config=sqs_config,
+                function_config=function_config,
+                binding_type="consumer",
             )
         else:
             queue: sqs.Queue = self.__create_sqs(sqs_config=sqs_config)
@@ -856,6 +821,8 @@ See examples: cdk-factory/examples/separate-api-gateway/
         # more than one lambda may be invoked to at a time as a consumer
         # but we still only have 1 blueprint or definition of the consumer
         queue: sqs.IQueue = self.__get_queue(
-            sqs_config=sqs_config, function_config=function_config
+            sqs_config=sqs_config,
+            function_config=function_config,
+            binding_type="producer",
         )
         queue.grant_send_messages(lambda_function)

@@ -64,16 +64,30 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
         )
 
         # Clean up environment variables
-        if "APP_TABLE_NAME" in os.environ:
-            del os.environ["APP_TABLE_NAME"]
-        if "AWS_REGION" in os.environ:
-            del os.environ["AWS_REGION"]
-        if "AWS_ACCOUNT" in os.environ:
-            del os.environ["AWS_ACCOUNT"]
+        for var in self._all_env_vars():
+            if var in os.environ:
+                del os.environ[var]
+
+    @staticmethod
+    def _all_env_vars():
+        """All env vars that the permissions_map eagerly evaluates."""
+        return [
+            "APP_TABLE_NAME",
+            "DYNAMODB_TABLE_NAME",
+            "DYNAMODB_APP_TABLE_NAME",
+            "DYNAMODB_AUDIT_TABLE_NAME",
+            "DYNAMODB_TRANSIENT_TABLE_NAME",
+            "S3_WORKLOAD_BUCKET_NAME",
+            "ANALYSIS_BUCKET",
+            "S3_TRANSIENT_DATA_BUCKET_NAME",
+            "S3_UPLOAD_BUCKET_NAME",
+            "AWS_REGION",
+            "AWS_ACCOUNT",
+        ]
 
     def tearDown(self):
         """Clean up environment variables"""
-        for var in ["APP_TABLE_NAME", "AWS_REGION", "AWS_ACCOUNT"]:
+        for var in self._all_env_vars():
             if var in os.environ:
                 del os.environ[var]
 
@@ -146,10 +160,7 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
         self.assertIsNone(table_name)
 
     def test_policy_documents_dynamodb_read_with_environment_variables(self):
-        """Test DynamoDB read permissions generation with environment variables"""
-
-        # Set environment variables
-        os.environ["APP_TABLE_NAME"] = "test-table-env"
+        """Test DynamoDB read permissions generation with structured format"""
 
         policy_docs = PolicyDocuments(
             scope=self.stack,
@@ -158,12 +169,16 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
             deployment=self.deployment,
         )
 
-        # Test DynamoDB read permissions
-        permissions = policy_docs._get_dynamodb_read_permissions()
+        # Test DynamoDB read permissions via structured format
+        permissions = policy_docs.get_permission_details(
+            {"dynamodb": "read", "table": "test-table-env"}
+        )
 
         self.assertEqual(permissions["name"], "DynamoDB")
-        self.assertEqual(permissions["description"], "DynamoDB Read")
-        self.assertEqual(permissions["sid"], "DynamoDbReadAccess")
+        self.assertIn("DynamoDB Read", permissions["description"])
+
+        # SID is now generated with a table slug suffix
+        self.assertIn("DynamoDbRead", permissions["sid"])
 
         # Check actions
         expected_actions = [
@@ -181,10 +196,7 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
         self.assertTrue(any("123456789012" in resource for resource in resources))
 
     def test_policy_documents_dynamodb_write_with_environment_variables(self):
-        """Test DynamoDB write permissions generation with environment variables"""
-
-        # Set environment variables
-        os.environ["APP_TABLE_NAME"] = "test-table-write"
+        """Test DynamoDB write permissions generation with structured format"""
 
         policy_docs = PolicyDocuments(
             scope=self.stack,
@@ -193,12 +205,16 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
             deployment=self.deployment,
         )
 
-        # Test DynamoDB write permissions
-        permissions = policy_docs._get_dynamodb_write_permissions()
+        # Test DynamoDB write permissions via structured format
+        permissions = policy_docs.get_permission_details(
+            {"dynamodb": "write", "table": "test-table-write"}
+        )
 
         self.assertEqual(permissions["name"], "DynamoDB")
-        self.assertEqual(permissions["description"], "DynamoDB Write")
-        self.assertEqual(permissions["sid"], "DynamoDbWriteAccess")
+        self.assertIn("DynamoDB Write", permissions["description"])
+
+        # SID is now generated with a table slug suffix
+        self.assertIn("DynamoDbWrite", permissions["sid"])
 
         # Check actions
         expected_actions = [
@@ -213,10 +229,7 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
         self.assertTrue(any("test-table-write" in resource for resource in resources))
 
     def test_policy_documents_dynamodb_delete_with_environment_variables(self):
-        """Test DynamoDB delete permissions generation with environment variables"""
-
-        # Set environment variables
-        os.environ["APP_TABLE_NAME"] = "test-table-delete"
+        """Test DynamoDB delete permissions generation with structured format"""
 
         policy_docs = PolicyDocuments(
             scope=self.stack,
@@ -225,12 +238,16 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
             deployment=self.deployment,
         )
 
-        # Test DynamoDB delete permissions
-        permissions = policy_docs._get_dynamodb_delete_permissions()
+        # Test DynamoDB delete permissions via structured format
+        permissions = policy_docs.get_permission_details(
+            {"dynamodb": "delete", "table": "test-table-delete"}
+        )
 
         self.assertEqual(permissions["name"], "DynamoDB")
-        self.assertEqual(permissions["description"], "DynamoDB Delete")
-        self.assertEqual(permissions["sid"], "DynamoDbDeleteAccess")
+        self.assertIn("DynamoDB Delete", permissions["description"])
+
+        # SID is now generated with a table slug suffix
+        self.assertIn("DynamoDbDelete", permissions["sid"])
 
         # Check actions
         expected_actions = ["dynamodb:DeleteItem"]
@@ -241,7 +258,7 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
         self.assertTrue(any("test-table-delete" in resource for resource in resources))
 
     def test_policy_documents_no_table_name_raises_error(self):
-        """Test that missing table name raises helpful error message"""
+        """Test that empty table name in structured format raises helpful error message"""
 
         policy_docs = PolicyDocuments(
             scope=self.stack,
@@ -250,27 +267,12 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
             deployment=self.deployment,
         )
 
-        # Test that all DynamoDB permission methods raise errors when no table name
+        # Test that structured format with empty table raises ValueError
         with self.assertRaises(ValueError) as context:
-            policy_docs._get_dynamodb_read_permissions()
+            policy_docs.get_permission_details({"dynamodb": "read", "table": ""})
 
         error_message = str(context.exception)
-        self.assertIn("APP_TABLE_NAME", error_message)
-        self.assertIn("Enhanced SSM parameters", error_message)
-
-        with self.assertRaises(ValueError) as context:
-            policy_docs._get_dynamodb_write_permissions()
-
-        error_message = str(context.exception)
-        self.assertIn("APP_TABLE_NAME", error_message)
-        self.assertIn("Enhanced SSM parameters", error_message)
-
-        with self.assertRaises(ValueError) as context:
-            policy_docs._get_dynamodb_delete_permissions()
-
-        error_message = str(context.exception)
-        self.assertIn("APP_TABLE_NAME", error_message)
-        self.assertIn("Enhanced SSM parameters", error_message)
+        self.assertIn("requires 'table' field", error_message)
 
     @patch(
         "cdk_factory.constructs.lambdas.policies.policy_docs.ResourceResolver._get_ssm_mixin"
@@ -315,9 +317,6 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
     def test_policy_documents_full_integration_with_permissions(self):
         """Test full integration of PolicyDocuments with permission generation"""
 
-        # Set environment variables
-        os.environ["APP_TABLE_NAME"] = "integration-test-table"
-
         policy_docs = PolicyDocuments(
             scope=self.stack,
             role=self.role,
@@ -325,10 +324,16 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
             deployment=self.deployment,
         )
 
-        # Test getting permission details for DynamoDB permissions
-        read_details = policy_docs.get_permission_details("dynamodb_read")
-        write_details = policy_docs.get_permission_details("dynamodb_write")
-        delete_details = policy_docs.get_permission_details("dynamodb_delete")
+        # Test getting permission details for DynamoDB permissions using structured format
+        read_details = policy_docs.get_permission_details(
+            {"dynamodb": "read", "table": "integration-test-table"}
+        )
+        write_details = policy_docs.get_permission_details(
+            {"dynamodb": "write", "table": "integration-test-table"}
+        )
+        delete_details = policy_docs.get_permission_details(
+            {"dynamodb": "delete", "table": "integration-test-table"}
+        )
 
         # Verify all permissions were generated successfully
         self.assertIsNotNone(read_details)

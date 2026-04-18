@@ -74,7 +74,7 @@
                 "method": "GET",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_read"],
+              "permissions": [{"dynamodb": "read", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",
@@ -96,7 +96,7 @@
                 "method": "POST",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_write"],
+              "permissions": [{"dynamodb": "write", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",
@@ -118,7 +118,7 @@
                 "method": "GET",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_read"],
+              "permissions": [{"dynamodb": "read", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",
@@ -140,7 +140,7 @@
                 "method": "PUT",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_write"],
+              "permissions": [{"dynamodb": "write", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",
@@ -162,7 +162,7 @@
                 "method": "DELETE",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_write"],
+              "permissions": [{"dynamodb": "write", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",
@@ -184,7 +184,7 @@
                 "method": "GET",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_read"],
+              "permissions": [{"dynamodb": "read", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",
@@ -206,7 +206,7 @@
                 "method": "POST",
                 "authorization_type": "COGNITO"
               },
-              "permissions": ["dynamodb_write"],
+              "permissions": [{"dynamodb": "write", "table": "{{APP_TABLE_NAME}}"}],
               "environment_variables": [
                 {
                   "name": "ENVIRONMENT",

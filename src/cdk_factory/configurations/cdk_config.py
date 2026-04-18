@@ -202,7 +202,7 @@ class CdkConfig:
 
     def __get_cdk_parameter_value(self, parameter: Dict[str, Any]) -> str | None:
         cdk_parameter_name = parameter.get("cdk_parameter_name", None)
-        # ssm_parameter_name = parameter.get("ssm_parameter_name", None)
+        placeholder = parameter.get("placeholder", "")
         environment_variable_name = parameter.get("env_var_name", None)
         static_value = parameter.get("value", None)
         required = str(parameter.get("required", True)).lower() == "true"
@@ -220,7 +220,16 @@ class CdkConfig:
             value = os.environ.get(environment_variable_name, None)
             if (value is None or str(value).strip() == "") and required:
                 raise ValueError(
-                    f"Failed to get value for environment variable {environment_variable_name}"
+                    f"\n"
+                    f"  ✗ Missing required environment variable: {environment_variable_name}\n"
+                    f"    Placeholder : {placeholder}\n"
+                    f"    CDK Param   : {cdk_parameter_name}\n"
+                    f"\n"
+                    f"  This variable must be set before CDK can synthesize.\n"
+                    f"  Options:\n"
+                    f"    1. Add '{environment_variable_name}' to your deployment JSON parameters\n"
+                    f"    2. Export it: export {environment_variable_name}=<value>\n"
+                    f"    3. Mark it optional: add '\"required\": false' to the parameter in config.json\n"
                 )
 
         if environment_variable_name is not None and value is not None:
@@ -241,7 +250,13 @@ class CdkConfig:
 
         if value is None:
             raise ValueError(
-                f"Failed to get value for parameter {parameter.get('placeholder', '')}"
+                f"\n"
+                f"  ✗ Missing required parameter: {placeholder}\n"
+                f"    CDK Param   : {cdk_parameter_name}\n"
+                f"    Env Var     : {environment_variable_name or '(none)'}\n"
+                f"\n"
+                f"  No value, environment variable, or default was found.\n"
+                f"  Add this parameter to your deployment JSON or config.json.\n"
             )
         return value
 

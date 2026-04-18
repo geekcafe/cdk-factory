@@ -3,6 +3,7 @@ Geek Cafe Pipeline
 """
 
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 import yaml
@@ -505,6 +506,29 @@ class PipelineFactoryStack(IStack):
             # Assume it's already in org/repo format
             return location
 
+    _STACK_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9-]*$")
+
+    def _validate_stack_name(self, stack_name: str, source: str) -> None:
+        """Validate a CloudFormation stack name before passing it to CDK.
+
+        Raises a clear error instead of letting JSII blow up with a cryptic message.
+        """
+        if not self._STACK_NAME_PATTERN.match(stack_name):
+            raise ValueError(
+                f"\n"
+                f"  ✗ Invalid CloudFormation stack name: '{stack_name}'\n"
+                f"    Source: {source}\n"
+                f"\n"
+                f"  Stack names must:\n"
+                f"    - Start with a letter (A-Z, a-z)\n"
+                f"    - Contain only letters, numbers, and hyphens\n"
+                f"    - No dots, underscores, spaces, or special characters\n"
+                f"\n"
+                f"  Fix: Update the stack name in your deployment config or stack config.\n"
+                f"  If using naming.stack_pattern, check that the pattern and prefix\n"
+                f"  produce a valid name.\n"
+            )
+
     def __setup_stacks(
         self,
         stage_config: PipelineStageConfig,
@@ -589,6 +613,10 @@ class PipelineFactoryStack(IStack):
                                 stage_name=stage_config.name,
                                 stack_name=stack_config.name,
                             )
+                        self._validate_stack_name(
+                            cf_stack_name,
+                            f"stack config '{stack_config.name}' in stage '{stage_config.name}'",
+                        )
                         kwargs["stack_name"] = cf_stack_name
 
                     cf_stack = factory.load_module(

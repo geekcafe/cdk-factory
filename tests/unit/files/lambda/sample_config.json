@@ -153,7 +153,7 @@
                         "handler": "list_groups.lambda_handler",
                         "description": "Groups: List Groups",
                         "permissions": [
-                          "dynamodb_read"
+                          {"dynamodb": "read", "table": "factory-{{ENVIRONMENT}}"}
                         ],
                         "environment_variables": [
                           {

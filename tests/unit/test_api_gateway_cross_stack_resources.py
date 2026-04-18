@@ -134,9 +134,8 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Should raise deprecation error for old API Gateway pattern
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(stack_config, deployment_config, workload_config)
+        # The 'api' field on lambda resources is route metadata, not deprecated
+        stack.build(stack_config, deployment_config, workload_config)
 
     def test_existing_resource_import(
         self, app, temp_lambda_dir, deployment_config, workload_config
@@ -182,9 +181,8 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Should raise deprecation error for old API Gateway pattern
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(stack_config, deployment_config, workload_config)
+        # The 'api' field on lambda resources is route metadata, not deprecated
+        stack.build(stack_config, deployment_config, workload_config)
 
     def test_multiple_existing_resource_imports(
         self, app, temp_lambda_dir, deployment_config, workload_config
@@ -234,9 +232,8 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Should raise deprecation error for old API Gateway pattern
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(stack_config, deployment_config, workload_config)
+        # The 'api' field on lambda resources is route metadata, not deprecated
+        stack.build(stack_config, deployment_config, workload_config)
 
     def test_mixed_import_and_create_resources(
         self, app, temp_lambda_dir, deployment_config, workload_config
@@ -295,9 +292,8 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Should raise deprecation error for old API Gateway pattern
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(stack_config, deployment_config, workload_config)
+        # The 'api' field on lambda resources is route metadata, not deprecated
+        stack.build(stack_config, deployment_config, workload_config)
 
     def test_invalid_resource_import_fallback(
         self, app, temp_lambda_dir, deployment_config, workload_config
@@ -343,6 +339,5 @@ def lambda_handler(event, context):
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Should raise deprecation error for old API Gateway pattern
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(stack_config, deployment_config, workload_config)
+        # The 'api' field on lambda resources is route metadata, not deprecated
+        stack.build(stack_config, deployment_config, workload_config)

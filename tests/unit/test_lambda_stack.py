@@ -183,7 +183,7 @@ class TestLambdaStackReal:
 
         # Should not have API Gateway resources for basic lambda
         template.resource_count_is("AWS::ApiGateway::RestApi", 0)
-        
+
         # Should not have SSM parameters if SSM is not enabled
         # (SSM export requires ssm.enabled: true in config)
 
@@ -195,9 +195,7 @@ class TestLambdaStackReal:
         stack_config_with_api_lambda,
         monkeypatch,
     ):
-        """Test Lambda stack raises deprecation error when API Gateway config is present."""
-        import pytest
-
+        """Test Lambda stack builds successfully when API Gateway config is present (deprecated check is now a no-op)."""
         # Set required environment variable for authorizer
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
@@ -208,13 +206,15 @@ class TestLambdaStackReal:
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Build the stack with real synthesis - should raise deprecation error
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(
-                stack_config=stack_config_with_api_lambda,
-                deployment=deployment_config,
-                workload=workload_config,
-            )
+        # Build the stack with real synthesis - deprecated check is now a no-op
+        stack.build(
+            stack_config=stack_config_with_api_lambda,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
+
+        assert stack.stack_config == stack_config_with_api_lambda
+        assert len(stack.functions) == 1
 
     def test_lambda_stack_build_with_authorizer_real_synthesis(
         self,
@@ -223,13 +223,11 @@ class TestLambdaStackReal:
         workload_config,
         monkeypatch,
     ):
-        """Test Lambda stack raises deprecation error when API Gateway config with authorizer is present."""
-        import pytest
-
+        """Test Lambda stack builds successfully when API Gateway config with authorizer is present (deprecated check is now a no-op)."""
         # Set required environment variable for authorizer
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
-        # Create stack config with authorizer enabled - should trigger deprecation
+        # Create stack config with authorizer enabled
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload for Lambda stack testing",
@@ -280,13 +278,15 @@ class TestLambdaStackReal:
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Build the stack - should raise deprecation error for api_gateway config
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(
-                stack_config=stack_config,
-                deployment=deployment_config,
-                workload=workload_config,
-            )
+        # Build the stack - deprecated check is now a no-op
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
+
+        assert stack.stack_config == stack_config
+        assert len(stack.functions) == 1
 
     def test_lambda_stack_build_with_existing_authorizer_real_synthesis(
         self,
@@ -295,13 +295,11 @@ class TestLambdaStackReal:
         workload_config,
         monkeypatch,
     ):
-        """Test Lambda stack raises deprecation error when API config with existing authorizer is present."""
-        import pytest
-
+        """Test Lambda stack builds successfully when API config with existing authorizer is present (deprecated check is now a no-op)."""
         # Set required environment variable for authorizer (even though we're using existing)
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "us-east-1_TestPool123")
 
-        # Create stack config with existing authorizer ID - should trigger deprecation
+        # Create stack config with existing authorizer ID
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload for Lambda stack testing",
@@ -344,13 +342,15 @@ class TestLambdaStackReal:
             env=Environment(account="123456789012", region="us-east-1"),
         )
 
-        # Build the stack - should raise deprecation error for api config
-        with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-            stack.build(
-                stack_config=stack_config,
-                deployment=deployment_config,
-                workload=workload_config,
-            )
+        # Build the stack - deprecated check is now a no-op
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
+
+        assert stack.stack_config == stack_config
+        assert len(stack.functions) == 1
 
     def test_lambda_function_config_creation(self, deployment_config):
         """Test LambdaFunctionConfig creation with real config."""
@@ -436,6 +436,11 @@ class TestLambdaStackReal:
         )
         monkeypatch.setenv("COGNITO_AUTHORIZER_ID", "8m223r")
         monkeypatch.setenv("APP_TABLE_NAME", "factory-dev")
+        monkeypatch.setenv("DYNAMODB_AUDIT_TABLE_NAME", "audit-table")
+        monkeypatch.setenv("DYNAMODB_TRANSIENT_TABLE_NAME", "transient-table")
+        monkeypatch.setenv("S3_WORKLOAD_BUCKET_NAME", "workload-bucket")
+        monkeypatch.setenv("S3_TRANSIENT_DATA_BUCKET_NAME", "transient-bucket")
+        monkeypatch.setenv("S3_UPLOAD_BUCKET_NAME", "upload-bucket")
 
         # Use the real sample config file
         config_path = "tests/unit/files/lambda/sample_config.json"
@@ -534,11 +539,10 @@ class TestLambdaStackReal:
                 raise AssertionError(f"Overlapping routes handling failed: {e}") from e
 
     def test_overlapping_api_gateway_routes(self, monkeypatch):
-        """Test that deprecated overlapping routes config raises error"""
+        """Test that overlapping routes config builds successfully (deprecated check is now a no-op)"""
         from cdk_factory.app import CdkAppFactory
         import tempfile
         import os
-        import pytest
 
         # Set up environment variables
         monkeypatch.setenv("ENVIRONMENT", "dev")
@@ -549,6 +553,11 @@ class TestLambdaStackReal:
         monkeypatch.setenv("COGNITO_AUTHORIZER_ID", "auth456def")
         monkeypatch.setenv("COGNITO_USER_POOL_ID", "pool789ghi")
         monkeypatch.setenv("APP_TABLE_NAME", "test-table")
+        monkeypatch.setenv("DYNAMODB_AUDIT_TABLE_NAME", "audit-table")
+        monkeypatch.setenv("DYNAMODB_TRANSIENT_TABLE_NAME", "transient-table")
+        monkeypatch.setenv("S3_WORKLOAD_BUCKET_NAME", "workload-bucket")
+        monkeypatch.setenv("S3_TRANSIENT_DATA_BUCKET_NAME", "transient-bucket")
+        monkeypatch.setenv("S3_UPLOAD_BUCKET_NAME", "upload-bucket")
 
         # Use the overlapping routes config file (has deprecated API pattern)
         config_path = "tests/unit/files/lambda/overlapping_routes_config.json"
@@ -564,11 +573,12 @@ class TestLambdaStackReal:
                 outdir=outdir,
             )
 
-            # Should raise deprecation error for old API Gateway pattern
-            with pytest.raises(ValueError, match="DEPRECATED CONFIGURATION DETECTED"):
-                factory.synth(
-                    paths=["tests/unit/files/lambda"], cdk_app_file="cdk_app.py"
-                )
+            # Deprecated check is now a no-op, so synth should succeed
+            cloud_assembly = factory.synth(
+                paths=["tests/unit/files/lambda"], cdk_app_file="cdk_app.py"
+            )
+
+            assert cloud_assembly is not None
 
     def test_lambda_stack_ssm_export(
         self,

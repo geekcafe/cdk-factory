@@ -139,11 +139,11 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
 
     def _exports(self) -> None:
         """Exports the bucket name and ARN to SSM"""
-        ssm = self.bucket_config.ssm
-        exports = ssm.get("exports", {})
-        if not ssm:
+        ssm_config = self.bucket_config.ssm
+        exports = ssm_config.get("exports", {})
+        if not ssm_config:
             return
-        auto_export = ssm.get("auto_export", False)
+        auto_export = ssm_config.get("auto_export", False)
 
         known_key_values = {
             "bucket_name": self.bucket.bucket_name,
@@ -151,20 +151,25 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
         }
 
         if auto_export:
-            for export_key, export_parameter in known_key_values.items():
-                value = known_key_values[export_key]
+            # Build SSM parameter paths from workload/environment/stack-name
+            workload = ssm_config.get("workload", self.deployment.workload_name)
+            environment = ssm_config.get("environment", self.deployment.environment)
+            stack_name = self.stack_config.name
+            prefix = f"/{workload}/{environment}/s3/{stack_name}"
+
+            for export_key, export_value in known_key_values.items():
+                parameter_path = f"{prefix}/{export_key}"
                 self.export_ssm_parameter(
                     scope=self,
                     id=f"{self.id}-{export_key}",
-                    value=value,
-                    parameter_name=export_parameter,
+                    value=export_value,
+                    parameter_name=parameter_path,
                     description=f"Bucket {export_key}",
                 )
         else:
             # user specified exports
             for export_key, export_parameter in exports.items():
                 if export_key not in known_key_values:
-                    # raise error if they specify an unknown export key
                     raise ValueError(f"Unknown export key: {export_key}")
                 value = known_key_values[export_key]
                 self.export_ssm_parameter(

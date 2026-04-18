@@ -383,7 +383,7 @@ class DeploymentConfig:
             resource_name = ResourceNaming.validate_name(
                 resource_name,
                 resource_type=resource_type,
-                fix=str(self.workload.get("auto_fix_resource_names", False)).lower()
+                fix=str(self.workload.get("auto_fix_resource_names", True)).lower()
                 == "true",
             )
 

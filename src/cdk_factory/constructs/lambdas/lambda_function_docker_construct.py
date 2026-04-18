@@ -207,24 +207,45 @@ class LambdaDockerConstruct(Construct):
         self, role: iam.Role, lambda_config: LambdaFunctionConfig
     ) -> None:
         """
-        Update the role to allow getting the ecr images
+        Update the role to allow getting the ecr images.
+
+        Delegates permission resolution to PolicyDocuments so that string
+        permissions (``"cognito_admin"``), structured permissions
+        (``{"dynamodb": "read", "table": "..."}``), and inline IAM dicts
+        (``{"actions": [...], "resources": [...]}``) are all handled
+        consistently.
         """
 
         if not role:
             logger.warning("No role to update.")
             return
 
-        permission: dict = {}
+        from cdk_factory.constructs.lambdas.policies.policy_docs import PolicyDocuments
+
+        policy_docs = PolicyDocuments(
+            scope=self,
+            role=role,
+            deployment=self.deployment,
+            lambda_config=lambda_config,
+        )
+
         for permission in lambda_config.permissions:
-            actions: List[str] = []
-            actions = permission.get("actions", [])
-            resources = permission.get("resources", [])
-            role.add_to_policy(
-                iam.PolicyStatement(
-                    actions=actions,
-                    resources=resources,
+            details = policy_docs.get_permission_details(permission)
+            if not details:
+                logger.warning(
+                    f"Unknown permission '{permission}' on Lambda '{lambda_config.name}' — skipping"
                 )
-            )
+                continue
+
+            actions = details.get("actions", [])
+            resources = details.get("resources", [])
+            if actions:
+                role.add_to_policy(
+                    iam.PolicyStatement(
+                        actions=actions,
+                        resources=resources if resources else ["*"],
+                    )
+                )
 
     def update_ecr_permissions(self, role: iam.Role, repo_arn: str) -> None:
         """

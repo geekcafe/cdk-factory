@@ -240,202 +240,189 @@ class PolicyDocuments:
         return self._resource_resolver
 
     def get_permission_details(self, permission: str | dict) -> dict:
-        """Returns the details of a specific permission"""
+        """Returns the details of a specific permission.
 
-        # TODO: this all needs refactoring for flexibility
+        Supported formats (in order of preference):
 
-        permissions_map = {
-            "dynamodb_read": self._get_dynamodb_read_permissions(),
-            "dynamodb_write": self._get_dynamodb_write_permissions(),
-            "dynamodb_delete": self._get_dynamodb_delete_permissions(),
-            # "s3_read_workload": self.__s3_read_permissions(
-            #     self.deployment.get_workload_bucket_name()
-            # ),
-            # "s3_write_workload": self.__s3_write_permissions(
-            #     self.deployment.get_workload_bucket_name()
-            # ),
-            # "s3_delete_workload": self.__s3_delete_permissions(
-            #     self.deployment.get_workload_bucket_name()
-            # ),
-            # "s3_read_upload": self.__s3_read_permissions(
-            #     self.deployment.get_upload_bucket_name()
-            # ),
-            # "s3_write_upload": self.__s3_write_permissions(
-            #     self.deployment.get_upload_bucket_name()
-            # ),
-            "parameter_store_read": self.__get_parameter_store_read_permissions(),
-            "cognito_user_pool_read": {
-                "name": "Cognito",
-                "description": "Cognito User Pool Access",
-                "sid": "CognitoUserPoolAccess",
-                "actions": ["cognito-idp:ListUserPools"],
-                "resources": ["*"],
-            },
-            "cognito_user_pool_client_read": {
-                "name": "Cognito",
-                "description": "Cognito User Pool Client Access",
-                "sid": "CognitoUserPoolClientAccess",
-                "actions": ["cognito-idp:ListUserPoolClients"],
-                "resources": ["*"],
-            },
-            "cognito_user_pool_group_read": {
-                "name": "Cognito",
-                "description": "Cognito User Pool Group Access",
-                "sid": "CognitoUserPoolGroupAccess",
-                "actions": ["cognito-idp:ListGroups"],
-                "resources": ["*"],
-            },
-            "cognito_admin": {
-                "name": "Cognito",
-                "description": "Cognito Admin Access",
-                "sid": "CognitoAdminAccess",
-                "actions": ["cognito-idp:*"],
-                "resources": ["*"],
-                "nag": {
-                    "id": "AwsSolutions-IAM5",
-                    "reason": "This wildcard permission is necessary for our use case with cognito access.",
-                    "resources": [
-                        "Resource::*",
-                        "Action::cognito-idp:*",
-                    ],
-                },
-            },
-        }
+        1. **Structured** (preferred)::
 
-        permission_details: dict | None = None
+            {"dynamodb": "read",  "table":  "my-table-name"}
+            {"s3":       "write", "bucket": "my-bucket-name"}
+
+        2. **Simple string** (for permissions without a resource target)::
+
+            "cognito_admin"
+            "parameter_store_read"
+
+        3. **Inline IAM** (for custom one-off policies)::
+
+            {"name": "Custom", "sid": "X", "actions": [...], "resources": [...]}
+        """
+        # --- String permissions (no resource target) ---
         if isinstance(permission, str):
-            permission_details = permissions_map.get(permission)
-        elif isinstance(permission, dict):
-            permission_details = self.get_permission_details_from_dict(permission)
+            simple_permissions = {
+                "parameter_store_read": self.__get_parameter_store_read_permissions(),
+                "cognito_user_pool_read": {
+                    "name": "Cognito",
+                    "description": "Cognito User Pool Access",
+                    "sid": "CognitoUserPoolAccess",
+                    "actions": ["cognito-idp:ListUserPools"],
+                    "resources": ["*"],
+                },
+                "cognito_user_pool_client_read": {
+                    "name": "Cognito",
+                    "description": "Cognito User Pool Client Access",
+                    "sid": "CognitoUserPoolClientAccess",
+                    "actions": ["cognito-idp:ListUserPoolClients"],
+                    "resources": ["*"],
+                },
+                "cognito_user_pool_group_read": {
+                    "name": "Cognito",
+                    "description": "Cognito User Pool Group Access",
+                    "sid": "CognitoUserPoolGroupAccess",
+                    "actions": ["cognito-idp:ListGroups"],
+                    "resources": ["*"],
+                },
+                "cognito_admin": {
+                    "name": "Cognito",
+                    "description": "Cognito Admin Access",
+                    "sid": "CognitoAdminAccess",
+                    "actions": ["cognito-idp:*"],
+                    "resources": ["*"],
+                    "nag": {
+                        "id": "AwsSolutions-IAM5",
+                        "reason": "Wildcard permission for cognito access.",
+                        "resources": ["Resource::*", "Action::cognito-idp:*"],
+                    },
+                },
+            }
+            return simple_permissions.get(permission, {})
 
-        return permission_details or {}
+        # --- Dict permissions ---
+        if isinstance(permission, dict):
+            # Structured format: {"dynamodb": "read", "table": "..."}
+            structured = self._get_structured_permission(permission)
+            if structured:
+                return structured
+            # Inline IAM format: {"actions": [...], "resources": [...]}
+            return self.get_permission_details_from_dict(permission)
 
-    def _get_dynamodb_write_permissions(self) -> dict:
-        """Get DynamoDB write permissions with flexible resource resolution."""
-        resolver = self._get_resource_resolver()
+        return {}
 
-        table_name = resolver.get_table_name()
-        aws_region = resolver.get_aws_region()
-        aws_account = resolver.get_aws_account()
+    def _get_structured_permission(self, permission: dict) -> dict | None:
+        """Handle structured permission format.
 
-        if not table_name:
-            raise ValueError(
-                "DynamoDB table name not found. Please ensure either:\n"
-                "1. 'APP_TABLE_NAME' environment variable is set, OR\n"
-                "2. Enhanced SSM parameters are configured with DynamoDB table name auto-import\n"
-                "This is required for 'dynamodb_write' permission to generate proper PolicyStatement resources."
+        Supported formats::
+
+            {"dynamodb": "read",  "table":  "my-table-name"}
+            {"dynamodb": "write", "table":  "{{DYNAMODB_APP_TABLE_NAME}}"}
+            {"dynamodb": "delete","table":  "my-table-name"}
+            {"s3":       "read",  "bucket": "my-bucket-name"}
+            {"s3":       "write", "bucket": "{{S3_WORKLOAD_BUCKET_NAME}}"}
+            {"s3":       "delete","bucket": "my-bucket-name"}
+
+        Returns None if the dict doesn't match a structured format.
+        """
+        # DynamoDB structured permissions
+        if "dynamodb" in permission:
+            action = permission["dynamodb"]
+            table = permission.get("table", "")
+            if not table:
+                raise ValueError(
+                    f"Structured DynamoDB permission requires 'table' field: {permission}"
+                )
+
+            action_map = {
+                "read": {
+                    "actions": [
+                        "dynamodb:GetItem",
+                        "dynamodb:Scan",
+                        "dynamodb:Query",
+                        "dynamodb:BatchGetItem",
+                    ],
+                    "sid": "DynamoDbRead",
+                    "description": "DynamoDB Read",
+                },
+                "write": {
+                    "actions": [
+                        "dynamodb:BatchWriteItem",
+                        "dynamodb:PutItem",
+                        "dynamodb:UpdateItem",
+                    ],
+                    "sid": "DynamoDbWrite",
+                    "description": "DynamoDB Write",
+                },
+                "delete": {
+                    "actions": ["dynamodb:DeleteItem"],
+                    "sid": "DynamoDbDelete",
+                    "description": "DynamoDB Delete",
+                },
+            }
+
+            if action not in action_map:
+                raise ValueError(
+                    f"Unknown DynamoDB action '{action}'. Valid: {list(action_map.keys())}"
+                )
+
+            # Make SID unique per table to avoid collisions
+            table_slug = table.replace("-", "").replace("_", "")[:20]
+            details = action_map[action]
+            return self._dynamodb_permissions(
+                table_name=table,
+                actions=details["actions"],
+                sid=f"{details['sid']}{table_slug}",
+                description=f"{details['description']} on {table}",
             )
 
-        table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
-        index_arn = (
-            f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
-        )
+        # S3 structured permissions
+        if "s3" in permission:
+            action = permission["s3"]
+            bucket = permission.get("bucket", "")
+            if not bucket:
+                raise ValueError(
+                    f"Structured S3 permission requires 'bucket' field: {permission}"
+                )
+
+            bucket_slug = bucket.replace("-", "").replace("_", "")[:20]
+            if action == "read":
+                return self.__s3_read_permissions(bucket, sid=f"S3Read{bucket_slug}")
+            elif action == "write":
+                return self.__s3_write_permissions(bucket, sid=f"S3Write{bucket_slug}")
+            elif action == "delete":
+                return self.__s3_delete_permissions(
+                    bucket, sid=f"S3Delete{bucket_slug}"
+                )
+            else:
+                raise ValueError(
+                    f"Unknown S3 action '{action}'. Valid: read, write, delete"
+                )
+
+        return None
+
+    def _dynamodb_permissions(
+        self,
+        table_name: str,
+        actions: list[str],
+        sid: str,
+        description: str,
+    ) -> dict:
+        """Build a DynamoDB permission dict for a given table and action set."""
+        resolver = self._get_resource_resolver()
+        region = resolver.get_aws_region()
+        account = resolver.get_aws_account()
+        table_arn = f"arn:aws:dynamodb:{region}:{account}:table/{table_name}"
+        index_arn = f"arn:aws:dynamodb:{region}:{account}:table/{table_name}/index/*"
 
         return {
             "name": "DynamoDB",
-            "description": "DynamoDB Write",
-            "sid": "DynamoDbWriteAccess",
-            "actions": [
-                "dynamodb:BatchWriteItem",
-                "dynamodb:PutItem",
-                "dynamodb:UpdateItem",
-            ],
+            "description": description,
+            "sid": sid,
+            "actions": actions,
             "resources": [table_arn, index_arn],
             "nag": {
                 "id": "AwsSolutions-IAM5",
-                "reason": (
-                    "This wildcard permission is necessary for our use case because of DynamoDB indexes. "
-                    "Alternatively, we could define the specific index(es)"
-                ),
-                "resources": [
-                    f"Resource::{table_arn}",
-                    f"Resource::{index_arn}",
-                ],
-            },
-        }
-
-    def _get_dynamodb_delete_permissions(self) -> dict:
-        """Get DynamoDB delete permissions with flexible resource resolution."""
-        resolver = self._get_resource_resolver()
-
-        table_name = resolver.get_table_name()
-        aws_region = resolver.get_aws_region()
-        aws_account = resolver.get_aws_account()
-
-        if not table_name:
-            raise ValueError(
-                "DynamoDB table name not found. Please ensure either:\n"
-                "1. 'APP_TABLE_NAME' environment variable is set, OR\n"
-                "2. Enhanced SSM parameters are configured with DynamoDB table name auto-import\n"
-                "This is required for 'dynamodb_delete' permission to generate proper PolicyStatement resources."
-            )
-
-        table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
-        index_arn = (
-            f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
-        )
-
-        return {
-            "name": "DynamoDB",
-            "description": "DynamoDB Delete",
-            "sid": "DynamoDbDeleteAccess",
-            "actions": [
-                "dynamodb:DeleteItem",
-            ],
-            "resources": [table_arn, index_arn],
-            "nag": {
-                "id": "AwsSolutions-IAM5",
-                "reason": "This wildcard permission is necessary for our use case because of DynamoDB indexes.",
-                "resources": [
-                    f"Resource::{table_arn}",
-                    f"Resource::{index_arn}",
-                ],
-            },
-        }
-
-    def _get_dynamodb_read_permissions(self) -> dict:
-        """Get DynamoDB read permissions with flexible resource resolution."""
-        resolver = self._get_resource_resolver()
-
-        table_name = resolver.get_table_name()
-        aws_region = resolver.get_aws_region()
-        aws_account = resolver.get_aws_account()
-
-        if not table_name:
-            raise ValueError(
-                "DynamoDB table name not found. Please ensure either:\n"
-                "1. 'APP_TABLE_NAME' environment variable is set, OR\n"
-                "2. Enhanced SSM parameters are configured with DynamoDB table name auto-import\n"
-                "This is required for 'dynamodb_read' permission to generate proper PolicyStatement resources."
-            )
-
-        # Construct proper resource ARNs
-        table_arn = f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}"
-        index_arn = (
-            f"arn:aws:dynamodb:{aws_region}:{aws_account}:table/{table_name}/index/*"
-        )
-
-        return {
-            "name": "DynamoDB",
-            "description": "DynamoDB Read",
-            "sid": "DynamoDbReadAccess",
-            "actions": [
-                "dynamodb:GetItem",
-                "dynamodb:Scan",
-                "dynamodb:Query",
-                "dynamodb:BatchGetItem",
-            ],
-            "resources": [table_arn, index_arn],
-            "nag": {
-                "id": "AwsSolutions-IAM5",
-                "reason": (
-                    "This wildcard permission is necessary for our use case because of DynamoDB indexes. "
-                    "Alternatively, we could define the specific index(es)"
-                ),
-                "resources": [
-                    f"Resource::{table_arn}",
-                    f"Resource::{index_arn}",
-                ],
+                "reason": "Wildcard permission for DynamoDB table indexes.",
+                "resources": [f"Resource::{table_arn}", f"Resource::{index_arn}"],
             },
         }
 
@@ -539,7 +526,12 @@ class PolicyDocuments:
                 "ssm:GetParametersByPath",
                 "ssm:DescribeParameters",
             ],
-            "resources": [],
+            "resources": ["*"],
+            "nag": {
+                "id": "AwsSolutions-IAM5",
+                "reason": "SSM parameter store read requires wildcard to discover parameters by path.",
+                "resources": ["Resource::*"],
+            },
         }
 
         return permission
