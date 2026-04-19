@@ -214,23 +214,17 @@ class CdkConfig:
         value = self.cdk_context.get(cdk_parameter_name)
 
         print(f"\t📦 Value for {cdk_parameter_name}: {value}")
-        if static_value is not None:
-            value = static_value
-        elif environment_variable_name is not None and not value:
+
+        # Resolution order:
+        # 1. CDK context (-c flag) — already checked above
+        # 2. Environment variable (from deployment JSON or shell)
+        # 3. Static value in config.json (acts as a default)
+        # 4. default_value (last resort)
+        if not value and environment_variable_name is not None:
             value = os.environ.get(environment_variable_name, None)
-            if (value is None or str(value).strip() == "") and required:
-                raise ValueError(
-                    f"\n"
-                    f"  ✗ Missing required environment variable: {environment_variable_name}\n"
-                    f"    Placeholder : {placeholder}\n"
-                    f"    CDK Param   : {cdk_parameter_name}\n"
-                    f"\n"
-                    f"  This variable must be set before CDK can synthesize.\n"
-                    f"  Options:\n"
-                    f"    1. Add '{environment_variable_name}' to your deployment JSON parameters\n"
-                    f"    2. Export it: export {environment_variable_name}=<value>\n"
-                    f"    3. Mark it optional: add '\"required\": false' to the parameter in config.json\n"
-                )
+
+        if not value and static_value is not None:
+            value = static_value
 
         if environment_variable_name is not None and value is not None:
             self._env_vars[environment_variable_name] = value
