@@ -484,14 +484,15 @@ class LambdaStack(IStack):
         # Build SSM parameter prefix
         # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
         namespace = ssm_config.get("namespace")
+        workload = ssm_config.get(
+            "workload",
+            ssm_config.get("organization", self.deployment.workload_name),
+        )
+        environment = ssm_config.get("environment", self.deployment.environment)
+
         if namespace:
             prefix = f"/{namespace}/lambda"
         else:
-            workload = ssm_config.get(
-                "workload",
-                ssm_config.get("organization", self.deployment.workload_name),
-            )
-            environment = ssm_config.get("environment", self.deployment.environment)
             prefix = f"/{workload}/{environment}/lambda"
 
         logger.info(
@@ -528,7 +529,10 @@ class LambdaStack(IStack):
             if function_config and (
                 function_config.docker.file or function_config.docker.image
             ):
-                docker_prefix = f"/{workload}/{environment}/docker-lambdas"
+                if namespace:
+                    docker_prefix = f"/{namespace}/docker-lambdas"
+                else:
+                    docker_prefix = f"/{workload}/{environment}/docker-lambdas"
 
                 ssm.StringParameter(
                     self,
