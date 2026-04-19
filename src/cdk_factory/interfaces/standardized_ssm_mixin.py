@@ -559,8 +559,8 @@ class StandardizedSsmMixin:
         if exports is not None and not isinstance(exports, dict):
             raise ValueError("SSM exports must be a dictionary")
 
-        # Validate import paths (skip name-component keys like workload/environment)
-        name_component_keys = {"workload", "environment", "organization"}
+        # Validate import paths (skip name-component keys like workload/environment/namespace)
+        name_component_keys = {"workload", "environment", "organization", "namespace"}
         for key, value in imports.items():
             if key in name_component_keys:
                 continue
