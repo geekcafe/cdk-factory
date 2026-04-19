@@ -15,11 +15,11 @@ from cdk_factory.stack.stack_factory import StackFactory
 @pytest.fixture(autouse=True)
 def set_environment():
     """Set ENVIRONMENT variable for tests"""
-    os.environ['ENVIRONMENT'] = 'dev'
+    os.environ["ENVIRONMENT"] = "dev"
     yield
     # Cleanup not strictly necessary but good practice
-    if 'ENVIRONMENT' in os.environ:
-        del os.environ['ENVIRONMENT']
+    if "ENVIRONMENT" in os.environ:
+        del os.environ["ENVIRONMENT"]
 
 
 def test_dynamodb_stack_minimal():
@@ -30,7 +30,7 @@ def test_dynamodb_stack_minimal():
             "workload": {
                 "name": "dummy-workload",
                 "environment": "dev",  # Workload-level environment (best practice)
-                "devops": {"name": "dummy-devops"}
+                "devops": {"name": "dummy-devops"},
             },
         }
     )
@@ -60,7 +60,8 @@ def test_dynamodb_stack_minimal():
     assert stack.db_config.use_existing is False
     assert stack.db_config.point_in_time_recovery is True
     assert stack.db_config.enable_delete_protection is True
-    assert stack.db_config.gsi_count == 5
+    # no default gsi's now
+    assert stack.db_config.gsi_count == 0
     assert len(stack.db_config.replica_regions) == 0
 
 
@@ -72,7 +73,7 @@ def test_dynamodb_stack_full_config():
             "workload": {
                 "name": "dummy-workload",
                 "environment": "dev",  # Workload-level environment (best practice)
-                "devops": {"name": "dummy-devops"}
+                "devops": {"name": "dummy-devops"},
             },
         }
     )
@@ -122,7 +123,7 @@ def test_dynamodb_stack_factory():
             "workload": {
                 "name": "dummy-workload",
                 "environment": "dev",  # Workload-level environment (best practice)
-                "devops": {"name": "dummy-devops"}
+                "devops": {"name": "dummy-devops"},
             },
         }
     )
@@ -181,7 +182,7 @@ def test_dynamodb_stack_existing_table():
             "workload": {
                 "name": "dummy-workload",
                 "environment": "dev",  # Workload-level environment (best practice)
-                "devops": {"name": "dummy-devops"}
+                "devops": {"name": "dummy-devops"},
             },
         }
     )
@@ -218,7 +219,7 @@ def test_dynamodb_stack_removal_policy():
             "workload": {
                 "name": "dummy-workload",
                 "environment": "dev",  # Workload-level environment (best practice)
-                "devops": {"name": "dummy-devops"}
+                "devops": {"name": "dummy-devops"},
             },
         }
     )

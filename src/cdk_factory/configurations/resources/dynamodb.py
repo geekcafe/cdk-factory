@@ -4,7 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
-from typing import List
+from typing import Any, Dict, List, Optional
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
 
@@ -91,7 +91,7 @@ class DynamoDBConfig(EnhancedBaseConfig):
         """
         Returns the number of global secondary indexes
         """
-        default_count: int = 5
+        default_count: int = 0
         if self.__config and isinstance(self.__config, dict):
             return int(self.__config.get("gsi_count", default_count))
         return default_count
@@ -106,3 +106,21 @@ class DynamoDBConfig(EnhancedBaseConfig):
         if self.__config and isinstance(self.__config, dict):
             return self.__config.get("ttl_attribute")
         return None
+
+    @property
+    def global_secondary_indexes(self) -> List[Dict[str, Any]]:
+        """
+        Returns the list of named GSI definitions, or an empty list.
+
+        Each entry is a dict with:
+          - index_name (required): Name of the GSI
+          - partition_key (required): {"name": "...", "type": "S|N|B"}
+          - sort_key (optional): {"name": "...", "type": "S|N|B"}
+          - projection (optional): "ALL" | "KEYS_ONLY" | "INCLUDE"
+          - non_key_attributes (optional): list of attribute names (for INCLUDE projection)
+
+        Cannot be used together with gsi_count.
+        """
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("global_secondary_indexes", [])
+        return []
