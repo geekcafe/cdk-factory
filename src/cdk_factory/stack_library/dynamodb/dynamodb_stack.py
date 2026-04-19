@@ -100,7 +100,9 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
             ),
             "billing": dynamodb.Billing.on_demand(),
             "deletion_protection": self.db_config.enable_delete_protection,
-            "point_in_time_recovery": self.db_config.point_in_time_recovery,
+            "point_in_time_recovery_specification": dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=self.db_config.point_in_time_recovery
+            ),
             "removal_policy": removal_policy,
         }
 
