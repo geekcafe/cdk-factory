@@ -13,7 +13,11 @@ class DynamoDBConfig(EnhancedBaseConfig):
     """DynamoDB Resource"""
 
     def __init__(self, config: dict, deployment) -> None:
-        super().__init__(config or {}, resource_type="dynamodb", resource_name=config.get("name", "dynamodb") if config else "dynamodb")
+        super().__init__(
+            config or {},
+            resource_type="dynamodb",
+            resource_name=config.get("name", "dynamodb") if config else "dynamodb",
+        )
         self.__config = config
         self.__deployment = deployment
 
@@ -91,3 +95,14 @@ class DynamoDBConfig(EnhancedBaseConfig):
         if self.__config and isinstance(self.__config, dict):
             return int(self.__config.get("gsi_count", default_count))
         return default_count
+
+    @property
+    def ttl_attribute(self) -> str | None:
+        """
+        Returns the TTL attribute name, or None if TTL is not enabled.
+        When set, DynamoDB auto-deletes items after the epoch-second
+        timestamp stored in this attribute.
+        """
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("ttl_attribute")
+        return None

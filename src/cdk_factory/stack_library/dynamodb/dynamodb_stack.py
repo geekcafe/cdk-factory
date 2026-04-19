@@ -104,6 +104,9 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
             "removal_policy": removal_policy,
         }
 
+        if self.db_config.ttl_attribute:
+            props["time_to_live_attribute"] = self.db_config.ttl_attribute
+
         # Create the table
         logger.info(f"Creating DynamoDB table: {table_name}")
         self.table = dynamodb.TableV2(self, id=table_name, **props)
