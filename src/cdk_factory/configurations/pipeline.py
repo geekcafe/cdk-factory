@@ -172,3 +172,13 @@ class PipelineConfig:
 
         # Return commands appropriate for current environment
         return login_config.get_commands_for_environment()
+
+    @property
+    def cross_account_role_arns(self) -> List[str]:
+        """
+        Returns a list of cross-account IAM role ARNs that pipeline steps
+        (e.g., DNS delegation, SSM lookups) need permission to assume.
+
+        Configured via pipeline.cross_account_role_arns in the config JSON.
+        """
+        return self.pipeline.get("cross_account_role_arns", [])

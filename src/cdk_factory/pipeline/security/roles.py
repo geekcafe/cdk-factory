@@ -143,6 +143,18 @@ class PipelineRoles:
             effect=iam.Effect.ALLOW,
         )
         role.add_to_policy(ecr_policy)
-                        
+
+        # Cross-account assume role permissions for pipeline steps
+        # (e.g., DNS delegation, SSM lookups in target accounts)
+        cross_account_roles = pipeline.cross_account_role_arns
+        if cross_account_roles:
+            role.add_to_policy(
+                iam.PolicyStatement(
+                    sid="CrossAccountAssumeRole",
+                    actions=["sts:AssumeRole"],
+                    resources=cross_account_roles,
+                    effect=iam.Effect.ALLOW,
+                )
+            )
 
         return role
