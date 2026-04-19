@@ -40,12 +40,7 @@ class CodeBuildPolicy:
         for deployment in pipeline.deployments:
             # target accounts
             if deployment.enabled:
-                # TODO: make this a key/value in the config.json
-                # e.g deployment.code_build_role
-                # allow for hard coded value
-                # -- cdk-hnb659fds-deploy-role-111111111-REGION
-                # or do some string interpolation
-                # -- cdk-hnb659fds-deploy-role-{{AWS-ACCOUNT}}-{{AWS-REGION}}
+                # CDK deploy role
                 cdk_role_name = f"cdk-hnb659fds-deploy-role-{deployment.account}-{deployment.region}"
                 policy = iam.PolicyStatement(
                     effect=iam.Effect.ALLOW,
@@ -55,6 +50,17 @@ class CodeBuildPolicy:
                     ],
                 )
                 code_build_policy.append(policy)
+
+        # Cross-account role ARNs declared in the pipeline config
+        # (e.g., for DNS delegation, SSM lookups in target accounts)
+        for role_arn in pipeline.cross_account_role_arns:
+            code_build_policy.append(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["sts:AssumeRole"],
+                    resources=[role_arn],
+                )
+            )
 
         # add the ability to read and write to ecr
 
