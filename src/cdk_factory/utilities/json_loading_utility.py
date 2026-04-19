@@ -7,6 +7,7 @@ MIT License.  See Project Root for the license information.
 import copy
 import json
 import os
+import sys
 from typing import Any, Dict
 
 
@@ -25,10 +26,10 @@ class JsonLoadingUtility:
     Examples:
         # Single file import
         {"__imports__": "./base-config.json", "name": "override"}
-        
+
         # Multiple imports (merged in order)
         {"__imports__": ["base.json", "env-specific.json"]}
-        
+
         # Nested section reference
         {"__imports__": "workload.defaults.lambda"}
     """
@@ -47,6 +48,19 @@ class JsonLoadingUtility:
 
     def __load_json_file(self, path) -> Any:
         if path:
+            if not os.path.exists(path):
+                print(
+                    f"\n"
+                    f"╔══════════════════════════════════════════════════════════════╗\n"
+                    f"║  Config file not found                                      ║\n"
+                    f"╚══════════════════════════════════════════════════════════════╝\n"
+                    f"\n"
+                    f"  Missing: {path}\n"
+                    f"\n"
+                    f"  This is referenced via __inherits__ or __imports__ in your\n"
+                    f"  config.json. Check that the path is correct and the file exists.\n"
+                )
+                sys.exit(1)
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         else:
@@ -80,10 +94,10 @@ class JsonLoadingUtility:
                 if key in section:
                     import_key = key
                     break
-            
+
             if import_key:
                 nested_paths = section.pop(import_key)
-                
+
                 # Support both single path (string) and multiple paths (list)
                 if isinstance(nested_paths, str):
                     nested_paths = [nested_paths]
@@ -92,14 +106,14 @@ class JsonLoadingUtility:
                         f"{import_key} must be a string or list of paths, got {type(nested_paths)}. "
                         f"Example: '{import_key}': './base.json' or '{import_key}': ['base.json', 'overrides.json']"
                     )
-                
+
                 # Process each path and merge results
                 merged_section = None
-                
+
                 for nested_path in nested_paths:
                     nested_path = str(nested_path)
                     # print(f"Resolving parent path: {nested_path}")
-                    
+
                     if nested_path.endswith(".json"):
                         nested_root_path = os.path.join(self.base_path, nested_path)
                         nested_section = self.__load_json_file(nested_root_path)
@@ -114,26 +128,32 @@ class JsonLoadingUtility:
                                 nested_section.append(file_section)
                         # print("done with nested sections")
                     else:
-                        nested_section = self.get_nested_config(root_config, nested_path)
+                        nested_section = self.get_nested_config(
+                            root_config, nested_path
+                        )
 
                     nested_section_resolved = self.resolve_references(
                         nested_section, root_config
                     )
-                    
+
                     # Merge resolved sections
                     if merged_section is None:
                         merged_section = nested_section_resolved
                     else:
                         # Merge logic based on type
-                        if isinstance(merged_section, dict) and isinstance(nested_section_resolved, dict):
+                        if isinstance(merged_section, dict) and isinstance(
+                            nested_section_resolved, dict
+                        ):
                             self.merge_sections(merged_section, nested_section_resolved)
-                        elif isinstance(merged_section, list) and isinstance(nested_section_resolved, list):
+                        elif isinstance(merged_section, list) and isinstance(
+                            nested_section_resolved, list
+                        ):
                             merged_section.extend(nested_section_resolved)
                         else:
                             raise RuntimeError(
                                 f"Cannot merge incompatible types: {type(merged_section)} and {type(nested_section_resolved)}"
                             )
-                
+
                 # Apply any additional properties from the section
                 if len(section) > 0 and isinstance(merged_section, dict):
                     merged_section.update(section)
@@ -226,7 +246,7 @@ class JsonLoadingUtility:
                 if isinstance(k, str):
                     for find_str, replace_str in replacements.items():
                         new_key = new_key.replace(find_str, replace_str)
-                
+
                 # Recursively process the value
                 new_value = JsonLoadingUtility.recursive_replace(v, replacements)
                 result[new_key] = new_value
