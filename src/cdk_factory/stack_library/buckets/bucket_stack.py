@@ -153,11 +153,16 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
         }
 
         if auto_export:
-            # Build SSM parameter paths from workload/environment/stack-name
-            workload = ssm_config.get("workload", self.deployment.workload_name)
-            environment = ssm_config.get("environment", self.deployment.environment)
+            # Build SSM parameter paths
+            # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
+            namespace = ssm_config.get("namespace")
             stack_name = self.stack_config.name
-            prefix = f"/{workload}/{environment}/s3/{stack_name}"
+            if namespace:
+                prefix = f"/{namespace}/s3/{stack_name}"
+            else:
+                workload = ssm_config.get("workload", self.deployment.workload_name)
+                environment = ssm_config.get("environment", self.deployment.environment)
+                prefix = f"/{workload}/{environment}/s3/{stack_name}"
 
             for export_key, export_value in known_key_values.items():
                 parameter_path = f"{prefix}/{export_key}"

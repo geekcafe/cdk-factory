@@ -482,12 +482,17 @@ class LambdaStack(IStack):
             return
 
         # Build SSM parameter prefix
-        # Try 'workload' first, fall back to 'organization' for backward compatibility
-        workload = ssm_config.get(
-            "workload", ssm_config.get("organization", self.deployment.workload_name)
-        )
-        environment = ssm_config.get("environment", self.deployment.environment)
-        prefix = f"/{workload}/{environment}/lambda"
+        # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
+        namespace = ssm_config.get("namespace")
+        if namespace:
+            prefix = f"/{namespace}/lambda"
+        else:
+            workload = ssm_config.get(
+                "workload",
+                ssm_config.get("organization", self.deployment.workload_name),
+            )
+            environment = ssm_config.get("environment", self.deployment.environment)
+            prefix = f"/{workload}/{environment}/lambda"
 
         logger.info(
             f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}"

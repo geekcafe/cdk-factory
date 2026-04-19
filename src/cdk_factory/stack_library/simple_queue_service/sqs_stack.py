@@ -171,11 +171,23 @@ class SQSStack(IStack):
     ) -> None:
         """Publish queue ARN and URL to SSM Parameter Store.
 
-        Uses the pattern /{workload}/{environment}/sqs/{queue-name}/arn
-        and /{workload}/{environment}/sqs/{queue-name}/url.
+        Uses the pattern /{namespace}/sqs/{queue-name}/arn
+        and /{namespace}/sqs/{queue-name}/url.
         For DLQs, the suffix is {queue-name}-dlq.
+
+        Namespace is read from the stack config's ssm.namespace field,
+        falling back to {workload}/{environment} for backward compatibility.
         """
-        prefix = f"/{self.deployment.workload_name}/{self.deployment.environment}/sqs"
+        ssm_config = (
+            self.stack_config.dictionary.get("ssm", {}) if self.stack_config else {}
+        )
+        namespace = ssm_config.get("namespace")
+        if namespace:
+            prefix = f"/{namespace}/sqs"
+        else:
+            prefix = (
+                f"/{self.deployment.workload_name}/{self.deployment.environment}/sqs"
+            )
         suffix = f"{queue_config.name}-dlq" if is_dlq else queue_config.name
 
         ssm.StringParameter(

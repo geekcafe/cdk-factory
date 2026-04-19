@@ -471,15 +471,21 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 .get("ssm", {})
                 .get("imports", {})
             )
-            workload = ssm_imports_config.get(
-                "workload",
-                ssm_imports_config.get("organization", self.deployment.workload_name),
-            )
-            environment = ssm_imports_config.get(
-                "environment", self.deployment.environment
-            )
-
-            ssm_path = f"/{workload}/{environment}/lambda/{lambda_name}/arn"
+            # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
+            namespace = ssm_imports_config.get("namespace")
+            if namespace:
+                ssm_path = f"/{namespace}/lambda/{lambda_name}/arn"
+            else:
+                workload = ssm_imports_config.get(
+                    "workload",
+                    ssm_imports_config.get(
+                        "organization", self.deployment.workload_name
+                    ),
+                )
+                environment = ssm_imports_config.get(
+                    "environment", self.deployment.environment
+                )
+                ssm_path = f"/{workload}/{environment}/lambda/{lambda_name}/arn"
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
 
             try:
