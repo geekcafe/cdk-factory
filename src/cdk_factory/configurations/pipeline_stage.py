@@ -61,33 +61,14 @@ class PipelineStageConfig:
     @property
     def stable_id(self) -> str:
         """
-        Returns a stable construct ID for the stage based on stack names.
-        This ensures CloudFormation logical IDs don't change when stage names are renamed.
-        
-        Uses the first stack's name if available, otherwise falls back to a sanitized stage name.
+        Returns a stable construct ID for the stage.
+        Uses the stage name directly — this is the most predictable
+        and readable approach for CodePipeline stage naming.
         """
         import re
-        
-        # Try to use the first stack name as the stable ID
-        if self.stacks and len(self.stacks) > 0:
-            # Get the first stack's name and sanitize it for use as construct ID
-            stack_name = self.stacks[0].name
-            # Remove environment/workload prefix if present for cleaner IDs
-            # e.g., "prod-workload-rds" -> "rds"
-            parts = stack_name.split('-')
-            if len(parts) > 2:
-                # Use the last meaningful part (e.g., "rds", "vpc", "ecs")
-                stable_name = parts[-1]
-            else:
-                stable_name = stack_name
-            
-            # Sanitize: remove any non-alphanumeric characters except hyphens
-            stable_name = re.sub(r'[^a-zA-Z0-9-]', '', stable_name)
-            return stable_name
-        
-        # Fallback: use sanitized stage name (shouldn't happen if stage has stacks)
-        sanitized = re.sub(r'[^a-zA-Z0-9-]', '', self.name)
-        return sanitized
+
+        # Sanitize: remove any non-alphanumeric characters except hyphens
+        return re.sub(r"[^a-zA-Z0-9-]", "", self.name)
 
     @property
     def enabled(self) -> bool:
@@ -149,7 +130,7 @@ class PipelineStageConfig:
     def builds(self) -> List[Dict[str, Any]]:
         """
         Returns the builds configured for this stage.
-        
+
         If the stage has a "builds" array of strings, resolve them to the
         corresponding build objects defined at workload["builds"].
         Otherwise, return an empty list.
@@ -171,7 +152,9 @@ class PipelineStageConfig:
                 if ref in by_name:
                     resolved.append(by_name[ref])
                 else:
-                    raise ValueError(f"Build '{ref}' referenced by stage '{self.name}' not found in workload.builds")
+                    raise ValueError(
+                        f"Build '{ref}' referenced by stage '{self.name}' not found in workload.builds"
+                    )
             elif isinstance(ref, dict):
                 # Allow inline build definitions at the stage level as a fallback
                 resolved.append(ref)
