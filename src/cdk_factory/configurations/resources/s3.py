@@ -51,10 +51,18 @@ class S3BucketConfig(EnhancedBaseConfig):
         return value
 
     @property
-    def exists(self) -> bool:
-        """Flag if it's an existing bucket"""
+    def use_existing(self) -> bool:
+        """Flag if we should import an existing bucket rather than create one.
+        Accepts both 'use_existing' (preferred) and 'exists' (deprecated) for
+        backward compatibility."""
+        # Prefer 'use_existing', fall back to 'exists'
+        value = self.__config.get("use_existing", self.__config.get("exists", "false"))
+        return str(value).lower() == "true"
 
-        return str(self.__config.get("exists", "false")).lower() == "true"
+    @property
+    def exists(self) -> bool:
+        """Deprecated: use 'use_existing' instead."""
+        return self.use_existing
 
     @property
     def enable_event_bridge(self) -> bool:
@@ -125,7 +133,7 @@ class S3BucketConfig(EnhancedBaseConfig):
         value = self.config.get("removal_policy", "retain")
         if isinstance(value, str):
             value = value.lower()
-        
+
         if value == "destroy":
             return cdk.RemovalPolicy.DESTROY
         elif value == "snapshot":
@@ -164,7 +172,7 @@ class S3BucketConfig(EnhancedBaseConfig):
                     block_public_acls=False,
                     block_public_policy=False,
                     ignore_public_acls=False,
-                    restrict_public_buckets=False
+                    restrict_public_buckets=False,
                 )
             elif value.lower() == "block_acls":
                 return s3.BlockPublicAccess.BLOCK_ACLS

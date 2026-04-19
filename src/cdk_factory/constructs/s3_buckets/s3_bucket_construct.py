@@ -37,7 +37,7 @@ class S3BucketConstruct(Construct):
         )
 
         bucket: s3.IBucket
-        if self.bucket_config.exists:
+        if self.bucket_config.use_existing:
             logger.info("using an existing bucket")
             bucket = s3.Bucket.from_bucket_name(
                 self,
@@ -90,5 +90,3 @@ class S3BucketConstruct(Construct):
             )
 
         return True
-
-        

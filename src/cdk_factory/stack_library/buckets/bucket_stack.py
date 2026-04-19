@@ -55,12 +55,14 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
 
         self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
 
-        # Validate: if exists is true, name must be provided
-        if self.bucket_config.exists:
+        # Validate: if use_existing is true, name must be provided
+        if self.bucket_config.use_existing:
             try:
                 _ = self.bucket_config.name
             except ValueError:
-                raise ValueError("Bucket import requires 'name' when 'exists' is true")
+                raise ValueError(
+                    "Bucket import requires 'name' when 'use_existing' is true"
+                )
 
         # Use stable construct ID to prevent CloudFormation logical ID changes on pipeline rename
         # Bucket recreation would cause data loss, so construct ID must be stable
