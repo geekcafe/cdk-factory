@@ -38,7 +38,7 @@ class JsonLoadingUtility:
         self.path = path
         self.base_path = os.path.dirname(path)
         # Support both __imports__ (preferred) and __inherits__ (legacy)
-        self.import_keys = ["__imports__", "__inherits__"]
+        self.import_keys = ["__imports__", "__inherits__", "__import__", "__inherit__"]
 
     def load(self):
         """Load and parse the JSON object for nested resources."""
@@ -57,7 +57,7 @@ class JsonLoadingUtility:
                     f"\n"
                     f"  Missing: {path}\n"
                     f"\n"
-                    f"  This is referenced via __inherits__ or __imports__ in your\n"
+                    f"  This is referenced via __inherits__, __inherit__, __import__ or __imports__ in your\n"
                     f"  config.json. Check that the path is correct and the file exists.\n"
                 )
                 sys.exit(1)
