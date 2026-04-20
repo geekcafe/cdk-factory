@@ -448,7 +448,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
 
         ssm_module.StringParameter(
             self,
-            f"{self.id}-hosted-zone-id",
+            f"{stack_name}-hosted-zone-id",
             parameter_name=f"{prefix}/hosted-zone-id",
             string_value=self.hosted_zone.hosted_zone_id,
             description=f"Route53 hosted-zone-id for {stack_name}",

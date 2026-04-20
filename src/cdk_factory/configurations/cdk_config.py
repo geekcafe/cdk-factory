@@ -209,11 +209,16 @@ class CdkConfig:
         data: Any, file_path: str, _path: str = ""
     ) -> None:
         """Scan resolved config for remaining {{...}} tokens and raise if found."""
+        # Keys to skip — these contain placeholders resolved by a different pipeline:
+        # - cdk: contains placeholder definitions
+        # - deployments: contains stack configs with deployment-level placeholders
+        #   resolved later by deploy.py from deployment.*.json parameters
+        SKIP_KEYS = {"cdk", "deployments"}
+
         pattern = re.compile(r"\{\{([^}]+)\}\}")
         if isinstance(data, dict):
             for key, value in data.items():
-                # Skip the cdk.parameters block — it legitimately contains placeholder definitions
-                if key == "cdk":
+                if key in SKIP_KEYS:
                     continue
                 current_path = f"{_path}.{key}" if _path else key
                 CdkConfig._check_unresolved_placeholders(value, file_path, current_path)
