@@ -262,18 +262,22 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         return attr_type
 
     def _export_ssm_parameters(self):
-        """Export DynamoDB resources to SSM using enhanced SSM parameter mixin"""
+        """Export DynamoDB resources to SSM using standardized top-level SSM config"""
         if not self.table:
             return
 
-        # Setup enhanced SSM integration with proper resource type and name
-        # Use "app-table" as resource identifier for SSM paths, not the full table name
+        if not self.stack_config.ssm_auto_export:
+            logger.info("SSM auto-export is not enabled for DynamoDB stack")
+            return
+
+        # Setup SSM integration using the top-level ssm block via stack_config
+        # Path pattern: /{namespace}/{resource_type}/{stack_name}/{attribute}
 
         self.setup_ssm_integration(
             scope=self,
-            config=self.stack_config.dictionary.get("dynamodb", {}),
+            config=self.stack_config.dictionary,
             resource_type="dynamodb",
-            resource_name="app-table",
+            resource_name=self.stack_config.name,
         )
 
         # Prepare resource values for export

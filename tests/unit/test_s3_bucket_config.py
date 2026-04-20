@@ -1,5 +1,5 @@
 """
-Unit tests for S3BucketConfig use_existing backward compatibility.
+Unit tests for S3BucketConfig use_existing (canonical pattern only).
 """
 
 from cdk_factory.configurations.resources.s3 import S3BucketConfig
@@ -13,16 +13,14 @@ class TestS3BucketConfig:
         config = S3BucketConfig({"name": "my-bucket", "use_existing": "true"})
         assert config.use_existing is True
 
-    def test_exists_fallback(self):
-        """Verify deprecated 'exists' field is used as fallback."""
+    def test_exists_key_ignored(self):
+        """Verify deprecated 'exists' key does NOT affect use_existing."""
         config = S3BucketConfig({"name": "my-bucket", "exists": "true"})
-        assert config.use_existing is True
+        assert config.use_existing is False
 
-    def test_use_existing_precedence(self):
-        """Verify use_existing takes precedence over exists."""
-        config = S3BucketConfig(
-            {"name": "my-bucket", "use_existing": "false", "exists": "true"}
-        )
+    def test_use_existing_false(self):
+        """Verify use_existing='false' returns False."""
+        config = S3BucketConfig({"name": "my-bucket", "use_existing": "false"})
         assert config.use_existing is False
 
     def test_neither_field(self):

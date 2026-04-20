@@ -52,7 +52,7 @@ class TestApiGatewaySSMLambdaImport:
         self, app, deployment_config, workload_config, monkeypatch
     ):
         """Test API Gateway imports Lambda via lambda_name auto-discovery."""
-        
+
         # Mock SSM parameter retrieval (in real scenario, Lambda stack would have created these)
         monkeypatch.setenv("CDK_DEFAULT_ACCOUNT", "123456789012")
         monkeypatch.setenv("CDK_DEFAULT_REGION", "us-east-1")
@@ -61,24 +61,22 @@ class TestApiGatewaySSMLambdaImport:
             "name": "test-workload",
             "description": "Test workload",
         }
-        
+
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
+            "ssm": {
+                "auto_export": True,
+                "imports": {
+                    "organization": "/test-workload/test/organization",
+                    "environment": "/test-workload/test/environment",
+                },
+            },
             "api_gateway": {
                 "name": "test-api",
                 "description": "Test API Gateway with SSM Lambda import",
                 "api_type": "REST",
                 "stage_name": "prod",
-                "ssm": {
-                    "enabled": True,
-                    "organization": "test-workload",
-                    "environment": "test",
-                    "imports": {
-                        "organization": "/test-workload/test/organization",
-                        "environment": "/test-workload/test/environment",
-                    },
-                },
                 "routes": [
                     {
                         "path": "/health",
@@ -94,16 +92,16 @@ class TestApiGatewaySSMLambdaImport:
                 ],
             },
         }
-        
+
         stack_config = StackConfig(stack=stack_dict, workload=workload_dict)
-        
+
         # Create API Gateway stack
         stack = ApiGatewayStack(
             scope=app,
             id="test-api-gateway-stack",
             env=Environment(account="123456789012", region="us-east-1"),
         )
-        
+
         # Build the stack - in real scenario SSM would have the Lambda ARN
         # The stack will create SSM parameter lookups
         stack.build(
@@ -111,13 +109,13 @@ class TestApiGatewaySSMLambdaImport:
             deployment=deployment_config,
             workload=workload_config,
         )
-        
+
         # Synthesize to verify structure
         template = Template.from_stack(stack)
-        
+
         # Verify API Gateway was created
         template.has_resource("AWS::ApiGateway::RestApi", {})
-        
+
         # Verify that the route was configured (even though Lambda import is dynamic)
         # The method should be created with Lambda integration
         template.has_resource_properties(
@@ -131,12 +129,12 @@ class TestApiGatewaySSMLambdaImport:
         self, app, deployment_config, workload_config
     ):
         """Test API Gateway imports Lambda via explicit SSM path."""
-        
+
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload",
         }
-        
+
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
@@ -156,29 +154,29 @@ class TestApiGatewaySSMLambdaImport:
                 ],
             },
         }
-        
+
         stack_config = StackConfig(stack=stack_dict, workload=workload_dict)
-        
+
         # Create API Gateway stack
         stack = ApiGatewayStack(
             scope=app,
             id="test-api-gateway-explicit-ssm",
             env=Environment(account="123456789012", region="us-east-1"),
         )
-        
+
         # Build the stack
         stack.build(
             stack_config=stack_config,
             deployment=deployment_config,
             workload=workload_config,
         )
-        
+
         # Synthesize to verify structure
         template = Template.from_stack(stack)
-        
+
         # Verify API Gateway was created
         template.has_resource("AWS::ApiGateway::RestApi", {})
-        
+
         # Verify that the route was configured
         template.has_resource_properties(
             "AWS::ApiGateway::Method",
@@ -191,12 +189,12 @@ class TestApiGatewaySSMLambdaImport:
         self, app, deployment_config, workload_config
     ):
         """Test API Gateway still supports legacy pattern of creating Lambda inline."""
-        
+
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload",
         }
-        
+
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
@@ -217,29 +215,29 @@ class TestApiGatewaySSMLambdaImport:
                 ],
             },
         }
-        
+
         stack_config = StackConfig(stack=stack_dict, workload=workload_dict)
-        
+
         # Create API Gateway stack
         stack = ApiGatewayStack(
             scope=app,
             id="test-api-gateway-legacy",
             env=Environment(account="123456789012", region="us-east-1"),
         )
-        
+
         # Build the stack
         stack.build(
             stack_config=stack_config,
             deployment=deployment_config,
             workload=workload_config,
         )
-        
+
         # Synthesize to verify structure
         template = Template.from_stack(stack)
-        
+
         # Verify API Gateway was created
         template.has_resource("AWS::ApiGateway::RestApi", {})
-        
+
         # Verify Lambda function was created inline (legacy pattern)
         template.has_resource_properties(
             "AWS::Lambda::Function",
@@ -247,7 +245,7 @@ class TestApiGatewaySSMLambdaImport:
                 "Handler": "app.lambda_handler",
             },
         )
-        
+
         # Verify that the route was configured
         template.has_resource_properties(
             "AWS::ApiGateway::Method",
@@ -260,27 +258,27 @@ class TestApiGatewaySSMLambdaImport:
         self, app, deployment_config, workload_config
     ):
         """Test API Gateway with mix of SSM-imported and inline Lambdas."""
-        
+
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload",
         }
-        
+
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
+            "ssm": {
+                "auto_export": True,
+                "imports": {
+                    "organization": "/test-workload/test/organization",
+                    "environment": "/test-workload/test/environment",
+                },
+            },
             "api_gateway": {
                 "name": "test-api",
                 "description": "Test API Gateway with mixed Lambda sources",
                 "api_type": "REST",
                 "stage_name": "prod",
-                "ssm": {
-                    "enabled": True,
-                    "imports": {
-                        "organization": "/test-workload/test/organization",
-                        "environment": "/test-workload/test/environment",
-                    },
-                },
                 "routes": [
                     {
                         "path": "/imported",
@@ -300,29 +298,29 @@ class TestApiGatewaySSMLambdaImport:
                 ],
             },
         }
-        
+
         stack_config = StackConfig(stack=stack_dict, workload=workload_dict)
-        
+
         # Create API Gateway stack
         stack = ApiGatewayStack(
             scope=app,
             id="test-api-gateway-mixed",
             env=Environment(account="123456789012", region="us-east-1"),
         )
-        
+
         # Build the stack
         stack.build(
             stack_config=stack_config,
             deployment=deployment_config,
             workload=workload_config,
         )
-        
+
         # Synthesize to verify structure
         template = Template.from_stack(stack)
-        
+
         # Verify API Gateway was created
         template.has_resource("AWS::ApiGateway::RestApi", {})
-        
+
         # Verify inline Lambda was created
         template.has_resource_properties(
             "AWS::Lambda::Function",
@@ -330,7 +328,7 @@ class TestApiGatewaySSMLambdaImport:
                 "Handler": "app.lambda_handler",
             },
         )
-        
+
         # Verify both routes were configured
         # Should have 2 methods (plus OPTIONS for CORS = 4 total potentially)
         methods = [
@@ -339,7 +337,9 @@ class TestApiGatewaySSMLambdaImport:
             if res.get("Type") == "AWS::ApiGateway::Method"
             and res.get("Properties", {}).get("HttpMethod") in ["GET", "POST"]
         ]
-        assert len(methods) >= 2, f"Expected at least 2 methods (GET and POST), found {len(methods)}"
+        assert (
+            len(methods) >= 2
+        ), f"Expected at least 2 methods (GET and POST), found {len(methods)}"
 
 
 if __name__ == "__main__":

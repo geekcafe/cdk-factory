@@ -524,9 +524,8 @@ class PipelineFactoryStack(IStack):
                 f"    - Contain only letters, numbers, and hyphens\n"
                 f"    - No dots, underscores, spaces, or special characters\n"
                 f"\n"
-                f"  Fix: Update the stack name in your deployment config or stack config.\n"
-                f"  If using naming.stack_pattern, check that the pattern and prefix\n"
-                f"  produce a valid name.\n"
+                f"  Fix: Update the 'name' field in your stack config to a valid\n"
+                f"  CloudFormation stack name (with placeholders if needed).\n"
             )
 
     def __setup_stacks(
@@ -567,15 +566,11 @@ class PipelineFactoryStack(IStack):
                         if group_stack_config.kwargs:
                             kwargs = group_stack_config.kwargs
                         else:
-                            # Check for explicit stack_name override first
-                            cf_stack_name = group_stack_config.dictionary.get(
-                                "stack_name"
+                            cf_stack_name = group_stack_config.name
+                            self._validate_stack_name(
+                                cf_stack_name,
+                                f"grouped stack config '{group_stack_config.name}' in stage '{stage_config.name}'",
                             )
-                            if not cf_stack_name:
-                                cf_stack_name = deployment.build_stack_name(
-                                    stage_name=stage_config.name,
-                                    stack_name=group_stack_config.name,
-                                )
                             kwargs["stack_name"] = cf_stack_name
 
                         cf_stack = factory.load_module(
@@ -606,13 +601,7 @@ class PipelineFactoryStack(IStack):
                     if stack_config.kwargs:
                         kwargs = stack_config.kwargs
                     else:
-                        # Check for explicit stack_name override first
-                        cf_stack_name = stack_config.dictionary.get("stack_name")
-                        if not cf_stack_name:
-                            cf_stack_name = deployment.build_stack_name(
-                                stage_name=stage_config.name,
-                                stack_name=stack_config.name,
-                            )
+                        cf_stack_name = stack_config.name
                         self._validate_stack_name(
                             cf_stack_name,
                             f"stack config '{stack_config.name}' in stage '{stage_config.name}'",

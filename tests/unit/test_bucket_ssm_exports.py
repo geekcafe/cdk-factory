@@ -1,6 +1,8 @@
 """
 Unit tests for S3 Bucket Stack SSM export path generation.
 Covers namespace mode, legacy mode, and disabled/no-config scenarios.
+
+Updated: SSM config is now at the stack top level, not nested inside bucket.
 """
 
 import pytest
@@ -46,12 +48,12 @@ class TestBucketSSMExports:
         stack_config = StackConfig(
             {
                 "name": "my-bucket-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "namespace": "my-ns",
+                },
                 "bucket": {
                     "name": "my-test-bucket",
-                    "ssm": {
-                        "auto_export": True,
-                        "namespace": "my-ns",
-                    },
                 },
             },
             workload=workload_config.dictionary,
@@ -76,12 +78,12 @@ class TestBucketSSMExports:
         stack_config = StackConfig(
             {
                 "name": "my-bucket-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "namespace": "my-ns",
+                },
                 "bucket": {
                     "name": "my-test-bucket",
-                    "ssm": {
-                        "auto_export": True,
-                        "namespace": "my-ns",
-                    },
                 },
             },
             workload=workload_config.dictionary,
@@ -102,15 +104,15 @@ class TestBucketSSMExports:
     def test_bucket_ssm_legacy_bucket_name(
         self, app, deployment_config, workload_config
     ):
-        """Verify legacy SSM path for bucket_name."""
+        """Verify legacy SSM path for bucket_name (no namespace, falls back to workload/env)."""
         stack_config = StackConfig(
             {
                 "name": "my-bucket-stack",
+                "ssm": {
+                    "auto_export": True,
+                },
                 "bucket": {
                     "name": "my-test-bucket",
-                    "ssm": {
-                        "auto_export": True,
-                    },
                 },
             },
             workload=workload_config.dictionary,
@@ -135,11 +137,11 @@ class TestBucketSSMExports:
         stack_config = StackConfig(
             {
                 "name": "my-bucket-stack",
+                "ssm": {
+                    "auto_export": False,
+                },
                 "bucket": {
                     "name": "my-test-bucket",
-                    "ssm": {
-                        "auto_export": False,
-                    },
                 },
             },
             workload=workload_config.dictionary,

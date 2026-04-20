@@ -28,6 +28,14 @@ class DeploymentConfig:
         self.__load()
 
     def __load(self):
+        # Reject legacy naming block
+        if "naming" in self.__deployment:
+            raise ValueError(
+                "The 'naming' block has been removed from cdk-factory. "
+                "Stack configs must use fully-qualified names in the 'name' field. "
+                "See MIGRATION.md."
+            )
+
         # Validate environment consistency
         deployment_env = self.__deployment.get("environment")
         workload_env = self.__workload.get("environment")
@@ -290,50 +298,6 @@ class DeploymentConfig:
         return value
 
     @property
-    def naming_prefix(self) -> str:
-        """Gets the naming prefix from the naming config block.
-
-        Reads ``naming.prefix`` from the deployment config dict.
-        Falls back to the legacy ``naming_prefix`` top-level key for
-        backward compatibility.  If neither is set, returns the default
-        ``{workload_name}-{environment}`` pattern.
-        """
-        naming = self.__deployment.get("naming", {})
-        prefix = naming.get("prefix")
-        if prefix:
-            return prefix
-
-        # Legacy top-level key
-        legacy = self.__deployment.get("naming_prefix")
-        if legacy:
-            return legacy
-
-        # Default
-        return f"{self.workload_name}-{self.environment}"
-
-    @property
-    def stack_pattern(self) -> str:
-        """Gets the stack naming pattern from the naming config block.
-
-        Reads ``naming.stack_pattern`` from the deployment config dict.
-        Default: ``"{prefix}-{stage}-{stack_name}"``.
-        """
-        naming = self.__deployment.get("naming", {})
-        return naming.get("stack_pattern", "{prefix}-{stage}-{stack_name}")
-
-    def build_stack_name(self, stage_name: str, stack_name: str) -> str:
-        """Build a CloudFormation stack name using the configured pattern.
-
-        Formats ``stack_pattern`` with ``prefix``, ``stage``, and
-        ``stack_name`` placeholders.
-        """
-        return self.stack_pattern.format(
-            prefix=self.naming_prefix,
-            stage=stage_name,
-            stack_name=stack_name,
-        )
-
-    @property
     def naming_to_lower_case(self) -> bool:
         """Gets the naming prefix"""
         value = str(self.__deployment.get("naming_to_lower_case")).lower() == "true"
@@ -359,9 +323,6 @@ class DeploymentConfig:
         Builds a name based off the "name" and then specific fields
         from workload and pipeline.  It's important that this does not change once we
         go live.
-
-        The ``naming_prefix`` property is available for callers that need
-        the configured prefix (e.g. ``build_stack_name``).
 
         NOTICE - BE CAREFUL
         Changing this can break deployments!!  Resources and stack names use this.

@@ -16,6 +16,11 @@
         "ssm_parameter_name": "/workload/cdk/devops/aws/account/number"
       },
       {
+        "placeholder": "{{DEVOPS_AWS_ACCOUNT_NAME}}",
+        "cdk_parameter_name": "AccountName",
+        "ssm_parameter_name": "/workload/cdk/devops/aws/account/name"
+      },
+      {
         "placeholder": "{{DEVOPS_REGION}}",
         "cdk_parameter_name": "AccountRegion",
         "ssm_parameter_name": "/workload/cdk/devops/aws/account/region"
@@ -44,6 +49,11 @@
         "placeholder": "{{HOSTED_ZONE_NAME}}",
         "cdk_parameter_name": "HostedZoneName",
         "ssm_parameter_name": "/workload/cdk/app/code/hosted-zone/id"
+      },
+      {
+        "placeholder": "{{ENVIRONMENT}}",
+        "cdk_parameter_name": "Environment",
+        "value": "dev"
       }
     ]
   },

@@ -31,7 +31,8 @@ class StackConfig:
     @property
     def name(self) -> str:
         """
-        Returns the stack name
+        The actual stack name. Used for CDK construct ID and CloudFormation stack name.
+        This is NOT a visual label — use `description` for that.
         """
         value = self.dictionary.get("name")
         if not value:
@@ -41,7 +42,7 @@ class StackConfig:
     @property
     def description(self) -> str | None:
         """
-        Returns the stack description
+        Human-readable label describing what the stack is for.
         """
         return self.dictionary.get("description")
 
@@ -75,15 +76,35 @@ class StackConfig:
     @property
     def dependencies(self) -> List[str]:
         """
-        Returns the stack dependencies
+        Canonical dependency list. Reads from 'depends_on' only.
         """
-        value = self.dictionary.get("dependencies")
+        value = self.dictionary.get("depends_on")
         if value is None:
             return []
         if isinstance(value, list):
             return value
-        else:
-            raise ValueError("Stack dependencies must be a list of strings")
+        raise ValueError("depends_on must be a list of strings")
+
+    @property
+    def ssm_config(self) -> dict:
+        """
+        Top-level SSM configuration block.
+        """
+        return self.dictionary.get("ssm", {})
+
+    @property
+    def ssm_namespace(self) -> str | None:
+        """
+        SSM namespace from top-level ssm block.
+        """
+        return self.ssm_config.get("namespace")
+
+    @property
+    def ssm_auto_export(self) -> bool:
+        """
+        Whether auto-export is enabled.
+        """
+        return str(self.ssm_config.get("auto_export", False)).lower() == "true"
 
     def build_id(self) -> str:
         """

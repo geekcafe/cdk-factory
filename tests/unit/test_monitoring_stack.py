@@ -463,6 +463,11 @@ class TestMonitoringStack:
         """Test Monitoring stack with SSM parameter exports"""
         stack_config = StackConfig(
             {
+                "ssm": {
+                    "exports": {
+                        "sns_topic_export-topic": "/test/monitoring/topic-arn",
+                    },
+                },
                 "monitoring": {
                     "name": "ssm-export-monitoring",
                     "sns_topics": [
@@ -470,12 +475,7 @@ class TestMonitoringStack:
                             "name": "export-topic",
                         }
                     ],
-                    "ssm": {
-                        "exports": {
-                            "sns_topic_export-topic": "/test/monitoring/topic-arn",
-                        },
-                    },
-                }
+                },
             },
             workload=workload_config.dictionary,
         )

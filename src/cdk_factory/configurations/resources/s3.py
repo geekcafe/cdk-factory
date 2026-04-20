@@ -4,6 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import re
 import aws_cdk as cdk
 from aws_cdk import aws_s3 as s3
 
@@ -48,21 +49,34 @@ class S3BucketConfig(EnhancedBaseConfig):
         if not value:
             raise ValueError("Bucket name is not defined in the configuration")
 
+        # Skip validation for unresolved placeholders
+        if "{{" not in value:
+            if len(value) < 3 or len(value) > 63:
+                raise ValueError(
+                    f"S3 bucket name '{value}' must be between 3 and 63 characters. "
+                    f"Got {len(value)} characters."
+                )
+            if (
+                not re.match(r"^[a-z0-9][a-z0-9\.\-]*[a-z0-9]$", value)
+                and len(value) > 2
+            ):
+                raise ValueError(
+                    f"S3 bucket name '{value}' must contain only lowercase letters, "
+                    "numbers, hyphens, and dots, and must start and end with a "
+                    "letter or number."
+                )
+            if ".." in value:
+                raise ValueError(
+                    f"S3 bucket name '{value}' must not contain consecutive dots."
+                )
+
         return value
 
     @property
     def use_existing(self) -> bool:
-        """Flag if we should import an existing bucket rather than create one.
-        Accepts both 'use_existing' (preferred) and 'exists' (deprecated) for
-        backward compatibility."""
-        # Prefer 'use_existing', fall back to 'exists'
-        value = self.__config.get("use_existing", self.__config.get("exists", "false"))
+        """Flag if we should import an existing bucket rather than create one."""
+        value = self.__config.get("use_existing", "false")
         return str(value).lower() == "true"
-
-    @property
-    def exists(self) -> bool:
-        """Deprecated: use 'use_existing' instead."""
-        return self.use_existing
 
     @property
     def enable_event_bridge(self) -> bool:

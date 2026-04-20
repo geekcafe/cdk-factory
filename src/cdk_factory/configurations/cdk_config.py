@@ -5,6 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 
@@ -197,8 +198,38 @@ class CdkConfig:
             # add the original cdk back
             config["cdk"] = cdk
 
+        # Check for unresolved placeholders after resolution
+        self._check_unresolved_placeholders(config, self._resolved_config_file_path)
+
         JsonLoadingUtility.save(config, path)
         return config
+
+    @staticmethod
+    def _check_unresolved_placeholders(
+        data: Any, file_path: str, _path: str = ""
+    ) -> None:
+        """Scan resolved config for remaining {{...}} tokens and raise if found."""
+        pattern = re.compile(r"\{\{([^}]+)\}\}")
+        if isinstance(data, dict):
+            for key, value in data.items():
+                # Skip the cdk.parameters block — it legitimately contains placeholder definitions
+                if key == "cdk":
+                    continue
+                current_path = f"{_path}.{key}" if _path else key
+                CdkConfig._check_unresolved_placeholders(value, file_path, current_path)
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                current_path = f"{_path}[{i}]"
+                CdkConfig._check_unresolved_placeholders(item, file_path, current_path)
+        elif isinstance(data, str):
+            match = pattern.search(data)
+            if match:
+                placeholder = match.group(0)
+                raise ValueError(
+                    f"Unresolved placeholder '{placeholder}' found at '{_path}' "
+                    f"in config file '{file_path}'. "
+                    f"Add this parameter to your deployment JSON or config.json."
+                )
 
     def __get_cdk_parameter_value(self, parameter: Dict[str, Any]) -> str | None:
         cdk_parameter_name = parameter.get("cdk_parameter_name", None)

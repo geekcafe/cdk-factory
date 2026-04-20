@@ -11,6 +11,7 @@ from aws_cdk.cx_api import CloudAssembly
 from aws_lambda_powertools import Logger
 
 from cdk_factory.configurations.cdk_config import CdkConfig
+from cdk_factory.configurations.config_validator import ConfigValidator
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.workload import WorkloadConfig
@@ -119,6 +120,7 @@ class WorkloadFactory:
                 if stack.kwargs:
                     kwargs = stack.kwargs
                 print(f"building stack: {stack.name}")
+                ConfigValidator.validate(stack.dictionary)
                 module = factory.load_module(
                     module_name=stack.module,
                     scope=self.app,

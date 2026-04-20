@@ -4,6 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.enhanced_base_config import EnhancedBaseConfig
@@ -35,6 +36,20 @@ class DynamoDBConfig(EnhancedBaseConfig):
 
         if not isinstance(table_name, str):
             raise ValueError("Table name must be a string")
+
+        # Skip validation for unresolved placeholders
+        if "{{" not in table_name:
+            if len(table_name) < 3 or len(table_name) > 255:
+                raise ValueError(
+                    f"DynamoDB table name '{table_name}' must be between 3 and 255 "
+                    f"characters. Got {len(table_name)} characters."
+                )
+            if not re.match(r"^[a-zA-Z0-9_\-\.]+$", table_name):
+                raise ValueError(
+                    f"DynamoDB table name '{table_name}' must contain only "
+                    "alphanumeric characters, underscores, hyphens, and dots."
+                )
+
         return table_name
 
     @property

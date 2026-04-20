@@ -51,17 +51,17 @@ class TestApiGatewaySSMImports:
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
+            "ssm": {
+                "auto_export": True,
+                "imports": {
+                    "namespace": "my-ns",
+                },
+            },
             "api_gateway": {
                 "name": "test-api",
                 "description": "Test API",
                 "api_type": "REST",
                 "stage_name": "prod",
-                "ssm": {
-                    "enabled": True,
-                    "imports": {
-                        "namespace": "my-ns",
-                    },
-                },
                 "routes": [
                     {
                         "path": "/test",

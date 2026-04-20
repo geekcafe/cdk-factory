@@ -25,14 +25,14 @@ class TestLambdaSSMExports:
         workload_dict = {
             "name": "test-workload",
             "description": "Test workload",
-            "devops": {"ci_cd": {"enabled": True}},
+            "devops": {"ci_cd": {"auto_export": True}},
         }
         deployment_dict = {
             "name": "test-deployment",
             "account": "123456789012",
             "region": "us-east-1",
             "environment": "test",
-            "devops": {"ci_cd": {"enabled": True}},
+            "devops": {"ci_cd": {"auto_export": True}},
         }
         return DeploymentConfig(workload=workload_dict, deployment=deployment_dict)
 
@@ -41,7 +41,7 @@ class TestLambdaSSMExports:
         config_dict = {
             "name": "test-workload",
             "description": "Test workload",
-            "devops": {"ci_cd": {"enabled": True}},
+            "devops": {"ci_cd": {"auto_export": True}},
         }
         return WorkloadConfig(config=config_dict)
 
@@ -51,8 +51,8 @@ class TestLambdaSSMExports:
         """Verify namespace SSM path for Lambda ARN."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": True, "namespace": "my-ns"},
+            "auto_export": True,
+            "ssm": {"auto_export": True, "namespace": "my-ns"},
             "resources": [
                 {
                     "name": "test-function",
@@ -85,7 +85,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/lambda/test-function/arn"},
+            {"Name": "/my-ns/lambda/test-lambda-stack/test-function/arn"},
         )
 
     def test_lambda_ssm_namespace_function_name(
@@ -94,8 +94,8 @@ class TestLambdaSSMExports:
         """Verify namespace SSM path for Lambda function-name."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": True, "namespace": "my-ns"},
+            "auto_export": True,
+            "ssm": {"auto_export": True, "namespace": "my-ns"},
             "resources": [
                 {
                     "name": "test-function",
@@ -128,7 +128,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/lambda/test-function/function-name"},
+            {"Name": "/my-ns/lambda/test-lambda-stack/test-function/function-name"},
         )
 
     def test_lambda_ssm_namespace_docker_arn(
@@ -137,8 +137,8 @@ class TestLambdaSSMExports:
         """Verify namespace SSM path for Docker Lambda ARN."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": True, "namespace": "my-ns"},
+            "auto_export": True,
+            "ssm": {"auto_export": True, "namespace": "my-ns"},
             "resources": [
                 {
                     "name": "test-function",
@@ -172,7 +172,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/docker-lambdas/test-function/arn"},
+            {"Name": "/my-ns/docker-lambdas/test-lambda-stack/test-function/arn"},
         )
 
     def test_lambda_ssm_namespace_docker_function_name(
@@ -181,8 +181,8 @@ class TestLambdaSSMExports:
         """Verify namespace SSM path for Docker Lambda function-name."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": True, "namespace": "my-ns"},
+            "auto_export": True,
+            "ssm": {"auto_export": True, "namespace": "my-ns"},
             "resources": [
                 {
                     "name": "test-function",
@@ -216,7 +216,9 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/docker-lambdas/test-function/function-name"},
+            {
+                "Name": "/my-ns/docker-lambdas/test-lambda-stack/test-function/function-name"
+            },
         )
 
     # ── Task 1.2: Legacy mode and disabled tests ──
@@ -225,8 +227,8 @@ class TestLambdaSSMExports:
         """Verify legacy SSM path for Lambda ARN."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": True, "workload": "wl", "environment": "dev"},
+            "auto_export": True,
+            "ssm": {"auto_export": True, "workload": "wl", "environment": "dev"},
             "resources": [
                 {
                     "name": "test-function",
@@ -259,7 +261,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/wl/dev/lambda/test-function/arn"},
+            {"Name": "/wl/dev/lambda/test-lambda-stack/test-function/arn"},
         )
 
     def test_lambda_ssm_legacy_docker_arn(
@@ -268,8 +270,8 @@ class TestLambdaSSMExports:
         """Verify legacy SSM path for Docker Lambda ARN."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": True, "workload": "wl", "environment": "dev"},
+            "auto_export": True,
+            "ssm": {"auto_export": True, "workload": "wl", "environment": "dev"},
             "resources": [
                 {
                     "name": "test-function",
@@ -303,15 +305,15 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/wl/dev/docker-lambdas/test-function/arn"},
+            {"Name": "/wl/dev/docker-lambdas/test-lambda-stack/test-function/arn"},
         )
 
     def test_lambda_ssm_disabled(self, app, deployment_config, workload_config):
         """Verify zero SSM parameters when SSM is disabled."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
-            "ssm": {"enabled": False},
+            "auto_export": True,
+            "ssm": {"auto_export": False},
             "resources": [
                 {
                     "name": "test-function",
@@ -348,7 +350,7 @@ class TestLambdaSSMExports:
         """Verify zero SSM parameters when no SSM block is present."""
         stack_dict = {
             "name": "test-lambda-stack",
-            "enabled": True,
+            "auto_export": True,
             "resources": [
                 {
                     "name": "test-function",

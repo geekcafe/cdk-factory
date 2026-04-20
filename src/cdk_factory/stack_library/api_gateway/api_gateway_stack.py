@@ -466,11 +466,8 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 return self._lambda_arn_cache[lambda_name]
 
             # Build SSM path using convention from lambda_stack
-            ssm_imports_config = (
-                self.stack_config.dictionary.get("api_gateway", {})
-                .get("ssm", {})
-                .get("imports", {})
-            )
+            # Read SSM imports from top-level ssm block via stack_config
+            ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
             # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
             namespace = ssm_imports_config.get("namespace")
             if namespace:
@@ -842,7 +839,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
 
         self.setup_ssm_integration(
             scope=self,
-            config=self.stack_config.dictionary.get("api_gateway", {}),
+            config=self.stack_config.dictionary,
             resource_type="api-gateway",
             resource_name=api_name,
         )

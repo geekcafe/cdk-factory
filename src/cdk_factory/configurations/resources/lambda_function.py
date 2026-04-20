@@ -5,6 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 from aws_lambda_powertools import Logger
@@ -96,6 +97,19 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
             self.__name = self.__config.get("name")
 
         if isinstance(self.__name, str):
+            value = self.__name
+            # Skip validation for unresolved placeholders
+            if value and "{{" not in value:
+                if len(value) < 1 or len(value) > 64:
+                    raise ValueError(
+                        f"Lambda function name '{value}' must be between 1 and 64 "
+                        f"characters. Got {len(value)} characters."
+                    )
+                if not re.match(r"^[a-zA-Z0-9_\-]+$", value):
+                    raise ValueError(
+                        f"Lambda function name '{value}' must contain only "
+                        "alphanumeric characters, hyphens, and underscores."
+                    )
             return self.__name
         return ""
 

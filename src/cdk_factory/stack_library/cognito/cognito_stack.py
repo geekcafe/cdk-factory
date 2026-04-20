@@ -545,10 +545,11 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         )
 
         # Export secret ARN to SSM for cross-stack reference
-        if self.cognito_config.ssm.get("enabled"):
+        ssm_config = self.stack_config.ssm_config
+        if ssm_config.get("auto_export"):
             safe_client_name = client_name.replace("-", "_").replace(" ", "_")
-            org = self.cognito_config.ssm.get("organization", "default")
-            env = self.cognito_config.ssm.get("environment", "dev")
+            org = ssm_config.get("organization", "default")
+            env = ssm_config.get("environment", "dev")
 
             ssm.StringParameter(
                 self,
@@ -559,14 +560,14 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             )
 
     def _export_ssm_parameters(self, user_pool: cognito.UserPool):
-        """Export Cognito resources to SSM using enhanced SSM parameter mixin"""
+        """Export Cognito resources to SSM using top-level ssm config"""
 
-        # Setup enhanced SSM integration with proper resource type and name
-        # Use "user-pool" as resource identifier for SSM paths, not the full pool name
+        # Setup SSM integration using the top-level ssm block via stack_config
+        # Path pattern: /{namespace}/cognito/{stack_name}/{attribute}
 
         self.setup_ssm_integration(
             scope=self,
-            config=self.stack_config.dictionary.get("cognito", {}),
+            config=self.stack_config.dictionary,
             resource_type="cognito",
             resource_name="user-pool",
         )

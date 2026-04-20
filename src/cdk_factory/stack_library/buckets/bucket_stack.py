@@ -140,12 +140,12 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
             logger.info(f"Added bucket policy statement: {statement.get('sid')}")
 
     def _exports(self) -> None:
-        """Exports the bucket name and ARN to SSM"""
-        ssm_config = self.bucket_config.ssm
+        """Exports the bucket name and ARN to SSM using top-level ssm config"""
+        ssm_config = self.stack_config.ssm_config
         exports = ssm_config.get("exports", {})
         if not ssm_config:
             return
-        auto_export = ssm_config.get("auto_export", False)
+        auto_export = self.stack_config.ssm_auto_export
 
         known_key_values = {
             "bucket_name": self.bucket.bucket_name,
@@ -153,15 +153,15 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
         }
 
         if auto_export:
-            # Build SSM parameter paths
-            # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
-            namespace = ssm_config.get("namespace")
+            # Build SSM parameter paths using top-level ssm config
+            # Path pattern: /{namespace}/s3/{stack_name}/{attribute}
+            namespace = self.stack_config.ssm_namespace
             stack_name = self.stack_config.name
             if namespace:
                 prefix = f"/{namespace}/s3/{stack_name}"
             else:
-                workload = ssm_config.get("workload", self.deployment.workload_name)
-                environment = ssm_config.get("environment", self.deployment.environment)
+                workload = self.deployment.workload_name
+                environment = self.deployment.environment
                 prefix = f"/{workload}/{environment}/s3/{stack_name}"
 
             for export_key, export_value in known_key_values.items():

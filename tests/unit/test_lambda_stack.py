@@ -598,7 +598,7 @@ class TestLambdaStackReal:
             "name": "test-lambda-stack",
             "enabled": True,
             "ssm": {
-                "enabled": True,
+                "auto_export": True,
                 "organization": "test-org",
                 "environment": "test",
             },

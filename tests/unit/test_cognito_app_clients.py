@@ -353,6 +353,14 @@ class TestCognitoAppClients:
         stack_config = self._create_stack_config(
             {
                 "name": "test-cognito-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "organization": "my-app",
+                    "environment": "prod",
+                    "exports": {
+                        "user_pool_id": "/my-app/prod/cognito/user-pool/user-pool-id"
+                    },
+                },
                 "cognito": {
                     "user_pool_name": "test-pool",
                     "app_clients": [
@@ -362,14 +370,6 @@ class TestCognitoAppClients:
                             "auth_flows": {"user_srp": True},
                         }
                     ],
-                    "ssm": {
-                        "enabled": True,
-                        "organization": "my-app",
-                        "environment": "prod",
-                        "exports": {
-                            "user_pool_id": "/my-app/prod/cognito/user-pool/user-pool-id"
-                        },
-                    },
                 },
             },
             workload_config,
@@ -401,6 +401,11 @@ class TestCognitoAppClients:
         stack_config = self._create_stack_config(
             {
                 "name": "test-cognito-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "organization": "my-app",
+                    "environment": "prod",
+                },
                 "cognito": {
                     "user_pool_name": "test-pool",
                     "app_clients": [
@@ -410,11 +415,6 @@ class TestCognitoAppClients:
                             "auth_flows": {"admin_user_password": True},
                         }
                     ],
-                    "ssm": {
-                        "enabled": True,
-                        "organization": "my-app",
-                        "environment": "prod",
-                    },
                 },
             },
             workload_config,
@@ -704,6 +704,11 @@ class TestCognitoAppClients:
         stack_config = self._create_stack_config(
             {
                 "name": "test-cognito-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "organization": "test-org",
+                    "environment": "dev",
+                },
                 "cognito": {
                     "user_pool_name": "test-pool",
                     "app_clients": [
@@ -713,11 +718,6 @@ class TestCognitoAppClients:
                             "auth_flows": {"admin_user_password": True},
                         }
                     ],
-                    "ssm": {
-                        "enabled": True,
-                        "organization": "test-org",
-                        "environment": "dev",
-                    },
                 },
             },
             workload_config,
@@ -743,6 +743,14 @@ class TestCognitoAppClients:
         stack_config = self._create_stack_config(
             {
                 "name": "test-cognito-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "organization": "prod-app",
+                    "environment": "prod",
+                    "exports": {
+                        "user_pool_id": "/prod-app/prod/cognito/user-pool/user-pool-id"
+                    },
+                },
                 "cognito": {
                     "user_pool_name": "production-pool",
                     "app_clients": [
@@ -777,14 +785,6 @@ class TestCognitoAppClients:
                             "access_token_validity": {"minutes": 30},
                         },
                     ],
-                    "ssm": {
-                        "enabled": True,
-                        "organization": "prod-app",
-                        "environment": "prod",
-                        "exports": {
-                            "user_pool_id": "/prod-app/prod/cognito/user-pool/user-pool-id"
-                        },
-                    },
                 },
             },
             workload_config,

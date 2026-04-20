@@ -477,7 +477,7 @@ class LambdaStack(IStack):
 
         # Get SSM export configuration
         ssm_config = self.stack_config.dictionary.get("ssm", {})
-        if not ssm_config.get("enabled", False):
+        if not ssm_config.get("auto_export", False):
             logger.info("SSM export is not enabled for this stack")
             return
 
@@ -489,11 +489,12 @@ class LambdaStack(IStack):
             ssm_config.get("organization", self.deployment.workload_name),
         )
         environment = ssm_config.get("environment", self.deployment.environment)
+        stack_name = self.stack_config.name
 
         if namespace:
-            prefix = f"/{namespace}/lambda"
+            prefix = f"/{namespace}/lambda/{stack_name}"
         else:
-            prefix = f"/{workload}/{environment}/lambda"
+            prefix = f"/{workload}/{environment}/lambda/{stack_name}"
 
         logger.info(
             f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}"
@@ -530,9 +531,11 @@ class LambdaStack(IStack):
                 function_config.docker.file or function_config.docker.image
             ):
                 if namespace:
-                    docker_prefix = f"/{namespace}/docker-lambdas"
+                    docker_prefix = f"/{namespace}/docker-lambdas/{stack_name}"
                 else:
-                    docker_prefix = f"/{workload}/{environment}/docker-lambdas"
+                    docker_prefix = (
+                        f"/{workload}/{environment}/docker-lambdas/{stack_name}"
+                    )
 
                 ssm.StringParameter(
                     self,
