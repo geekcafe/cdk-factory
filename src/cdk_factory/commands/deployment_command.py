@@ -226,6 +226,21 @@ class CdkDeploymentCommand:
         self._run(["cdk", "diff", "--all"])
         self._print("CDK diff completed successfully", "green")
 
+    def run_cdk_destroy(self, config_file: str) -> None:
+        """Destroy all stacks."""
+        self._print("Running CDK destroy...", "red")
+        self._run(
+            [
+                "cdk",
+                "destroy",
+                "--all",
+                "--force",
+                "--app",
+                f"python3 app.py --config {config_file}",
+            ]
+        )
+        self._print("CDK destroy completed successfully", "green")
+
     # ------------------------------------------------------------------
     # Interactive helpers
     # ------------------------------------------------------------------
@@ -270,7 +285,7 @@ class CdkDeploymentCommand:
 
     def select_operation(self) -> str:
         """Prompt the user to select synth / deploy / diff (arrow-key menu)."""
-        ops = ["synth", "deploy", "diff"]
+        ops = ["synth", "deploy", "diff", "destroy"]
         idx = self._interactive_select("Select operation:", ops)
         op = ops[idx]
         self._print(f"Using {op.upper()}...", "blue")
@@ -310,7 +325,7 @@ class CdkDeploymentCommand:
         Args:
             config_file: Path to config JSON.  Prompts if None.
             environment_name: Pre-selected environment name.  Prompts if None.
-            operation: ``"synth"``, ``"deploy"``, or ``"diff"``.  Prompts if None.
+            operation: ``"synth"``, ``"deploy"``, ``"diff"``, or ``"destroy"``.  Prompts if None.
             dry_run: Validate and display config without running CDK.
         """
         # Select environment
@@ -352,6 +367,8 @@ class CdkDeploymentCommand:
         elif selected_op == "diff":
             self.run_cdk_diff(selected_config)
             self._print("To apply: cdk deploy --all --require-approval never", "blue")
+        elif selected_op == "destroy":
+            self.run_cdk_destroy(selected_config)
 
     @classmethod
     def main(cls) -> None:
@@ -377,7 +394,7 @@ class CdkDeploymentCommand:
         parser.add_argument(
             "--operation",
             "-o",
-            choices=["synth", "deploy", "diff"],
+            choices=["synth", "deploy", "diff", "destroy"],
             help="Skip operation selection prompt",
         )
         args = parser.parse_args()
