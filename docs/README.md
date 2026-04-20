@@ -15,7 +15,7 @@ Config-driven AWS CDK wrapper. Define infrastructure in JSON, deploy with one co
 | Concept | Description |
 |---------|-------------|
 | **Workload** | Top-level grouping: name, devops account, stacks, deployments, pipelines |
-| **Deployment** | A target environment: account, region, naming prefix, mode (`stack` or `pipeline`) |
+| **Deployment** | A target environment: account, region, mode (`stack` or `pipeline`) |
 | **Stage** | A group of stacks deployed together within a pipeline (e.g., `persistent-resources`, `application`) |
 | **Stack** | A CloudFormation stack backed by a module (e.g., `dynamodb_stack`, `lambda_stack`) |
 | **Pipeline** | An AWS CodePipeline that orchestrates multi-stage deployments |
@@ -58,6 +58,11 @@ python deploy.py --dry-run          # validate only
         "placeholder": "{{AWS_REGION}}",
         "env_var_name": "AWS_REGION",
         "cdk_parameter_name": "AccountRegion"
+      },
+      {
+        "placeholder": "{{DEPLOYMENT_NAMESPACE}}",
+        "env_var_name": "DEPLOYMENT_NAMESPACE",
+        "cdk_parameter_name": "DeploymentNamespace"
       }
     ]
   },
@@ -79,10 +84,6 @@ python deploy.py --dry-run          # validate only
         "account": "{{AWS_ACCOUNT}}",
         "region": "{{AWS_REGION}}",
         "mode": "pipeline",
-        "naming": {
-          "prefix": "{{WORKLOAD_NAME}}-dev",
-          "stack_pattern": "{prefix}-{stage}-{stack_name}"
-        },
         "pipeline": {
           "name": "my-pipeline",
           "branch": "main",
@@ -117,15 +118,19 @@ class MyCustomStack(IStack):
         pass
 ```
 
-Reference it in config:
+Reference it in config (name is the literal CloudFormation stack name):
 ```json
-{ "name": "my-stack", "module": "my_custom_stack", "enabled": true }
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-my-stack",
+  "module": "my_custom_stack",
+  "enabled": true
+}
 ```
 
 ## Documentation
 
 - [Configuration Reference](configuration-reference.md) — Full config.json schema
 - [Stack Modules](stack-modules.md) — Per-module config reference
-- [Naming & SSM](naming-and-ssm.md) — Stack naming, SSM parameter conventions
+- [Naming & SSM](naming-and-ssm.md) — Declarative stack naming, SSM parameter conventions
 - [Cross-Account](cross-account.md) — Multi-account setup and DNS delegation
 - [Deployment Guide](deployment-guide.md) — How to deploy, add tenants, parameter resolution

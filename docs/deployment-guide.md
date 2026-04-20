@@ -49,11 +49,6 @@ cdk/
   "workload_name": "{{WORKLOAD_NAME}}",
   "tenant_name": "{{TENANT_NAME}}",
 
-  "naming": {
-    "prefix": "{{WORKLOAD_NAME}}-{{TENANT_NAME}}-{{ENVIRONMENT}}",
-    "stack_pattern": "{prefix}-{stage}-{stack_name}"
-  },
-
   "code_repository": {
     "name": "{{CODE_REPOSITORY_NAME}}",
     "connector_arn": "{{CODE_REPOSITORY_ARN}}"
@@ -131,12 +126,13 @@ Here, `value: "974817967438"` is used if neither CDK context nor `DEVOPS_ACCOUNT
    cp deployments/deployment.dev.json deployments/deployment.newtenant.json
    ```
 
-2. Update the `parameters` block:
+2. Update the `parameters` block — no naming block needed, stack names are fully-qualified in stack configs with `{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-` prefix:
    ```json
    {
      "parameters": {
        "TENANT_NAME": "newtenant",
        "AWS_ACCOUNT": "444444444444",
+       "DEPLOYMENT_NAMESPACE": "{{TENANT_NAME}}",
        "HOSTED_ZONE_NAME": "newtenant.example.com",
        "DYNAMODB_APP_USE_EXISTING": "false",
        "S3_WORKLOAD_USE_EXISTING": "false"
@@ -149,7 +145,7 @@ Here, `value: "974817967438"` is used if neither CDK context nor `DEVOPS_ACCOUNT
    python deploy.py -e newtenant -o deploy
    ```
 
-That's it. The config.json template + deployment JSON parameters handle everything else.
+That's it. Stack names resolve from the `{{DEPLOYMENT_NAMESPACE}}` placeholder in each stack config's `name` field. The config.json template + deployment JSON parameters handle everything else.
 
 ---
 

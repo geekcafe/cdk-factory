@@ -48,7 +48,7 @@ DynamoDB table — create new or import existing.
 
 ```json
 {
-  "name": "dynamodb-app-table",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-dynamodb-app-table",
   "description": "DynamoDB table for core application data",
   "module": "dynamodb_stack",
   "enabled": true,
@@ -117,7 +117,7 @@ S3 bucket — create new or import existing.
 
 ```json
 {
-  "name": "s3-workload-bucket",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-s3-workload-bucket",
   "description": "Primary workload S3 bucket",
   "module": "bucket_stack",
   "enabled": true,
@@ -168,7 +168,7 @@ Lambda functions with Docker image, Dockerfile, or code asset packaging.
 
 ```json
 {
-  "name": "lambda-app-settings",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-lambda-app-settings",
   "description": "Lambda functions for application settings API",
   "module": "lambda_stack",
   "enabled": true,
@@ -308,7 +308,7 @@ REST or HTTP API Gateway with Lambda integration.
 
 ```json
 {
-  "name": "api-gateway-primary",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-api-gateway-primary",
   "description": "Primary REST API Gateway",
   "module": "api_gateway_stack",
   "enabled": true,
@@ -383,7 +383,7 @@ SQS queues with DLQ, CloudWatch alarms, and auto-discovery from Lambda configs.
 
 ```json
 {
-  "name": "sqs-consumer-queues",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-sqs-consumer-queues",
   "description": "SQS queues for workflow consumers",
   "module": "sqs_stack",
   "enabled": true,
@@ -429,7 +429,7 @@ Cognito user pool — create new or import existing.
 
 ```json
 {
-  "name": "cognito-primary",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-cognito-primary",
   "description": "Primary Cognito user pool",
   "module": "cognito_stack",
   "enabled": true,
@@ -464,7 +464,7 @@ Route53 hosted zone and DNS records.
 
 ```json
 {
-  "name": "route53",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-route53",
   "description": "Route53 hosted zone",
   "module": "route53_stack",
   "enabled": true,
@@ -496,7 +496,7 @@ ECR repositories.
 
 ```json
 {
-  "name": "ecr-repos",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-ecr-repos",
   "module": "ecr_stack",
   "enabled": true,
   "resources": [
@@ -525,7 +525,7 @@ Step Functions state machine.
 
 ```json
 {
-  "name": "my-workflow",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-my-workflow",
   "module": "step_function_stack",
   "enabled": true,
   "step_function": {
@@ -545,7 +545,7 @@ CloudWatch dashboard with SNS topics and log metric filters.
 
 ```json
 {
-  "name": "cloudwatch-dashboard",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-cloudwatch-dashboard",
   "description": "CloudWatch monitoring dashboard",
   "module": "monitoring_stack",
   "enabled": true,

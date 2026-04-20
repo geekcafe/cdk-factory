@@ -13,6 +13,7 @@ This release standardizes JSON configuration patterns across all stack modules. 
 | 3 | [`bucket.exists` removal](#3-bucketexists-removed) | `bucket.exists: true` | `bucket.use_existing: true` |
 | 4 | [`dependencies` → `depends_on`](#4-dependencies-key-removed) | `dependencies` key | `depends_on` key only |
 | 5 | [`stack_name` removal](#5-stack_name-key-removed) | `stack_name` key | `name` + `description` |
+| 6 | [`naming` block removed](#6-naming-block-removed) | `naming.prefix` + `naming.stack_pattern` | Fully-qualified `name` with `{{PLACEHOLDER}}` tokens |
 
 ---
 
@@ -172,7 +173,7 @@ Stack config contains both 'depends_on' and 'dependencies'. Use 'depends_on' onl
 
 ## 5. `stack_name` Key Removed
 
-The `stack_name` escape hatch is removed. The top-level `name` field IS the actual CloudFormation stack name (used for the CDK construct ID and the `{stack_name}` token in `stack_pattern`). Use `description` for human-readable labels.
+The `stack_name` escape hatch is removed. The top-level `name` field IS the literal CloudFormation stack name (used for the CDK construct ID). Use `description` for human-readable labels.
 
 **Before (rejected):**
 
@@ -197,6 +198,50 @@ The `stack_name` escape hatch is removed. The top-level `name` field IS the actu
 **Validation error:**
 ```
 'stack_name' is not a valid key. Use 'name' for the actual stack name (construct ID / CloudFormation stack name) and 'description' for a human-readable label. See MIGRATION.md.
+```
+
+---
+
+## 6. `naming` Block Removed
+
+The `naming` block in deployment configs (`naming.prefix`, `naming.stack_pattern`) and the `build_stack_name()` method are removed. Stack names are now declarative — the `name` field in each stack config is the literal, fully-resolved CloudFormation stack name.
+
+Use `{{PLACEHOLDER}}` tokens in the `name` field to include workload name, namespace, etc.
+
+**Before (rejected — deployment config with naming block):**
+
+```json
+{
+  "naming": {
+    "prefix": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}",
+    "stack_pattern": "{prefix}-{stage}-{stack_name}"
+  }
+}
+```
+
+With stack config:
+
+```json
+{
+  "name": "dynamodb-app-table",
+  "module": "dynamodb_stack"
+}
+```
+
+**After (canonical — fully-qualified name in stack config):**
+
+```json
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-dynamodb-app-table",
+  "module": "dynamodb_stack"
+}
+```
+
+No `naming` block in the deployment config. The stack `name` resolves to the literal CloudFormation stack name (e.g., `aplos-nca-saas-development-dynamodb-app-table`).
+
+**Validation error (if `naming` block is present in deployment config):**
+```
+The 'naming' block has been removed from cdk-factory. Stack configs must use fully-qualified names in the 'name' field. See MIGRATION.md.
 ```
 
 ---
@@ -227,14 +272,21 @@ Follow these steps to migrate your consumer configs:
    - Ensure `"name"` is the intended CloudFormation stack name
    - Add `"description"` for human-readable labels
 
-6. **Add `description` fields**
+6. **Remove `naming` block and use fully-qualified stack names**
+   - Remove the `"naming"` block from all deployment JSON files
+   - Update every stack config `"name"` to include the full prefix: `{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-<stack-name>`
+   - Ensure `DEPLOYMENT_NAMESPACE` is defined in your deployment JSON parameters
+   - The resolved `name` must match the existing CloudFormation stack name exactly, or CloudFormation will create a new stack
+
+7. **Add `description` fields**
    - Add a `"description"` field to each stack config for readability
 
-7. **Verify `use_existing` resources have `name`**
+8. **Verify `use_existing` resources have `name`**
    - For any resource with `"use_existing": true`, ensure the `"name"` field is present
 
-8. **Run validation**
+9. **Run validation**
    - Run `cdk synth` — the `ConfigValidator` will catch any remaining deprecated patterns with prescriptive error messages
+   - Any unresolved `{{...}}` placeholders will also raise errors
 
 ---
 

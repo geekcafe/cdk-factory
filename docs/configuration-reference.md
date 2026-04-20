@@ -124,11 +124,6 @@ Each deployment targets an account/region with a specific mode.
   "mode": "pipeline",
   "enabled": true,
   "order": 1,
-  "naming": {
-    "__warning__": "Changing prefix or stack_pattern on a live deployment will create NEW CloudFormation stacks.",
-    "prefix": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}",
-    "stack_pattern": "{prefix}-{stage}-{stack_name}"
-  },
   "pipeline": { ... }
 }
 ```
@@ -146,15 +141,7 @@ Each deployment targets an account/region with a specific mode.
 | `subdomain` | string? | Subdomain for this deployment |
 | `tenant` | string? | Tenant identifier |
 
-### `naming`
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `prefix` | string | `{workload_name}-{environment}` | Stack name prefix |
-| `stack_pattern` | string | `{prefix}-{stage}-{stack_name}` | Full stack name template |
-| `__warning__` | string? | — | Reminder that these are immutable once deployed |
-
-> ⚠️ **Never change `prefix` or `stack_pattern` on a live deployment.** CloudFormation will create new stacks instead of updating existing ones.
+> **Removed:** The `naming` block (`prefix`, `stack_pattern`) has been removed. Stack names are now fully-qualified in each stack config's `name` field using `{{PLACEHOLDER}}` tokens. See [MIGRATION.md](../MIGRATION.md).
 
 ---
 
@@ -261,7 +248,7 @@ Each stack (inline or inherited) follows this shape:
 
 ```json
 {
-  "name": "dynamodb-app-table",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-dynamodb-app-table",
   "description": "DynamoDB table for core application data",
   "module": "dynamodb_stack",
   "enabled": true,
@@ -280,7 +267,7 @@ Each stack (inline or inherited) follows this shape:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | **Required.** The actual stack name — used for CDK construct ID and CloudFormation stack name (via `{stack_name}` token in `stack_pattern`). Not a visual label. |
+| `name` | string | **Required.** The literal, fully-resolved CloudFormation stack name. Use `{{PLACEHOLDER}}` tokens for workload/namespace prefixing (e.g., `{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-dynamodb-app-table`). |
 | `description` | string? | Human-readable label describing what the stack is for |
 | `module` | string | **Required.** Registered module name (e.g., `dynamodb_stack`) |
 | `enabled` | bool | Toggle stack |
@@ -288,7 +275,7 @@ Each stack (inline or inherited) follows this shape:
 | `depends_on` | array? | Stack dependencies (by name). The only accepted dependency key — `dependencies` is rejected. |
 | `ssm` | object? | Top-level SSM config (see below). Must NOT be nested inside a resource block. |
 
-> **Removed keys:** `stack_name` is no longer accepted — use `name` for the actual stack name and `description` for labels. `dependencies` is no longer accepted — use `depends_on`. See [MIGRATION.md](../MIGRATION.md).
+> **Removed keys:** `stack_name` is no longer accepted — use `name` for the actual stack name and `description` for labels. `dependencies` is no longer accepted — use `depends_on`. The `naming` block is removed — `name` is the literal CF stack name. See [MIGRATION.md](../MIGRATION.md).
 
 The module-specific config key (e.g., `dynamodb`, `bucket`, `api_gateway`) varies per module. See [stack-modules.md](stack-modules.md).
 
@@ -337,11 +324,11 @@ When `auto_export` is enabled, parameters are exported at:
 
 ```json
 {
-  "name": "dynamodb-app-table",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-dynamodb-app-table",
   "module": "dynamodb_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "my-workload/development"
+    "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
   },
   "dynamodb": { "name": "my-table" }
 }
@@ -353,11 +340,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "s3-workload-bucket",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-s3-workload-bucket",
   "module": "bucket_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "my-workload/development"
+    "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
   },
   "bucket": { "name": "my-bucket" }
 }
@@ -367,11 +354,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "lambda-app-settings",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-lambda-app-settings",
   "module": "lambda_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "my-workload/development"
+    "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
   },
   "resources": [{ "name": "app-configurations", "..." : "..." }]
 }
@@ -381,11 +368,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "sqs-consumer-queues",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-sqs-consumer-queues",
   "module": "sqs_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "my-workload/development"
+    "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
   },
   "sqs": { "queues": [] }
 }
@@ -395,11 +382,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "cognito-primary",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-cognito-primary",
   "module": "cognito_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "my-workload/development"
+    "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
   },
   "cognito": { "use_existing": true, "user_pool_id": "us-east-1_abc123" }
 }
@@ -409,11 +396,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "route53",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-route53",
   "module": "route53_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "my-workload/development"
+    "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
   },
   "route53": { "hosted_zone_name": "dev.example.com", "use_existing": true }
 }
@@ -423,11 +410,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "api-gateway-primary",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-api-gateway-primary",
   "module": "api_gateway_stack",
   "ssm": {
     "imports": {
-      "namespace": "my-workload/development"
+      "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
     }
   },
   "api_gateway": { "name": "agw-primary", "..." : "..." }
@@ -438,11 +425,11 @@ Exports: `/my-workload/development/dynamodb/dynamodb-app-table/table_name`
 
 ```json
 {
-  "name": "cloudwatch-dashboard",
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-cloudwatch-dashboard",
   "module": "monitoring_stack",
   "ssm": {
     "imports": {
-      "namespace": "my-workload/development"
+      "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
     }
   },
   "monitoring": { "dashboard_name": "my-dashboard" }
