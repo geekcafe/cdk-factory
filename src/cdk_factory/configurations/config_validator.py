@@ -38,6 +38,17 @@ class ConfigValidator:
         ConfigValidator._validate_use_existing_has_name(stack_config)
         ConfigValidator._validate_no_stack_name_key(stack_config)
 
+        # Schema validation
+        from cdk_factory.configurations.schema_validator import SchemaValidator
+
+        errors = SchemaValidator.validate(stack_config)
+        if errors:
+            raise ValueError(
+                f"Schema validation failed for stack "
+                f"'{stack_config.get('name', 'unknown')}':\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
+
     @staticmethod
     def _validate_name_present(config: dict) -> None:
         """Validate that the 'name' field is present and non-empty."""

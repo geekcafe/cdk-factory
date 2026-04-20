@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DynamoDB Resource Config",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "use_existing": { "type": ["boolean", "string"] },
+    "gsi_count": { "type": "integer", "minimum": 0 },
+    "replica_regions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "enable_delete_protection": { "type": ["boolean", "string"] },
+    "point_in_time_recovery": { "type": ["boolean", "string"] },
+    "ttl_attribute": { "type": "string" },
+    "global_secondary_indexes": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "additionalProperties": true
+}

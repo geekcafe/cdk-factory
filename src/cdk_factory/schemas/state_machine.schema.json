@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "State Machine Resource Config",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "type": { "type": "string" },
+    "definition_file": { "type": "string" },
+    "definition": { "type": "object" },
+    "lambda_arns": { "type": "object" },
+    "logging": { "type": ["boolean", "string"] }
+  },
+  "additionalProperties": true
+}

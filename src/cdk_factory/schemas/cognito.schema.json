@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cognito Resource Config",
+  "type": "object",
+  "properties": {
+    "user_pool_name": { "type": "string" },
+    "self_sign_up_enabled": { "type": "boolean" },
+    "sign_in_aliases": { "type": "object" },
+    "password_policy": { "type": "object" },
+    "mfa": { "type": "string" },
+    "app_clients": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "deletion_protection": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "API Gateway Resource Config",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "api_type": { "type": "string" },
+    "description": { "type": "string" },
+    "deploy_options": { "type": "object" },
+    "routes": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "cors": { "type": "object" },
+    "custom_domain": { "type": "object" },
+    "cognito": { "type": "object" }
+  },
+  "additionalProperties": true
+}

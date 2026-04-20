@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Route53 Resource Config",
+  "type": "object",
+  "properties": {
+    "hosted_zone_id": { "type": "string" },
+    "domain_name": { "type": "string" },
+    "create_hosted_zone": { "type": "boolean" },
+    "record_names": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "use_existing": { "type": ["boolean", "string"] },
+    "records": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "additionalProperties": true
+}

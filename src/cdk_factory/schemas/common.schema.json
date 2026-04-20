@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Common Stack Config",
+  "type": "object",
+  "required": ["name", "module"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "module": { "type": "string", "minLength": 1 },
+    "enabled": { "type": "boolean" },
+    "description": { "type": "string" },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "ssm": {
+      "type": "object",
+      "properties": {
+        "auto_export": { "type": "boolean" },
+        "namespace": { "type": "string" },
+        "imports": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
