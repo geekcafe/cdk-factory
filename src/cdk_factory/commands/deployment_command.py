@@ -29,7 +29,9 @@ Usage::
 """
 
 import argparse
+import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -61,10 +63,13 @@ class CdkDeploymentCommand:
     """
     Generic base class for CDK deployment commands.
 
-    Subclasses must implement :py:attr:`environments` and may optionally
-    override :py:attr:`required_vars` and
-    :py:meth:`display_configuration_summary`.
+    Provides built-in deployment file auto-discovery from a ``deployments/``
+    directory and multi-pass ``{{PLACEHOLDER}}`` resolution. Subclasses can
+    override :py:attr:`environments` for custom behavior, or rely on the
+    built-in auto-discovery.
     """
+
+    DEPLOYMENTS_DIR = "deployments"
 
     # ------------------------------------------------------------------
     # Construction
@@ -77,6 +82,77 @@ class CdkDeploymentCommand:
                 files.  Defaults to the current working directory.
         """
         self.script_dir: Path = script_dir or Path.cwd()
+        self._deployment_configs: Dict[str, dict] = {}
+        self._auto_discover_deployments()
+
+    # ------------------------------------------------------------------
+    # Deployment auto-discovery
+    # ------------------------------------------------------------------
+
+    def _auto_discover_deployments(self) -> None:
+        """Scan deployments/ for deployment.*.json files.
+
+        After loading each JSON file, resolves ``{{PLACEHOLDER}}`` references
+        using the ``parameters`` block so that fields like ``name`` and
+        ``description`` are usable for the interactive menu.
+        """
+        deployments_path = self.script_dir / self.DEPLOYMENTS_DIR
+        if not deployments_path.exists():
+            return  # No deployments dir — subclass must provide environments
+
+        for f in sorted(deployments_path.glob("deployment.*.json")):
+            with open(f, "r", encoding="utf-8") as fh:
+                config = json.load(fh)
+            config["_file"] = str(f)
+
+            # Resolve {{PLACEHOLDER}} references from the parameters block
+            config = self._resolve_deployment_placeholders(config)
+
+            name = config.get("name", f.stem)
+            self._deployment_configs[name] = config
+
+    @staticmethod
+    def _resolve_deployment_placeholders(config: dict) -> dict:
+        """Resolve ``{{KEY}}`` placeholders in a deployment config dict.
+
+        Uses the ``parameters`` block as the value source. Runs multiple
+        passes to handle chained references (e.g. ``{{HOSTED_ZONE_NAME}}``
+        which itself contains ``{{TENANT_NAME}}``).
+        """
+        params = config.get("parameters", {})
+        if not params:
+            return config
+
+        placeholder_re = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
+
+        def _replace(text: str, values: dict) -> str:
+            return placeholder_re.sub(
+                lambda m: str(values.get(m.group(1), m.group(0))), text
+            )
+
+        # Resolve parameters themselves first (chained refs)
+        for _ in range(5):
+            changed = False
+            for key, value in params.items():
+                if isinstance(value, str) and "{{" in value:
+                    resolved = _replace(value, params)
+                    if resolved != value:
+                        params[key] = resolved
+                        changed = True
+            if not changed:
+                break
+
+        # Now resolve the entire config dict using resolved parameters
+        def _resolve_value(value):
+            if isinstance(value, str) and "{{" in value:
+                return _replace(value, params)
+            if isinstance(value, dict):
+                return {k: _resolve_value(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [_resolve_value(v) for v in value]
+            return value
+
+        return _resolve_value(config)
 
     # ------------------------------------------------------------------
     # Subclass contract
@@ -86,9 +162,27 @@ class CdkDeploymentCommand:
     def environments(self) -> Dict[str, EnvironmentConfig]:
         """Return a mapping of environment name → :class:`EnvironmentConfig`.
 
-        Subclasses *must* override this.
+        Default implementation uses auto-discovered deployment configs.
+        Subclasses may override for custom behavior.
         """
-        raise NotImplementedError("Subclasses must define `environments`.")
+        if not self._deployment_configs:
+            raise NotImplementedError(
+                "No deployment.*.json files found and subclass does not override `environments`."
+            )
+
+        envs: Dict[str, EnvironmentConfig] = {}
+        for name, config in self._deployment_configs.items():
+            env_file = config.get("_file", "")
+            git_branch = config.get(
+                "git_branch", config.get("parameters", {}).get("GIT_BRANCH", "main")
+            )
+            envs[name] = EnvironmentConfig(
+                name=name,
+                env_file=env_file,
+                git_branch=git_branch,
+                extra=config,
+            )
+        return envs
 
     @property
     def required_vars(self) -> List[Tuple[str, str]]:
