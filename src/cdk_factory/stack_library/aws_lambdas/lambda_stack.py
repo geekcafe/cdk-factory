@@ -492,9 +492,9 @@ class LambdaStack(IStack):
         stack_name = self.stack_config.name
 
         if namespace:
-            prefix = f"/{namespace}/lambda/{stack_name}"
+            prefix = f"/{namespace}/lambda"
         else:
-            prefix = f"/{workload}/{environment}/lambda/{stack_name}"
+            prefix = f"/{workload}/{environment}/lambda"
 
         logger.info(
             f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}"
@@ -531,11 +531,9 @@ class LambdaStack(IStack):
                 function_config.docker.file or function_config.docker.image
             ):
                 if namespace:
-                    docker_prefix = f"/{namespace}/docker-lambdas/{stack_name}"
+                    docker_prefix = f"/{namespace}/docker-lambdas"
                 else:
-                    docker_prefix = (
-                        f"/{workload}/{environment}/docker-lambdas/{stack_name}"
-                    )
+                    docker_prefix = f"/{workload}/{environment}/docker-lambdas"
 
                 ssm.StringParameter(
                     self,
