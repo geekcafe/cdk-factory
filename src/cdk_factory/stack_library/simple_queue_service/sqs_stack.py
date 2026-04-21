@@ -13,6 +13,8 @@ from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_sqs as sqs
 from aws_cdk import aws_ssm as ssm
 from aws_lambda_powertools import Logger
+
+from cdk_factory.utilities.json_loading_utility import JsonLoadingUtility
 from constructs import Construct
 
 from cdk_factory.configurations.deployment import DeploymentConfig
@@ -145,10 +147,10 @@ class SQSStack(IStack):
                 continue
 
             try:
-                with open(full_path, "r", encoding="utf-8") as f:
-                    lambda_stack_config = json.load(f)
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.error(f"Invalid JSON in Lambda config {full_path}: {e}")
+                ju = JsonLoadingUtility(str(full_path))
+                lambda_stack_config = ju.load()
+            except Exception as e:
+                logger.error(f"Failed to load Lambda config {full_path}: {e}")
                 continue
 
             for resource in lambda_stack_config.get("resources", []):
