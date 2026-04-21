@@ -28,6 +28,10 @@ def permission_key(entry: dict | str) -> Hashable:
         if "s3" in entry:
             return ("s3", entry["s3"], entry.get("bucket", ""))
 
+        # Structured Parameter Store
+        if "parameter_store" in entry:
+            return ("parameter_store", entry["parameter_store"], entry.get("path", ""))
+
         # Inline IAM
         if "actions" in entry and "resources" in entry:
             return (

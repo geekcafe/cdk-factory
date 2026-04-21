@@ -2,6 +2,23 @@
 
 All notable changes to cdk-factory are documented here.
 
+## [1.0.5] — 2026-04-21
+
+### Added
+
+
+- Structured `parameter_store` permission: `{"parameter_store": "read", "path": "/my-app/dev/cognito/*"}` — scoped SSM read with wildcard paths instead of blanket `"parameter_store_read"`.
+- Warning message when `__inherits__` path falls through to dot-path resolution.
+
+### Changed
+- None
+### Removed
+- None
+### Fixed
+- None
+
+
+
 ## [1.0.4] — 2026-04-20
 
 ### Added

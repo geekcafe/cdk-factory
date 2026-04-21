@@ -397,6 +397,46 @@ class PolicyDocuments:
                     f"Unknown S3 action '{action}'. Valid: read, write, delete"
                 )
 
+        # Parameter Store structured permissions
+        if "parameter_store" in permission:
+            action = permission["parameter_store"]
+            path = permission.get("path", "")
+            if not path:
+                raise ValueError(
+                    f"Structured parameter_store permission requires 'path' field: {permission}"
+                )
+
+            resolver = self._get_resource_resolver()
+            region = resolver.get_aws_region()
+            account = resolver.get_aws_account()
+
+            # Build ARN — path can include wildcards like /my-app/dev/cognito/*
+            param_arn = f"arn:aws:ssm:{region}:{account}:parameter{path}"
+
+            path_slug = path.replace("/", "").replace("-", "").replace("*", "All")[:20]
+
+            if action == "read":
+                return {
+                    "name": "SSM",
+                    "description": f"Parameter Store Read: {path}",
+                    "sid": f"SSMRead{path_slug}",
+                    "actions": [
+                        "ssm:GetParameter",
+                        "ssm:GetParameters",
+                        "ssm:GetParametersByPath",
+                    ],
+                    "resources": [param_arn],
+                    "nag": {
+                        "id": "AwsSolutions-IAM5",
+                        "reason": f"Scoped SSM read for path: {path}",
+                        "resources": [f"Resource::{param_arn}"],
+                    },
+                }
+            else:
+                raise ValueError(
+                    f"Unknown parameter_store action '{action}'. Valid: read"
+                )
+
         return None
 
     def _dynamodb_permissions(
