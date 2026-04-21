@@ -71,11 +71,46 @@ class JsonLoadingUtility:
         keys = path.replace("]", "").split(".")
         section = config
         for key in keys:
-            if "[" in key:
-                key, index = key.split("[")
-                section = section[key][int(index)]
-            else:
-                section = section[key]
+            if not key:
+                raise ValueError(
+                    f"\n"
+                    f"╔══════════════════════════════════════════════════════════════╗\n"
+                    f"║  Invalid config reference path                              ║\n"
+                    f"╚══════════════════════════════════════════════════════════════╝\n"
+                    f"\n"
+                    f"  Path: '{path}'\n"
+                    f"  Contains an empty segment (likely starts with './' or has '..')\n"
+                    f"\n"
+                    f"  This usually means an __inherits__ or __imports__ value\n"
+                    f"  points to a path that doesn't exist as a file or directory.\n"
+                    f"\n"
+                    f"  Base path: {self.base_path}\n"
+                    f"  Resolved: {os.path.join(self.base_path, path)}\n"
+                    f"\n"
+                    f"  Check that:\n"
+                    f"  1. The path is correct and the file/directory exists\n"
+                    f"  2. The path is relative to the config.json location\n"
+                    f"     (not relative to the file containing the __inherits__)\n"
+                )
+            try:
+                if "[" in key:
+                    key, index = key.split("[")
+                    section = section[key][int(index)]
+                else:
+                    section = section[key]
+            except (KeyError, IndexError, TypeError) as e:
+                raise ValueError(
+                    f"\n"
+                    f"╔══════════════════════════════════════════════════════════════╗\n"
+                    f"║  Config path resolution failed                              ║\n"
+                    f"╚══════════════════════════════════════════════════════════════╝\n"
+                    f"\n"
+                    f"  Path: '{path}'\n"
+                    f"  Failed at key: '{key}'\n"
+                    f"  Error: {e}\n"
+                    f"\n"
+                    f"  Available keys: {list(section.keys()) if isinstance(section, dict) else '(not a dict)'}\n"
+                ) from e
         return section
 
     def resolve_references(self, config: dict | list, root_config: dict):
@@ -128,6 +163,18 @@ class JsonLoadingUtility:
                                 nested_section.append(file_section)
                         # print("done with nested sections")
                     else:
+                        # Path is not a .json file and not a directory — treat as
+                        # a dot-path reference into the root config. If this fails,
+                        # it usually means the __inherits__ path is wrong.
+                        resolved_path = os.path.join(self.base_path, nested_path)
+                        print(
+                            f"\n"
+                            f"  ⚠️  __inherits__ path '{nested_path}' is not a .json file\n"
+                            f"      and not a directory at: {resolved_path}\n"
+                            f"      Treating as a dot-path reference into root config.\n"
+                            f"      If this fails, check that the path is relative to\n"
+                            f"      the config.json location (base: {self.base_path})\n"
+                        )
                         nested_section = self.get_nested_config(
                             root_config, nested_path
                         )
