@@ -131,8 +131,9 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
     def auto_name(self) -> bool:
         """auto_name"""
         if self.__config and isinstance(self.__config, dict):
-            # default to false on the auto naming
-            return str(self.__config.get("auto_name", "false")) == "true"
+            # default to true: let CDK generate names from the construct path so
+            # functions can move between stacks without CloudFormation name conflicts
+            return str(self.__config.get("auto_name", "true")) == "true"
 
         return False
 
