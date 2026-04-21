@@ -92,6 +92,9 @@ class WorkloadFactory:
                         f"Skipping deployment: {deployment.name}. Reason enabled: {deployment.enabled}"
                     )
 
+        print("📀 Saving post-build config snapshot")
+        self.cdk_config.save_config_snapshot()
+
         logger.info(
             {
                 "action": "generate_deployments",

@@ -38,6 +38,7 @@ class CdkConfig:
         self._env_vars: Dict[str, str] = {}
         self._runtime_directory = runtime_directory
         self._paths: List[str] = paths or []  # type: ignore
+        self._dynamic_config_path: str | None = None
         self.config = self.__load(config_path)
 
     def get_config_path_environment_setting(self) -> str:
@@ -188,6 +189,7 @@ class CdkConfig:
             ".dynamic", os.path.basename(self._resolved_config_file_path)
         )
         path = os.path.join(Path(self._resolved_config_file_path).parent, file_name)
+        self._dynamic_config_path = path
 
         if not os.path.exists(Path(path).parent):
             os.makedirs(Path(path).parent)
@@ -296,3 +298,22 @@ class CdkConfig:
         Gets the environment variables
         """
         return self._env_vars
+
+    def save_config_snapshot(self) -> None:
+        """Re-save the current in-memory config to .dynamic/config.json.
+
+        Call after all stack build() methods have run to capture
+        post-mutation state (merged permissions, env vars, etc.).
+
+        Raises:
+            ValueError: If the dynamic config file path has not been
+                        established (i.e., __resolved_config was not called).
+        """
+        if self._dynamic_config_path is None:
+            raise ValueError(
+                "Cannot save config snapshot: config file path has not been resolved. "
+                "Ensure CdkConfig was initialized with a valid config path."
+            )
+
+        print(f"📀 Saving post-build config snapshot to {self._dynamic_config_path}")
+        JsonLoadingUtility.save(self.config, self._dynamic_config_path)
