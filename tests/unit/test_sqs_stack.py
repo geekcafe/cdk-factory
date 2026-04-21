@@ -2,13 +2,11 @@
 Unit tests for SQS Stack
 """
 
-import os
 import unittest
 from unittest.mock import patch, MagicMock
 
 from aws_cdk import App
 from aws_cdk import aws_cloudwatch as cloudwatch
-from aws_cdk import aws_sqs as sqs
 
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.stack import StackConfig
@@ -534,317 +532,100 @@ def test_publish_queue_to_ssm_dlq():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tests for Task 1.1: _discover_consumer_queues_from_lambda_configs
+# Tests for _build with pre-populated queues (populated by CdkConfig at load time)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-class TestDiscoverConsumerQueues(unittest.TestCase):
-    """Tests for the _discover_consumer_queues_from_lambda_configs method."""
+class TestBuildWithPrePopulatedQueues(unittest.TestCase):
+    """Tests for the _build method with queues pre-populated by CdkConfig."""
 
     def setUp(self):
-        import tempfile, os, json
-
         self.app = App()
-        self.stack = SQSStack(self.app, "TestDiscovery")
-        self.tmpdir = tempfile.mkdtemp()
 
-        # Set up a workload mock with config_path pointing to our temp dir
-        self.workload = MagicMock()
-        self.workload.config_path = os.path.join(self.tmpdir, "config.json")
-        self.workload.paths = [self.tmpdir]
-        self.stack.workload = self.workload
-
-        self.stack_config = MagicMock()
-
-    def _write_json(self, filename, data):
-        import os, json
-
-        path = os.path.join(self.tmpdir, filename)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(data, f)
-        return path
-
-    def test_discovers_consumer_queues(self):
-        """Consumer queues are extracted with preserved properties."""
-        self._write_json(
-            "lambda-stack.json",
-            {
-                "resources": [
-                    {
-                        "name": "my-lambda",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "analysis-packaging",
-                                    "visibility_timeout_seconds": 900,
-                                    "message_retention_period_days": 7,
-                                    "delay_seconds": 0,
-                                    "add_dead_letter_queue": "true",
-                                },
-                                {
-                                    "type": "producer",
-                                    "queue_name": "some-output-queue",
-                                },
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["lambda-stack.json"], self.stack_config
-        )
-
-        assert len(result) == 1
-        assert result[0].name == "analysis-packaging"
-        assert result[0].visibility_timeout_seconds == 900
-        assert result[0].message_retention_period_days == 7
-        assert result[0].add_dead_letter_queue is True
-
-    def test_skips_producer_queues(self):
-        """Producer queues are not included in discovery results."""
-        self._write_json(
-            "lambda-stack.json",
-            {
-                "resources": [
-                    {
-                        "name": "my-lambda",
-                        "sqs": {
-                            "queues": [
-                                {"type": "producer", "queue_name": "output-queue"}
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["lambda-stack.json"], self.stack_config
-        )
-
-        assert len(result) == 0
-
-    def test_deduplicates_by_queue_name_first_wins(self):
-        """When duplicate queue_names appear, first occurrence wins."""
-        self._write_json(
-            "lambda-a.json",
-            {
-                "resources": [
-                    {
-                        "name": "lambda-a",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "shared-queue",
-                                    "visibility_timeout_seconds": 100,
-                                    "message_retention_period_days": 3,
-                                }
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-        self._write_json(
-            "lambda-b.json",
-            {
-                "resources": [
-                    {
-                        "name": "lambda-b",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "shared-queue",
-                                    "visibility_timeout_seconds": 999,
-                                    "message_retention_period_days": 14,
-                                }
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["lambda-a.json", "lambda-b.json"], self.stack_config
-        )
-
-        assert len(result) == 1
-        assert result[0].name == "shared-queue"
-        assert result[0].visibility_timeout_seconds == 100
-        assert result[0].message_retention_period_days == 3
-
-    def test_missing_file_skipped_gracefully(self):
-        """Missing lambda config files are skipped with a warning."""
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["nonexistent-file.json"], self.stack_config
-        )
-
-        assert len(result) == 0
-
-    def test_invalid_json_skipped_gracefully(self):
-        """Invalid JSON files are skipped with an error log."""
-        import os
-
-        bad_path = os.path.join(self.tmpdir, "bad.json")
-        with open(bad_path, "w") as f:
-            f.write("{invalid json content")
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["bad.json"], self.stack_config
-        )
-
-        assert len(result) == 0
-
-    def test_multiple_resources_multiple_files(self):
-        """Discovers consumer queues across multiple resources and files."""
-        self._write_json(
-            "lambda-1.json",
-            {
-                "resources": [
-                    {
-                        "name": "func-a",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "queue-a",
-                                    "visibility_timeout_seconds": 30,
-                                    "message_retention_period_days": 4,
-                                }
-                            ]
-                        },
-                    },
-                    {
-                        "name": "func-b",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "queue-b",
-                                    "visibility_timeout_seconds": 60,
-                                    "message_retention_period_days": 7,
-                                }
-                            ]
-                        },
-                    },
-                ]
-            },
-        )
-        self._write_json(
-            "lambda-2.json",
-            {
-                "resources": [
-                    {
-                        "name": "func-c",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "queue-c",
-                                    "visibility_timeout_seconds": 120,
-                                    "message_retention_period_days": 14,
-                                }
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["lambda-1.json", "lambda-2.json"], self.stack_config
-        )
-
-        names = {q.name for q in result}
-        assert names == {"queue-a", "queue-b", "queue-c"}
-
-    def test_empty_resources_array(self):
-        """Config with empty resources array returns no queues."""
-        self._write_json("empty.json", {"resources": []})
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["empty.json"], self.stack_config
-        )
-
-        assert len(result) == 0
-
-    def test_resource_without_sqs_section(self):
-        """Resources without an sqs section are skipped."""
-        self._write_json(
-            "no-sqs.json",
-            {"resources": [{"name": "plain-lambda"}]},
-        )
-
-        result = self.stack._discover_consumer_queues_from_lambda_configs(
-            ["no-sqs.json"], self.stack_config
-        )
-
-        assert len(result) == 0
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Tests for Task 1.2: _build merge of explicit and discovered queues
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-class TestBuildMergeDiscoveredQueues(unittest.TestCase):
-    """Tests for the _build method's merge of explicit and discovered queues."""
-
-    def setUp(self):
-        import tempfile, os, json
-
-        self.app = App()
-        self.tmpdir = tempfile.mkdtemp()
-
-    def _write_json(self, filename, data):
-        import os, json
-
-        path = os.path.join(self.tmpdir, filename)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(data, f)
-        return path
-
-    def test_build_merges_discovered_queues(self):
-        """Discovered queues are added to the queue list when no explicit overlap."""
-        self._write_json(
-            "lambda-stack.json",
-            {
-                "resources": [
-                    {
-                        "name": "my-func",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "discovered-queue",
-                                    "visibility_timeout_seconds": 60,
-                                    "message_retention_period_days": 7,
-                                }
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-
-        stack = SQSStack(self.app, "TestMerge")
-        workload = MagicMock()
-        workload.config_path = os.path.join(self.tmpdir, "config.json")
-        workload.paths = [self.tmpdir]
+    def test_build_creates_queues_from_config(self):
+        """Queues already present in sqs.queues config are created correctly."""
+        stack = SQSStack(self.app, "TestPrePopulated")
 
         stack_config = StackConfig(
             {
                 "name": "test-sqs",
                 "module": "sqs_stack",
-                "lambda_config_paths": ["lambda-stack.json"],
+                "sqs": {
+                    "queues": [
+                        {
+                            "queue_name": "pre-populated-queue",
+                            "visibility_timeout_seconds": 60,
+                            "message_retention_period_days": 7,
+                        }
+                    ]
+                },
+            },
+            workload={"name": "test-workload"},
+        )
+
+        deployment = MagicMock()
+        deployment.build_resource_name.side_effect = lambda x: f"test-{x}"
+
+        workload = MagicMock()
+
+        with patch.object(stack, "_create_queue") as mock_cq:
+            with patch.object(stack, "_create_dead_letter_queue"):
+                with patch.object(stack, "_add_outputs"):
+                    stack._build(stack_config, deployment, workload)
+
+                    assert mock_cq.call_count == 1
+                    call_args = mock_cq.call_args
+                    assert call_args[0][0].name == "pre-populated-queue"
+
+    def test_build_creates_multiple_queues(self):
+        """Multiple queues in sqs.queues are all created."""
+        stack = SQSStack(self.app, "TestMultiQueue")
+
+        stack_config = StackConfig(
+            {
+                "name": "test-sqs",
+                "module": "sqs_stack",
+                "sqs": {
+                    "queues": [
+                        {
+                            "queue_name": "queue-a",
+                            "visibility_timeout_seconds": 30,
+                            "message_retention_period_days": 4,
+                        },
+                        {
+                            "queue_name": "queue-b",
+                            "visibility_timeout_seconds": 60,
+                            "message_retention_period_days": 7,
+                        },
+                    ]
+                },
+            },
+            workload={"name": "test-workload"},
+        )
+
+        deployment = MagicMock()
+        deployment.build_resource_name.side_effect = lambda x: f"test-{x}"
+
+        workload = MagicMock()
+
+        with patch.object(stack, "_create_queue") as mock_cq:
+            with patch.object(stack, "_create_dead_letter_queue"):
+                with patch.object(stack, "_add_outputs"):
+                    stack._build(stack_config, deployment, workload)
+
+                    assert mock_cq.call_count == 2
+                    queue_names = [call[0][0].name for call in mock_cq.call_args_list]
+                    assert "queue-a" in queue_names
+                    assert "queue-b" in queue_names
+
+    def test_build_with_empty_queues(self):
+        """Build works with an empty queues list."""
+        stack = SQSStack(self.app, "TestEmptyQueues")
+
+        stack_config = StackConfig(
+            {
+                "name": "test-sqs",
+                "module": "sqs_stack",
                 "sqs": {"queues": []},
             },
             workload={"name": "test-workload"},
@@ -853,110 +634,11 @@ class TestBuildMergeDiscoveredQueues(unittest.TestCase):
         deployment = MagicMock()
         deployment.build_resource_name.side_effect = lambda x: f"test-{x}"
 
-        # Mock the CDK resource creation methods
-        with patch.object(stack, "_create_queue") as mock_cq:
-            with patch.object(stack, "_create_dead_letter_queue") as mock_dlq:
-                with patch.object(stack, "_add_outputs"):
-                    stack._build(stack_config, deployment, workload)
-
-                    # Verify the discovered queue was processed
-                    assert mock_cq.call_count == 1
-                    call_args = mock_cq.call_args
-                    assert call_args[0][0].name == "discovered-queue"
-
-    def test_explicit_queue_overrides_discovered(self):
-        """Explicit queues take precedence over discovered queues with the same name."""
-        import os
-
-        self._write_json(
-            "lambda-stack.json",
-            {
-                "resources": [
-                    {
-                        "name": "my-func",
-                        "sqs": {
-                            "queues": [
-                                {
-                                    "type": "consumer",
-                                    "queue_name": "overlap-queue",
-                                    "visibility_timeout_seconds": 999,
-                                    "message_retention_period_days": 14,
-                                }
-                            ]
-                        },
-                    }
-                ]
-            },
-        )
-
-        stack = SQSStack(self.app, "TestOverride")
         workload = MagicMock()
-        workload.config_path = os.path.join(self.tmpdir, "config.json")
-        workload.paths = [self.tmpdir]
-
-        stack_config = StackConfig(
-            {
-                "name": "test-sqs",
-                "module": "sqs_stack",
-                "lambda_config_paths": ["lambda-stack.json"],
-                "sqs": {
-                    "queues": [
-                        {
-                            "queue_name": "overlap-queue",
-                            "visibility_timeout_seconds": 30,
-                            "message_retention_period_days": 4,
-                        }
-                    ]
-                },
-            },
-            workload={"name": "test-workload"},
-        )
-
-        deployment = MagicMock()
-        deployment.build_resource_name.side_effect = lambda x: f"test-{x}"
 
         with patch.object(stack, "_create_queue") as mock_cq:
             with patch.object(stack, "_create_dead_letter_queue"):
                 with patch.object(stack, "_add_outputs"):
                     stack._build(stack_config, deployment, workload)
 
-                    # Only the explicit queue should be processed (not the discovered one)
-                    assert mock_cq.call_count == 1
-                    call_args = mock_cq.call_args
-                    # The explicit queue has visibility_timeout_seconds=30
-                    assert call_args[0][0].visibility_timeout_seconds == 30
-
-    def test_build_without_lambda_config_paths(self):
-        """Build works normally when no lambda_config_paths is specified."""
-        stack = SQSStack(self.app, "TestNoDiscovery")
-        workload = MagicMock()
-        workload.config_path = None
-        workload.paths = []
-
-        stack_config = StackConfig(
-            {
-                "name": "test-sqs",
-                "module": "sqs_stack",
-                "sqs": {
-                    "queues": [
-                        {
-                            "queue_name": "explicit-only",
-                            "visibility_timeout_seconds": 30,
-                            "message_retention_period_days": 4,
-                        }
-                    ]
-                },
-            },
-            workload={"name": "test-workload"},
-        )
-
-        deployment = MagicMock()
-        deployment.build_resource_name.side_effect = lambda x: f"test-{x}"
-
-        with patch.object(stack, "_create_queue") as mock_cq:
-            with patch.object(stack, "_create_dead_letter_queue"):
-                with patch.object(stack, "_add_outputs"):
-                    stack._build(stack_config, deployment, workload)
-
-                    assert mock_cq.call_count == 1
-                    assert mock_cq.call_args[0][0].name == "explicit-only"
+                    assert mock_cq.call_count == 0
