@@ -2,6 +2,27 @@
 
 All notable changes to cdk-factory are documented here.
 
+## [1.0.4] — 2026-04-20
+
+### Added
+
+- `additional_permissions` and `additional_environment_variables` at the Lambda stack level — merged into every resource before CDK constructs are created. Resource-level entries take precedence.
+- `skip_stack_defaults` flag on individual Lambda resources — opt out of stack-level merging.
+- `merge_defaults.py` utility module — pure functions for permission/env var merging with `permission_key()` deduplication.
+- `CdkConfig.save_config_snapshot()` — re-saves `.dynamic/config.json` after all stacks build, reflecting post-merge state.
+- `CdkConfig._resolve_lambda_config_paths()` — resolves SQS consumer queue discovery at config load time from the already-resolved in-memory config. Replaces the old file-based runtime discovery.
+- Better error messages in `JsonLoadingUtility.get_nested_config()` — descriptive errors for invalid `__inherits__` paths instead of cryptic `KeyError: ''`.
+
+### Changed
+
+- `auto_name` default changed from `false` to `true` — CDK generates Lambda function names from the construct path by default. Set `"auto_name": false` for explicit naming.
+- SQS consumer queue discovery moved from `SQSStack._discover_consumer_queues_from_lambda_configs()` (runtime file loading) to `CdkConfig._resolve_lambda_config_paths()` (config load time). Queues are now plain resolved data by the time `build()` runs.
+- `WorkloadFactory.__generate_deployments()` calls `save_config_snapshot()` after all deployments complete.
+
+### Removed
+
+- `SQSStack._discover_consumer_queues_from_lambda_configs()` — replaced by config-time resolution in `CdkConfig`.
+
 ## [1.0.0] — 2026-04-19
 
 First stable release. All breaking changes from the beta period are consolidated here.
