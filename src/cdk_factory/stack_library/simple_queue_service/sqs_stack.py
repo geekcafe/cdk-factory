@@ -13,8 +13,6 @@ from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_sqs as sqs
 from aws_cdk import aws_ssm as ssm
 from aws_lambda_powertools import Logger
-
-from cdk_factory.utilities.json_loading_utility import JsonLoadingUtility
 from constructs import Construct
 
 from cdk_factory.configurations.deployment import DeploymentConfig
@@ -65,24 +63,9 @@ class SQSStack(IStack):
         self.deployment = deployment
         self.workload = workload
 
-        # Load SQS configuration
+        # Load SQS configuration — consumer queues are already populated by
+        # CdkConfig._resolve_lambda_config_paths() during config resolution.
         self.sqs_config = SQSConfig(stack_config.dictionary.get("sqs", {}))
-
-        # Auto-discover consumer queues from lambda configs
-        lambda_config_paths = stack_config.dictionary.get("lambda_config_paths", [])
-        if lambda_config_paths:
-            discovered = self._discover_consumer_queues_from_lambda_configs(
-                lambda_config_paths, stack_config
-            )
-            # Merge: explicit queues take precedence
-            explicit_names = {q.name for q in self.sqs_config.queues}
-            for dq in discovered:
-                if dq.name in explicit_names:
-                    logger.info(
-                        f"Explicit queue '{dq.name}' overrides auto-discovered definition"
-                    )
-                else:
-                    self.sqs_config.queues.append(dq)
 
         # Validate discovered consumer queues have required fields
         for queue_config in self.sqs_config.queues:
@@ -111,62 +94,6 @@ class SQSStack(IStack):
 
         # Add outputs
         self._add_outputs()
-
-    def _discover_consumer_queues_from_lambda_configs(
-        self,
-        lambda_config_paths: List[str],
-        stack_config: StackConfig,
-    ) -> List[SQSConfig]:
-        """Scan Lambda stack config files and extract consumer-type queue definitions.
-
-        For each referenced Lambda config file, loads the JSON and iterates
-        resources[].sqs.queues[]. Extracts entries where type == "consumer",
-        deduplicates by queue_name (first occurrence wins), and returns a list
-        of SQSConfig objects with preserved properties.
-
-        Args:
-            lambda_config_paths: List of relative paths to Lambda stack config JSON files.
-            stack_config: The current stack's configuration (used for path resolution).
-
-        Returns:
-            List of SQSConfig objects for discovered consumer queues.
-        """
-        discovered: Dict[str, SQSConfig] = {}
-
-        # Resolve paths relative to the workload config directory
-        base_dir = "."
-        if self.workload and self.workload.config_path:
-            base_dir = str(Path(self.workload.config_path).parent)
-        elif self.workload and self.workload.paths:
-            base_dir = self.workload.paths[0]
-
-        for config_path in lambda_config_paths:
-            full_path = Path(base_dir) / config_path
-            if not full_path.exists():
-                logger.warning(f"Lambda config not found: {full_path}")
-                continue
-
-            try:
-                ju = JsonLoadingUtility(str(full_path))
-                lambda_stack_config = ju.load()
-            except Exception as e:
-                logger.error(f"Failed to load Lambda config {full_path}: {e}")
-                continue
-
-            for resource in lambda_stack_config.get("resources", []):
-                for queue in resource.get("sqs", {}).get("queues", []):
-                    if queue.get("type") == "consumer":
-                        name = queue.get("queue_name", "")
-                        if name and name not in discovered:
-                            discovered[name] = SQSConfig(queue)
-                        elif name in discovered:
-                            logger.warning(
-                                f"Duplicate consumer queue '{name}' in "
-                                f"{config_path} resource '{resource.get('name')}' — "
-                                f"using first occurrence"
-                            )
-
-        return list(discovered.values())
 
     def _publish_queue_to_ssm(
         self, queue: sqs.Queue, queue_config: SQSConfig, is_dlq: bool = False

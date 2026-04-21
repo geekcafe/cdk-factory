@@ -203,8 +203,91 @@ class CdkConfig:
         # Check for unresolved placeholders after resolution
         self._check_unresolved_placeholders(config, self._resolved_config_file_path)
 
+        # Resolve lambda_config_paths: walk the config and find SQS stacks that
+        # reference lambda stacks for consumer queue discovery. Extract the consumer
+        # queues from the already-resolved lambda stack configs and populate the
+        # SQS stack's sqs.queues array. This happens here so that by the time
+        # any stack build() runs, the queues are already plain resolved data.
+        self._resolve_lambda_config_paths(config)
+
         JsonLoadingUtility.save(config, path)
         return config
+
+    @staticmethod
+    def _resolve_lambda_config_paths(config: Dict[str, Any]) -> None:
+        """Resolve lambda_config_paths references in SQS stack configs.
+
+        Walks the fully-resolved config tree. For any stack with module == "sqs_stack"
+        and a "lambda_config_paths" key, finds the referenced lambda stacks (by matching
+        module == "lambda_stack" in the same deployment), extracts consumer queue
+        definitions, and appends them to the SQS stack's sqs.queues array.
+
+        This runs after __inherits__ resolution and placeholder substitution, so all
+        queue_name values are fully resolved.
+        """
+        workload = config.get("workload", {})
+        for deployment in workload.get("deployments", []):
+            pipeline = deployment.get("pipeline", {})
+            if not isinstance(pipeline, dict):
+                continue
+            # Build a lookup of all lambda stacks by name across all stages
+            all_lambda_stacks: Dict[str, dict] = {}
+            for stage in pipeline.get("stages", []):
+                if not isinstance(stage, dict):
+                    continue
+                for stack in stage.get("stacks", []):
+                    if not isinstance(stack, dict):
+                        continue
+                    if stack.get("module") == "lambda_stack":
+                        all_lambda_stacks[stack.get("name", "")] = stack
+
+            # Now find SQS stacks with lambda_config_paths and resolve them
+            for stage in pipeline.get("stages", []):
+                if not isinstance(stage, dict):
+                    continue
+                for stack in stage.get("stacks", []):
+                    if not isinstance(stack, dict):
+                        continue
+                    if stack.get("module") != "sqs_stack":
+                        continue
+                    lambda_paths = stack.get("lambda_config_paths", [])
+                    if not lambda_paths:
+                        continue
+
+                    # Extract consumer queues from all lambda stacks
+                    # (we match by scanning all lambda stacks, not by path)
+                    discovered: Dict[str, dict] = {}
+                    for _ls_name, ls_dict in all_lambda_stacks.items():
+                        resources = ls_dict.get("resources", [])
+                        if not isinstance(resources, list):
+                            continue
+                        for resource in resources:
+                            if not isinstance(resource, dict):
+                                continue
+                            sqs_block = resource.get("sqs", {})
+                            if not isinstance(sqs_block, dict):
+                                continue
+                            for queue in sqs_block.get("queues", []):
+                                if queue.get("type") == "consumer":
+                                    qname = queue.get("queue_name", "")
+                                    if qname and qname not in discovered:
+                                        discovered[qname] = dict(queue)
+
+                    # Merge into the SQS stack's sqs.queues
+                    if discovered:
+                        sqs_section = stack.setdefault("sqs", {})
+                        existing_queues = sqs_section.get("queues", [])
+                        existing_names = {
+                            q.get("queue_name", "") for q in existing_queues
+                        }
+                        for qname, qdict in discovered.items():
+                            if qname not in existing_names:
+                                existing_queues.append(qdict)
+                        sqs_section["queues"] = existing_queues
+                        print(
+                            f"📦 Resolved {len(discovered)} consumer queues into "
+                            f"SQS stack '{stack.get('name', '')}'"
+                        )
 
     @staticmethod
     def _check_unresolved_placeholders(
