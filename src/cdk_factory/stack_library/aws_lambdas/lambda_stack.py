@@ -36,6 +36,8 @@ from cdk_factory.configurations.resources.lambda_function import (
     SQS as SQSConfig,
 )
 
+from cdk_factory.utilities.merge_defaults import merge_stack_defaults_into_resources
+
 from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_ssm as ssm
 
@@ -99,6 +101,19 @@ class LambdaStack(IStack):
             resources = stack_config.dictionary.get("lambdas", [])
             if len(resources) == 0:
                 raise ValueError("No resources found in stack config")
+
+        # Merge stack-level defaults into each resource dict before
+        # LambdaFunctionConfig instantiation so the rest of the pipeline
+        # (policy generation, environment loading) sees the merged config.
+        additional_permissions = stack_config.dictionary.get(
+            "additional_permissions", []
+        )
+        additional_env_vars = stack_config.dictionary.get(
+            "additional_environment_variables", []
+        )
+        merge_stack_defaults_into_resources(
+            resources, additional_permissions, additional_env_vars
+        )
 
         lambda_functions: List[LambdaFunctionConfig] = []
         for resource in resources:

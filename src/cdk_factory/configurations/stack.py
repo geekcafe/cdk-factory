@@ -106,6 +106,20 @@ class StackConfig:
         """
         return str(self.ssm_config.get("auto_export", False)).lower() == "true"
 
+    @property
+    def additional_permissions(self) -> list:
+        """
+        Stack-level permissions to merge into every resource.
+        """
+        return self.dictionary.get("additional_permissions", [])
+
+    @property
+    def additional_environment_variables(self) -> list:
+        """
+        Stack-level environment variables to merge into every resource.
+        """
+        return self.dictionary.get("additional_environment_variables", [])
+
     def build_id(self) -> str:
         """
         Returns the stack name
