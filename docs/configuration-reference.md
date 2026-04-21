@@ -240,6 +240,63 @@ Also supports `__imports__` (preferred alias) with multiple sources:
 
 When merging: dicts merge recursively, arrays extend, scalars override.
 
+### `__inherits__` with Directories
+
+When `__inherits__` (or `__imports__`) points to a directory instead of a `.json` file, every `.json` file in that directory is loaded and collected into an array. This is used for splitting a stack's `resources` into individual files:
+
+```json
+{
+  "resources": {
+    "__inherits__": "./configs/stacks/lambdas/resources/file-system"
+  }
+}
+```
+
+Each `.json` file in the directory defines a single object. The loader collects them into `[obj1, obj2, ...]`. Files are loaded in directory listing order.
+
+### Stack-Level Lambda Defaults
+
+Lambda stacks support `additional_permissions` and `additional_environment_variables` at the stack level. These are merged into every resource before the stack builds:
+
+```json
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-lambda-file-system",
+  "module": "lambda_stack",
+  "additional_permissions": [
+    { "dynamodb": "read", "table": "{{DYNAMODB_AUDIT_TABLE_NAME}}" }
+  ],
+  "additional_environment_variables": [
+    { "name": "DYNAMODB_AUDIT_TABLE_NAME", "value": "{{DYNAMODB_AUDIT_TABLE_NAME}}" }
+  ],
+  "resources": { "__inherits__": "./configs/stacks/lambdas/resources/file-system" }
+}
+```
+
+Merge rules:
+- Permissions are deduplicated by key (e.g., `dynamodb` + action + table). Resource-level entries win.
+- Environment variables are deduplicated by `name`. Resource-level entries win.
+- Set `skip_stack_defaults: true` on any resource to opt out entirely.
+
+### `lambda_config_paths` Resolution
+
+SQS stacks can declare `lambda_config_paths` to auto-discover consumer queues from lambda stacks. This is resolved at config load time by `CdkConfig`, not at CDK runtime:
+
+```json
+{
+  "module": "sqs_stack",
+  "lambda_config_paths": [
+    "./configs/stacks/lambdas/lambda-workflow-sqs-handler.json"
+  ],
+  "sqs": { "queues": [] }
+}
+```
+
+The resolver scans all lambda stacks in the deployment for `sqs.queues` entries with `type: "consumer"`, extracts them, and appends to `sqs.queues` (skipping duplicates). By the time `build()` runs, queues are plain data.
+
+### Post-Build Config Snapshot
+
+After all stacks build, the resolved config is saved to `.dynamic/config.json`. This snapshot reflects the post-merge state — including resolved `__inherits__`, merged `additional_permissions`, populated `lambda_config_paths` queues, and all placeholder substitutions. Useful for debugging what the CDK actually received.
+
 ---
 
 ## Stack Config

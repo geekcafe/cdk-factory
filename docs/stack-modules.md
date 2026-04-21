@@ -172,7 +172,15 @@ Lambda functions with Docker image, Dockerfile, or code asset packaging.
   "description": "Lambda functions for application settings API",
   "module": "lambda_stack",
   "enabled": true,
+  "auto_name": true,
   "depends_on": [],
+  "additional_permissions": [
+    { "dynamodb": "read", "table": "{{DYNAMODB_AUDIT_TABLE_NAME}}" },
+    { "dynamodb": "write", "table": "{{DYNAMODB_AUDIT_TABLE_NAME}}" }
+  ],
+  "additional_environment_variables": [
+    { "name": "DYNAMODB_AUDIT_TABLE_NAME", "value": "{{DYNAMODB_AUDIT_TABLE_NAME}}" }
+  ],
   "ssm": {
     "auto_export": true,
     "namespace": "my-workload/{{DEPLOYMENT_NAMESPACE}}"
@@ -207,6 +215,82 @@ Lambda functions with Docker image, Dockerfile, or code asset packaging.
 Auto-exports (when `auto_export: true`): `arn`, `function-name` per function
 
 Lambda function names are validated: 1–64 chars, alphanumeric + hyphens + underscores.
+
+### Stack-Level Properties
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_name` | bool | `true` | When `true`, CDK generates function names from the construct path. Set to `false` to use the explicit `name` from each resource. |
+| `additional_permissions` | array | `[]` | Permissions merged into every resource in this stack. Resource-level permissions take precedence (duplicates are skipped). |
+| `additional_environment_variables` | array | `[]` | Environment variables merged into every resource. Resource-level vars with the same `name` take precedence. |
+
+### `skip_stack_defaults`
+
+Any resource can opt out of stack-level merging by setting `skip_stack_defaults: true`:
+
+```json
+{
+  "name": "special-function",
+  "skip_stack_defaults": true,
+  "permissions": [ "parameter_store_read" ],
+  "environment_variables": [ { "name": "ENVIRONMENT" } ]
+}
+```
+
+This resource will not receive `additional_permissions` or `additional_environment_variables` from the stack.
+
+### Directory-Based Resource Inheritance
+
+When a stack has many resources, split each into its own `.json` file in a directory and use `__inherits__` to load them all:
+
+```json
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-lambda-file-system",
+  "module": "lambda_stack",
+  "additional_permissions": [
+    { "dynamodb": "read", "table": "{{DYNAMODB_AUDIT_TABLE_NAME}}" },
+    { "dynamodb": "write", "table": "{{DYNAMODB_AUDIT_TABLE_NAME}}" }
+  ],
+  "additional_environment_variables": [
+    { "name": "DYNAMODB_AUDIT_TABLE_NAME", "value": "{{DYNAMODB_AUDIT_TABLE_NAME}}" }
+  ],
+  "resources": {
+    "__inherits__": "./configs/stacks/lambdas/resources/file-system"
+  }
+}
+```
+
+When `__inherits__` points to a directory, every `.json` file in that directory is loaded and collected into an array. The directory structure looks like:
+
+```
+configs/stacks/lambdas/resources/file-system/
+├── file-system-archive.json
+├── file-system-download-url.json
+├── file-system-get-file.json
+├── file-system-upload-url.json
+└── ...
+```
+
+Each file defines a single resource object (no wrapping array needed):
+
+```json
+{
+  "name": "file-system-archive",
+  "docker": { "image": true },
+  "ecr": { "name": "my-org/my-service", "use_existing": true, "region": "us-east-1", "account": "111111111111" },
+  "image_config": { "command": ["my_module.handlers.archive.lambda_handler"] },
+  "memory_size": 256,
+  "timeout": 30,
+  "permissions": [
+    { "dynamodb": "read", "table": "{{DYNAMODB_APP_TABLE_NAME}}" }
+  ],
+  "environment_variables": [
+    { "name": "ENVIRONMENT", "value": "{{ENVIRONMENT}}" }
+  ]
+}
+```
+
+Stack-level `additional_permissions` and `additional_environment_variables` are merged into each loaded resource (unless `skip_stack_defaults` is set).
 
 ### Lambda Packaging Modes
 
@@ -419,7 +503,32 @@ Auto-exports (when `auto_export: true`): `arn`, `url`
 | `lambda_config_paths` | array | Paths to Lambda stack configs — SQS auto-discovers consumer queues from these |
 | `sqs.queues` | array | Explicit queue definitions (can be empty if using auto-discovery) |
 
-When `lambda_config_paths` is set, the SQS stack scans those Lambda configs for `sqs.consumer` blocks and auto-creates the required queues.
+### `lambda_config_paths` — Auto-Discovery
+
+When `lambda_config_paths` is set, consumer queues are resolved at config load time (during `CdkConfig` resolution), not at CDK runtime. The resolver:
+
+1. Scans all lambda stacks in the deployment for `sqs.queues` entries with `type: "consumer"`
+2. Extracts the queue definitions (name, visibility timeout, etc.)
+3. Appends them to the SQS stack's `sqs.queues` array (skipping duplicates)
+
+By the time any stack's `build()` method runs, the queues are already plain resolved data in the config.
+
+```json
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-sqs-consumer-queues",
+  "module": "sqs_stack",
+  "lambda_config_paths": [
+    "./configs/stacks/lambdas/lambda-workflow-sqs-handler.json",
+    "./configs/stacks/lambdas/lambda-workflow-app.json",
+    "./configs/stacks/lambdas/lambda-validations.json"
+  ],
+  "sqs": {
+    "queues": []
+  }
+}
+```
+
+The `sqs.queues` array starts empty and is populated during config resolution. The post-build snapshot at `.dynamic/config.json` reflects the fully merged state.
 
 ---
 

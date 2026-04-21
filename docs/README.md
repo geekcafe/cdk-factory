@@ -129,8 +129,8 @@ Reference it in config (name is the literal CloudFormation stack name):
 
 ## Documentation
 
-- [Configuration Reference](configuration-reference.md) — Full config.json schema
-- [Stack Modules](stack-modules.md) — Per-module config reference
+- [Configuration Reference](configuration-reference.md) — Full config.json schema, `__inherits__` with directories, stack-level defaults, `lambda_config_paths`, post-build snapshots
+- [Stack Modules](stack-modules.md) — Per-module config reference (lambda defaults, auto_name, SQS auto-discovery)
 - [Naming & SSM](naming-and-ssm.md) — Declarative stack naming, SSM parameter conventions
 - [Cross-Account](cross-account.md) — Multi-account setup and DNS delegation
 - [Deployment Guide](deployment-guide.md) — How to deploy, add tenants, parameter resolution
