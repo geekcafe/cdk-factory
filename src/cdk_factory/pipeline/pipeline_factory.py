@@ -134,7 +134,26 @@ class PipelineFactoryStack(IStack):
 
         # add some environment vars
         env_vars = self._get_environment_vars()
-        build_environment = codebuild.BuildEnvironment(environment_variables=env_vars)
+
+        # Check for compute_type override in pipeline config
+        # Supports: BUILD_GENERAL1_SMALL, BUILD_GENERAL1_MEDIUM,
+        #           BUILD_GENERAL1_LARGE, BUILD_GENERAL1_2XLARGE
+        compute_type_map = {
+            "BUILD_GENERAL1_SMALL": codebuild.ComputeType.SMALL,
+            "BUILD_GENERAL1_MEDIUM": codebuild.ComputeType.MEDIUM,
+            "BUILD_GENERAL1_LARGE": codebuild.ComputeType.LARGE,
+            "BUILD_GENERAL1_2XLARGE": codebuild.ComputeType.X2_LARGE,
+        }
+        cb_defaults = self.pipeline.pipeline.get("code_build_defaults", {})
+        compute_type_str = cb_defaults.get("compute_type")
+        compute_type = (
+            compute_type_map.get(compute_type_str) if compute_type_str else None
+        )
+
+        build_environment = codebuild.BuildEnvironment(
+            environment_variables=env_vars,
+            compute_type=compute_type,
+        )
 
         codebuild_policy = CodeBuildPolicy()
         role_policy = codebuild_policy.code_build_policies(
