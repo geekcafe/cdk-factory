@@ -27,6 +27,7 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 
 logger = Logger(__name__)
 
+
 @register_stack("cdn_stack")
 @register_stack("website_library_module")
 @register_stack("static_website_stack")
@@ -62,11 +63,11 @@ class StaticWebSiteStack(IStack):
 
         certificate: Optional[acm.Certificate] = None
         hosted_zone: Optional[route53.IHostedZone] = None
-        if dns.get("hosted_zone_id"):
+        if dns.get("hosted_zone_id") or dns.get("hosted_zone_name"):
             if not aliases or not isinstance(aliases, list) or len(aliases) == 0:
                 raise ValueError(
                     "DNS aliases are required and must be a non-empty list when "
-                    "hosted_zone_id is specified"
+                    "hosted_zone_id or hosted_zone_name is specified"
                 )
 
             hosted_zone = self.__get_hosted_zone(
@@ -103,7 +104,7 @@ class StaticWebSiteStack(IStack):
     ) -> s3.IBucket:
         """
         Get or create S3 bucket based on configuration.
-        
+
         Supports:
         - Creating new bucket (default)
         - Importing existing bucket by name
@@ -111,7 +112,7 @@ class StaticWebSiteStack(IStack):
         """
         bucket_config = stack_config.dictionary.get("bucket", {})
         create_bucket = bucket_config.get("create", True)
-        
+
         if create_bucket:
             # Default behavior - create new bucket
             logger.info("Creating new S3 bucket for website")
@@ -126,20 +127,16 @@ class StaticWebSiteStack(IStack):
             # Import existing bucket
             bucket_name = bucket_config.get("name")
             bucket_arn = bucket_config.get("import_arn")
-            
+
             if bucket_name:
                 logger.info(f"Importing existing S3 bucket by name: {bucket_name}")
                 return s3.Bucket.from_bucket_name(
-                    self,
-                    deployment.build_resource_name("ImportedBucket"),
-                    bucket_name
+                    self, deployment.build_resource_name("ImportedBucket"), bucket_name
                 )
             elif bucket_arn:
                 logger.info(f"Importing existing S3 bucket by ARN: {bucket_arn}")
                 return s3.Bucket.from_bucket_arn(
-                    self,
-                    deployment.build_resource_name("ImportedBucket"),
-                    bucket_arn
+                    self, deployment.build_resource_name("ImportedBucket"), bucket_arn
                 )
             else:
                 raise ValueError(
@@ -151,31 +148,35 @@ class StaticWebSiteStack(IStack):
     ) -> Optional[str]:
         """
         Get the path to website assets.
-        
+
         Returns None if assets deployment is disabled or assets config not provided.
         Raises ValueError if assets deployment is enabled but path not found.
         """
         assets_config = stack_config.dictionary.get("assets")
-        
+
         # If no assets config provided, skip asset deployment
         if not assets_config:
-            logger.info("No assets configuration found - skipping asset path resolution")
+            logger.info(
+                "No assets configuration found - skipping asset path resolution"
+            )
             return None
-        
+
         # Check if deployment is explicitly disabled
         deploy_assets = assets_config.get("deploy", True)
         if not deploy_assets:
             logger.info("Asset deployment disabled - skipping asset path resolution")
             return None
-        
+
         # Get path from assets config or fallback to legacy src.path
-        source = assets_config.get("path") or stack_config.dictionary.get("src", {}).get("path")
-        
+        source = assets_config.get("path") or stack_config.dictionary.get(
+            "src", {}
+        ).get("path")
+
         if not source:
             raise ValueError(
                 "assets.path or src.path is required when assets.deploy=true (default)"
             )
-        
+
         for base in workload.paths:
             if base is None:
                 continue
@@ -199,7 +200,7 @@ class StaticWebSiteStack(IStack):
         # Get configuration for assets and CloudFront
         assets_config = stack_config.dictionary.get("assets")
         cloudfront_config = stack_config.dictionary.get("cloudfront", {})
-        
+
         # If assets config not provided, default to no deployment (CDN-only mode)
         if assets_config:
             deploy_assets = assets_config.get("deploy", True)
@@ -207,14 +208,16 @@ class StaticWebSiteStack(IStack):
         else:
             deploy_assets = False
             enable_versioning = False
-        
-        invalidate_on_deploy = cloudfront_config.get("invalidate_on_deploy", deploy_assets)
+
+        invalidate_on_deploy = cloudfront_config.get(
+            "invalidate_on_deploy", deploy_assets
+        )
         restrict_to_known_hosts = cloudfront_config.get("restrict_to_known_hosts", True)
-        
+
         # Determine version/path for CloudFront origin
         version = None  # Default to no subdirectory (bucket root)
         assets_path = None
-        
+
         if deploy_assets:
             assets_path = self.__get_website_assets_path(stack_config, workload)
             if enable_versioning and assets_path:
@@ -222,9 +225,13 @@ class StaticWebSiteStack(IStack):
                 logger.info(f"👉 WEBSITE VERSION NUMBER: {version}")
                 logger.info(f"👉 CloudFront origin path: /{version}")
             else:
-                logger.info("👉 Asset versioning disabled - CloudFront serving from bucket root")
+                logger.info(
+                    "👉 Asset versioning disabled - CloudFront serving from bucket root"
+                )
         else:
-            logger.info("👉 Asset deployment disabled - CloudFront serving from bucket root")
+            logger.info(
+                "👉 Asset deployment disabled - CloudFront serving from bucket root"
+            )
 
         # Build CloudFront distribution kwargs
         cf_kwargs = {
@@ -236,37 +243,41 @@ class StaticWebSiteStack(IStack):
             "restrict_to_known_hosts": restrict_to_known_hosts,
             "stack_config": stack_config,
         }
-        
+
         # Only set source_bucket_sub_directory if we have a version
         if version:
             cf_kwargs["source_bucket_sub_directory"] = version
-        
+
         cloudfront_distribution = CloudFrontDistributionConstruct(**cf_kwargs)
 
         # Deploy website assets to S3 if configured
         if deploy_assets and assets_path:
             logger.info(f"Deploying assets from {assets_path} to S3")
-            
+
             deployment_kwargs = {
                 "scope": self,
                 "id": deployment.build_resource_name("static-website-distribution"),
                 "destination_bucket": bucket,
                 "sources": [aws_s3_deployment.Source.asset(assets_path)],
-                "memory_limit": int(deployment.config.get("distribution_lambda_memory_limit", 1024)),
+                "memory_limit": int(
+                    deployment.config.get("distribution_lambda_memory_limit", 1024)
+                ),
             }
-            
+
             # Add versioning if enabled
             if enable_versioning:
                 deployment_kwargs["destination_key_prefix"] = version
-            
+
             # Add CloudFront invalidation if enabled
             if invalidate_on_deploy and cloudfront_distribution.distribution:
-                logger.info("CloudFront invalidation enabled - deployment will take ~5 minutes")
+                logger.info(
+                    "CloudFront invalidation enabled - deployment will take ~5 minutes"
+                )
                 deployment_kwargs["distribution"] = cloudfront_distribution.distribution
                 deployment_kwargs["distribution_paths"] = ["/*"]
             else:
                 logger.info("CloudFront invalidation disabled")
-            
+
             aws_s3_deployment.BucketDeployment(**deployment_kwargs)
         else:
             logger.info("Skipping asset deployment - using existing bucket content")
@@ -278,7 +289,7 @@ class StaticWebSiteStack(IStack):
                 aliases=aliases,
                 distribution=cloudfront_distribution.distribution,
             )
-        
+
         # Export SSM parameters if configured
         self.__export_ssm_parameters(
             stack_config=stack_config,
@@ -307,14 +318,25 @@ class StaticWebSiteStack(IStack):
     def __get_hosted_zone(
         self, hosted_zone_id: str, hosted_zone_name: str, deployment: DeploymentConfig
     ) -> route53.IHostedZone:
-        if not hosted_zone_id or not hosted_zone_name:
-            raise ValueError("Both hosted zone id and hosted zone name are required")
-        return route53.HostedZone.from_hosted_zone_attributes(
-            self,
-            deployment.build_resource_name("HostedZone"),
-            hosted_zone_id=hosted_zone_id,
-            zone_name=hosted_zone_name,
-        )
+        if hosted_zone_id and hosted_zone_name:
+            return route53.HostedZone.from_hosted_zone_attributes(
+                self,
+                deployment.build_resource_name("HostedZone"),
+                hosted_zone_id=hosted_zone_id,
+                zone_name=hosted_zone_name,
+            )
+        elif hosted_zone_name:
+            # Lookup by name when ID is not available (e.g., greenfield where
+            # the backend created the zone but the ID isn't in this config yet).
+            return route53.HostedZone.from_lookup(
+                self,
+                deployment.build_resource_name("HostedZoneLookup"),
+                domain_name=hosted_zone_name,
+            )
+        else:
+            raise ValueError(
+                "Either hosted_zone_id + hosted_zone_name or hosted_zone_name alone is required"
+            )
 
     def __export_ssm_parameters(
         self,
@@ -324,18 +346,18 @@ class StaticWebSiteStack(IStack):
     ) -> None:
         """
         Export stack outputs to SSM Parameter Store if ssm_exports is configured.
-        
+
         Args:
             stack_config: Stack configuration containing ssm_exports
             bucket: The S3 bucket
             cloudfront_distribution: The CloudFront distribution construct
         """
         ssm_exports = stack_config.dictionary.get("ssm", {}).get("exports", {})
-        
+
         if not ssm_exports:
             logger.debug("No SSM exports configured for this stack")
             return
-        
+
         # Export bucket name if configured
         if "bucket_name" in ssm_exports:
             self.export_ssm_parameter(
@@ -345,7 +367,7 @@ class StaticWebSiteStack(IStack):
                 parameter_name=ssm_exports["bucket_name"],
                 description=f"S3 bucket name for {stack_config.name}",
             )
-        
+
         if "bucket_arn" in ssm_exports:
             self.export_ssm_parameter(
                 scope=self,
@@ -364,9 +386,12 @@ class StaticWebSiteStack(IStack):
                 parameter_name=ssm_exports["cloudfront_domain"],
                 description=f"CloudFront domain name for {stack_config.name}",
             )
-        
+
         # Export CloudFront distribution ID if configured
-        if "cloudfront_distribution_id" in ssm_exports and cloudfront_distribution.distribution:
+        if (
+            "cloudfront_distribution_id" in ssm_exports
+            and cloudfront_distribution.distribution
+        ):
             self.export_ssm_parameter(
                 scope=self,
                 id="SsmExportCloudFrontDistributionId",
@@ -374,11 +399,15 @@ class StaticWebSiteStack(IStack):
                 parameter_name=ssm_exports["cloudfront_distribution_id"],
                 description=f"CloudFront distribution ID for {stack_config.name}",
             )
-        
+
         # Export DNS alias (first alias) if configured
         if "dns_alias" in ssm_exports and cloudfront_distribution.aliases:
             # Export the first alias (primary domain)
-            primary_alias = cloudfront_distribution.aliases[0] if isinstance(cloudfront_distribution.aliases, list) else cloudfront_distribution.aliases
+            primary_alias = (
+                cloudfront_distribution.aliases[0]
+                if isinstance(cloudfront_distribution.aliases, list)
+                else cloudfront_distribution.aliases
+            )
             self.export_ssm_parameter(
                 scope=self,
                 id="SsmExportDnsAlias",
@@ -386,8 +415,10 @@ class StaticWebSiteStack(IStack):
                 parameter_name=ssm_exports["dns_alias"],
                 description=f"Primary DNS alias for {stack_config.name}",
             )
-        
-        logger.info(f"Exported {len(ssm_exports)} SSM parameters for stack {stack_config.name}")
+
+        logger.info(
+            f"Exported {len(ssm_exports)} SSM parameters for stack {stack_config.name}"
+        )
 
     def __get_version_number(self, assets_path: str) -> str:
         version = "0.0.1.ckd.factory"
