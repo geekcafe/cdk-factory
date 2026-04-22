@@ -26,11 +26,13 @@ class Route53Config:
     def hosted_zone_id(self) -> Optional[str]:
         """Hosted zone ID"""
         return self.__config.get("hosted_zone_id")
-    
+
     @property
     def existing_hosted_zone_id(self) -> Optional[str]:
         """Existing hosted zone ID (alias for hosted_zone_id)"""
-        return self.__config.get("existing_hosted_zone_id") or self.__config.get("hosted_zone_id")
+        return self.__config.get("existing_hosted_zone_id") or self.__config.get(
+            "hosted_zone_id"
+        )
 
     @property
     def domain_name(self) -> Optional[str]:
@@ -45,7 +47,10 @@ class Route53Config:
     @property
     def create_hosted_zone(self) -> bool:
         """Whether to create a new hosted zone"""
-        return self.__config.get("create_hosted_zone", False)
+        value = self.__config.get("create_hosted_zone", False)
+        if isinstance(value, str):
+            return value.lower() == "true"
+        return bool(value)
 
     @property
     def comment(self) -> str:
@@ -106,7 +111,7 @@ class Route53Config:
     def tags(self) -> Dict[str, str]:
         """Tags to apply to the Route53 resources"""
         return self.__config.get("tags", {})
-    
+
     @property
     def records(self) -> List[Dict[str, Any]]:
         """Records to create"""
