@@ -152,3 +152,68 @@ class TestRoute53Delegation:
         mock_r53.list_resource_record_sets.assert_called_once_with(HostedZoneId="Z333")
         # Zone name lookup was NOT called (SSM provided the ID)
         mock_r53.list_hosted_zones_by_name.assert_not_called()
+
+    @patch.object(Route53Delegation, "_get_client")
+    def test_delegate_conflict_between_explicit_and_ssm(self, mock_get_client):
+        """Verify RuntimeError when explicit zone ID and SSM value disagree."""
+        mock_ssm_client = MagicMock()
+        mock_ssm_client.get_parameter.return_value = {
+            "Parameter": {"Value": "Z999-FROM-SSM"}
+        }
+
+        mock_r53 = MagicMock()
+
+        def side_effect(service, role_arn=None):
+            if service == "ssm":
+                return mock_ssm_client
+            return mock_r53
+
+        mock_get_client.side_effect = side_effect
+
+        delegation = Route53Delegation()
+        with pytest.raises(RuntimeError, match="Conflict"):
+            delegation.delegate(
+                target_role_arn="arn:aws:iam::111:role/Role",
+                management_role_arn="arn:aws:iam::222:role/Role",
+                target_zone_name="dev.example.com",
+                management_zone_id="Z222",
+                target_zone_id="Z111-EXPLICIT",
+                target_zone_id_ssm_parameter="/my/zone/id",
+            )
+
+    @patch.object(Route53Delegation, "_get_client")
+    def test_delegate_explicit_and_ssm_agree(self, mock_get_client):
+        """Verify no error when explicit zone ID and SSM value match."""
+        mock_ssm_client = MagicMock()
+        mock_ssm_client.get_parameter.return_value = {"Parameter": {"Value": "Z111"}}
+
+        mock_r53 = MagicMock()
+        mock_r53.list_resource_record_sets.return_value = {
+            "ResourceRecordSets": [
+                {
+                    "Type": "NS",
+                    "ResourceRecords": [{"Value": "ns-1.awsdns.com."}],
+                }
+            ]
+        }
+        mock_r53.change_resource_record_sets.return_value = {}
+
+        def side_effect(service, role_arn=None):
+            if service == "ssm":
+                return mock_ssm_client
+            return mock_r53
+
+        mock_get_client.side_effect = side_effect
+
+        delegation = Route53Delegation()
+        delegation.delegate(
+            target_role_arn="arn:aws:iam::111:role/Role",
+            management_role_arn="arn:aws:iam::222:role/Role",
+            target_zone_name="dev.example.com",
+            management_zone_id="Z222",
+            target_zone_id="Z111",
+            target_zone_id_ssm_parameter="/my/zone/id",
+        )
+
+        # Both were resolved, no error raised, delegation proceeded
+        mock_r53.change_resource_record_sets.assert_called_once()

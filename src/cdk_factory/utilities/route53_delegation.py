@@ -157,13 +157,27 @@ class Route53Delegation:
             ttl: TTL for the NS delegation records (default 300)
         """
         # Step 1: Resolve target hosted zone ID
-        if not target_zone_id and target_zone_id_ssm_parameter:
+        ssm_zone_id = None
+        if target_zone_id_ssm_parameter:
             logger.info(
                 f"Looking up target zone ID from SSM: {target_zone_id_ssm_parameter}"
             )
-            target_zone_id = self.get_ssm_parameter(
+            ssm_zone_id = self.get_ssm_parameter(
                 target_zone_id_ssm_parameter, role_arn=target_role_arn
             )
+
+        if target_zone_id and ssm_zone_id:
+            if target_zone_id != ssm_zone_id:
+                raise RuntimeError(
+                    f"Conflict: TARGET_HOSTED_ZONE_ID='{target_zone_id}' does not match "
+                    f"SSM parameter '{target_zone_id_ssm_parameter}' value='{ssm_zone_id}'. "
+                    "Provide only one, or ensure they agree."
+                )
+            logger.info(
+                f"Both target_zone_id and SSM parameter provided and agree: {target_zone_id}"
+            )
+        elif not target_zone_id and ssm_zone_id:
+            target_zone_id = ssm_zone_id
 
         if not target_zone_id:
             logger.info(f"Looking up target zone ID by name: {target_zone_name}")
