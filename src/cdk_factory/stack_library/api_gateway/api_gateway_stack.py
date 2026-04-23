@@ -1153,19 +1153,25 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         return options
 
     def __setup_custom_domain(self, api: apigateway.RestApi):
-        record_name = self.api_config.hosted_zone.get("record_name", None)
+        record_name = self.api_config.custom_domain.get(
+            "domain_name"
+        ) or self.api_config.hosted_zone.get("record_name", None)
 
         if not record_name:
             return
 
-        hosted_zone_id = self.api_config.hosted_zone.get("id", None)
+        hosted_zone_id = self.api_config.custom_domain.get(
+            "hosted_zone_id"
+        ) or self.api_config.hosted_zone.get("id", None)
 
         if not hosted_zone_id:
             raise ValueError(
                 "Hosted zone id is required, when you specify a hosted zone record name"
             )
 
-        hosted_zone_name = self.api_config.hosted_zone.get("name", None)
+        hosted_zone_name = self.api_config.custom_domain.get(
+            "hosted_zone_name"
+        ) or self.api_config.hosted_zone.get("name", None)
         if not hosted_zone_name:
             raise ValueError(
                 "Hosted zone name is required, when you specify a hosted zone record name"
@@ -1179,12 +1185,16 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         )
 
         certificate: acm.Certificate | None = None
+        cert_arn = (
+            self.api_config.custom_domain.get("certificate_arn")
+            or self.api_config.ssl_cert_arn
+        )
         # either get or create the cert
-        if self.api_config.ssl_cert_arn:
+        if cert_arn:
             certificate = acm.Certificate.from_certificate_arn(
                 self,
                 "ApiCertificate",
-                self.api_config.ssl_cert_arn,
+                cert_arn,
             )
         else:
             certificate = acm.Certificate(

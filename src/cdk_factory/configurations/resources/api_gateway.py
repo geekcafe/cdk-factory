@@ -129,6 +129,11 @@ class ApiGatewayConfig(EnhancedBaseConfig):
         return self.__config.get("hosted_zone", {})
 
     @property
+    def custom_domain(self) -> dict:
+        """Custom domain config: domain_name, hosted_zone_id, hosted_zone_name, certificate_arn"""
+        return self.__config.get("custom_domain", {})
+
+    @property
     def ssl_cert_arn(self) -> str | None:
         return self.__config.get("ssl_cert_arn")
 
