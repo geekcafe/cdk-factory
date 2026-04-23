@@ -36,6 +36,7 @@ from cdk_factory.configurations.resources.apigateway_route_config import (
     ApiGatewayConfigRouteConfig,
 )
 from cdk_factory.utilities.route_metadata_validator import RouteMetadataValidator
+from cdk_factory.utilities.synth_messages import synth_messages
 
 logger = Logger(service="ApiGatewayStack")
 
@@ -103,113 +104,112 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             raise ValueError(f"Unsupported api_type: {api_type}")
 
     def _discover_routes_from_dependencies(self) -> List[Dict[str, Any]]:
-        """Discover routes from Lambda stacks listed in depends_on."""
+        """Discover routes from all Lambda stacks in the pipeline.
+
+        Scans all stacks across all pipeline stages in the resolved workload
+        config, looking for resources with `api` sections. This means routes
+        are automatically discovered without needing to list every lambda
+        stack in `depends_on`.
+        """
         discovered = []
-        dependencies = self.stack_config.dependencies
-        if not dependencies:
+        if not self.workload:
             return discovered
 
-        ssm_imports = self.stack_config.ssm_config.get("imports", {})
-        namespace = ssm_imports.get("namespace")
-        if namespace:
-            prefix = f"/{namespace}/lambda"
-        else:
-            workload = ssm_imports.get(
-                "workload",
-                ssm_imports.get("organization", self.deployment.workload_name),
-            )
-            environment = ssm_imports.get("environment", self.deployment.environment)
-            prefix = f"/{workload}/{environment}/lambda"
+        workload_dict = self.workload.dictionary
+        deployments = workload_dict.get("deployments", [])
 
-        # Each dependency is a stack config name like "lambda-app-settings"
-        # We need to find which lambdas it contains by reading their route SSM params.
-        # The lambda names are exported under {prefix}/{lambda-name}/api-route.
-        # Since we don't know the lambda names upfront, we read the dependency's
-        # stack config to find its resource names.
-        for dep_name in dependencies:
-            # Try to find the dependency's stack config from the workload config
-            dep_config = self._find_dependency_stack_config(dep_name)
-            if not dep_config:
-                logger.info(
-                    f"Dependency '{dep_name}' not found or not a Lambda stack, skipping route discovery"
-                )
-                continue
+        for deployment in deployments:
+            pipeline = deployment.get("pipeline", {})
+            for stage in pipeline.get("stages", []):
+                for stack in stage.get("stacks", []):
+                    # Only look at lambda stacks
+                    module = stack.get("module", "")
+                    if "lambda" not in module:
+                        continue
 
-            resources = dep_config.get("resources", [])
-            if not resources:
-                resources = dep_config.get("lambdas", [])
-            if not resources:
-                continue
+                    resources = stack.get("resources", [])
+                    if isinstance(resources, dict):
+                        # __inherits__ not resolved — skip
+                        continue
+                    if not resources:
+                        resources = stack.get("lambdas", [])
+                    if not resources:
+                        continue
 
-            for resource in resources:
-                lambda_name = resource.get("name")
-                api_config = resource.get("api")
-                if not lambda_name or not api_config or not api_config.get("route"):
-                    continue
+                    stack_name = stack.get("name", "unknown")
+                    for resource in resources:
+                        if not isinstance(resource, dict):
+                            continue
+                        lambda_name = resource.get("name")
+                        api_config = resource.get("api")
+                        if (
+                            not lambda_name
+                            or not api_config
+                            or not api_config.get("route")
+                        ):
+                            continue
 
-                try:
-                    RouteMetadataValidator.validate_route_metadata(
-                        api_config, lambda_name
-                    )
-                except ValueError as e:
-                    logger.warning(
-                        f"Invalid route metadata in dependency '{dep_name}', lambda '{lambda_name}': {e}"
-                    )
-                    continue
+                        try:
+                            RouteMetadataValidator.validate_route_metadata(
+                                api_config, lambda_name
+                            )
+                        except ValueError as e:
+                            logger.warning(
+                                f"Invalid route metadata in '{stack_name}', lambda '{lambda_name}': {e}"
+                            )
+                            synth_messages.warning(
+                                f"Invalid route: {lambda_name} — {e}"
+                            )
+                            continue
 
-                # Build route dict in the same format as explicit routes
-                route = {
-                    "path": api_config.get("route", ""),
-                    "method": api_config.get("method", "GET").upper(),
-                    "lambda_name": lambda_name,
-                    "skip_authorizer": api_config.get("skip_authorizer", False),
-                }
-                if route["skip_authorizer"]:
-                    route["authorization_type"] = "NONE"
+                        route = {
+                            "path": api_config.get("route", ""),
+                            "method": api_config.get("method", "GET").upper(),
+                            "lambda_name": lambda_name,
+                            "skip_authorizer": api_config.get("skip_authorizer", False),
+                        }
+                        if route["skip_authorizer"]:
+                            route["authorization_type"] = "NONE"
 
-                discovered.append(route)
-                logger.info(
-                    f"Discovered route: {route['method']} {route['path']} -> {lambda_name}"
-                )
+                        discovered.append(route)
+                        logger.info(
+                            f"Discovered route: {route['method']} {route['path']} -> {lambda_name}"
+                        )
 
-                # Expand multi-route lambdas
-                for sub_route in api_config.get("routes", []):
-                    sub = {
-                        "path": sub_route.get("route", ""),
-                        "method": sub_route.get("method", "GET").upper(),
-                        "lambda_name": lambda_name,
-                        "skip_authorizer": sub_route.get(
-                            "skip_authorizer", api_config.get("skip_authorizer", False)
-                        ),
-                    }
-                    if sub["skip_authorizer"]:
-                        sub["authorization_type"] = "NONE"
-                    discovered.append(sub)
-                    logger.info(
-                        f"Discovered sub-route: {sub['method']} {sub['path']} -> {lambda_name}"
-                    )
+                        # Expand multi-route lambdas
+                        for sub_route in api_config.get("routes", []):
+                            sub = {
+                                "path": sub_route.get("route", ""),
+                                "method": sub_route.get("method", "GET").upper(),
+                                "lambda_name": lambda_name,
+                                "skip_authorizer": sub_route.get(
+                                    "skip_authorizer",
+                                    api_config.get("skip_authorizer", False),
+                                ),
+                            }
+                            if sub["skip_authorizer"]:
+                                sub["authorization_type"] = "NONE"
+                            discovered.append(sub)
+                            logger.info(
+                                f"Discovered sub-route: {sub['method']} {sub['path']} -> {lambda_name}"
+                            )
 
         if discovered:
-            print(f"🔍 Discovered {len(discovered)} route(s) from Lambda dependencies")
+            print(f"🔍 Discovered {len(discovered)} route(s) from Lambda stacks")
 
         return discovered
 
     def _find_dependency_stack_config(self, dep_name: str) -> dict | None:
         """Find a dependency's resolved stack config from the workload config."""
-        # The workload config contains all resolved stack configs from the pipeline stages.
-        # We search through the stages to find the stack whose name contains the dep_name.
-        if not self.workload or not hasattr(self.workload, "config"):
+        if not self.workload:
             return None
 
-        workload_dict = (
-            self.workload.config if isinstance(self.workload.config, dict) else {}
-        )
+        workload_dict = self.workload.dictionary
         deployments = workload_dict.get("deployments", [])
         for deployment in deployments:
             pipeline = deployment.get("pipeline", {})
             for stage in pipeline.get("stages", []):
                 for stack in stage.get("stacks", []):
-                    # Stack configs loaded via __inherits__ are resolved into dicts
                     stack_name = stack.get("name", "")
                     if dep_name in stack_name:
                         return stack
@@ -238,8 +238,14 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                     f"Route conflict: {key[1]} {key[0]} exists in both explicit config "
                     f"and discovered routes. Using explicit route definition."
                 )
+                synth_messages.warning(
+                    f"Route conflict: {key[1]} {key[0]} — explicit config wins over discovered route"
+                )
             else:
                 merged.append(route)
+                synth_messages.info(
+                    f"Discovered route: {key[1]} {key[0]} -> {route.get('lambda_name')}"
+                )
 
         return merged
 
