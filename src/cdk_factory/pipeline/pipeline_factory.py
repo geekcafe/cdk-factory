@@ -154,6 +154,7 @@ class PipelineFactoryStack(IStack):
             environment_variables=env_vars,
             compute_type=compute_type,
         )
+        print(f"🤖 COMPUTE TYPE (default): {compute_type}")
 
         codebuild_policy = CodeBuildPolicy()
         role_policy = codebuild_policy.code_build_policies(
@@ -165,6 +166,29 @@ class PipelineFactoryStack(IStack):
             role_policy=role_policy,
             build_environment=build_environment,
         )
+
+        # Check for synth-specific compute_type override
+        # synth_code_build_defaults allows the synth step to use a different
+        # compute type than the rest of the pipeline stages
+        synth_cb_defaults = self.pipeline.pipeline.get("synth_code_build_defaults", {})
+        synth_compute_type_str = synth_cb_defaults.get("compute_type")
+        synth_compute_type = (
+            compute_type_map.get(synth_compute_type_str)
+            if synth_compute_type_str
+            else None
+        )
+
+        synth_build_options: pipelines.CodeBuildOptions | None = None
+        if synth_compute_type:
+            synth_build_environment = codebuild.BuildEnvironment(
+                environment_variables=env_vars,
+                compute_type=synth_compute_type,
+            )
+            synth_build_options = pipelines.CodeBuildOptions(
+                role_policy=role_policy,
+                build_environment=synth_build_environment,
+            )
+            print(f"🤖 COMPUTE TYPE (synth): {synth_compute_type}")
 
         cdk_cli_version = self.workload.devops.cdk_cli_version
         pipeline_version = self.workload.devops.pipeline_version
@@ -182,6 +206,7 @@ class PipelineFactoryStack(IStack):
             # make sure this is set or you'll get errors, we're doing cross account deployments
             cross_account_keys=True,
             code_build_defaults=build_options,
+            synth_code_build_defaults=synth_build_options,
             # TODO: make this configurable
             pipeline_type=pipeline_type,
             cli_version=cdk_cli_version,
