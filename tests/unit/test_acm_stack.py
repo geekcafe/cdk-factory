@@ -126,9 +126,7 @@ class TestAcmStack(unittest.TestCase):
                     "domain_name": "example.com",
                     "hosted_zone_id": "Z1234567890ABC",
                     "ssm": {
-                        "exports": {
-                            "certificate_arn": "/test/app/certificate/arn"
-                        }
+                        "exports": {"certificate_arn": "/test/app/certificate/arn"}
                     },
                 }
             },
@@ -182,7 +180,7 @@ class TestAcmStack(unittest.TestCase):
         resources = template.find_resources("AWS::CertificateManager::Certificate")
         cert_resource = list(resources.values())[0]
         tags = cert_resource["Properties"]["Tags"]
-        
+
         # Check our tags exist
         tag_dict = {tag["Key"]: tag["Value"] for tag in tags}
         self.assertEqual(tag_dict["Environment"], "production")
@@ -204,7 +202,7 @@ class TestAcmStack(unittest.TestCase):
                 "domain_name": "example.com",
                 "subject_alternative_names": ["*.example.com"],
             },
-            self.deployment
+            self.deployment,
         )
         self.assertEqual(config1.subject_alternative_names, ["*.example.com"])
 
@@ -214,22 +212,35 @@ class TestAcmStack(unittest.TestCase):
                 "domain_name": "example.com",
                 "alternate_names": ["*.example.com"],
             },
-            self.deployment
+            self.deployment,
         )
         self.assertEqual(config2.subject_alternative_names, ["*.example.com"])
 
     def test_acm_config_default_ssm_exports(self):
-        """Test AcmConfig provides default SSM export path"""
+        """Test AcmConfig requires namespace for auto_export SSM exports"""
+        # Without auto_export, no exports are generated
         config = AcmConfig(
             {
                 "domain_name": "example.com",
             },
-            self.deployment
+            self.deployment,
         )
-        
         ssm_exports = config.ssm_exports
-        self.assertIn("certificate_arn", ssm_exports)
-        self.assertIn("/test/test-workload/certificate/arn", ssm_exports["certificate_arn"])
+        self.assertEqual(ssm_exports, {})
+
+        # With auto_export and namespace, exports are generated
+        config2 = AcmConfig(
+            {
+                "domain_name": "example.com",
+                "ssm": {"auto_export": True, "namespace": "test/test-workload"},
+            },
+            self.deployment,
+        )
+        ssm_exports2 = config2.ssm_exports
+        self.assertIn("certificate_arn", ssm_exports2)
+        self.assertEqual(
+            ssm_exports2["certificate_arn"], "/test/test-workload/certificate/arn"
+        )
 
     def test_certificate_without_hosted_zone_no_validation(self):
         """Test ACM stack creates certificate without DNS validation when hosted_zone_id is missing"""
@@ -246,7 +257,7 @@ class TestAcmStack(unittest.TestCase):
 
         stack = AcmStack(self.app, "TestAcmStackNoZone")
         stack.build(stack_config, self.deployment, self.dummy_workload)
-        
+
         # Verify certificate was created without validation method specified
         template = Template.from_stack(stack)
         template.resource_count_is("AWS::CertificateManager::Certificate", 1)
@@ -258,7 +269,7 @@ class TestAcmStackRegistration(unittest.TestCase):
     def test_acm_stack_module_exists(self):
         """Test that ACM stack module can be imported"""
         from cdk_factory.stack_library.acm.acm_stack import AcmStack
-        
+
         # Verify the class exists and is properly named
         self.assertIsNotNone(AcmStack)
         self.assertEqual(AcmStack.__name__, "AcmStack")

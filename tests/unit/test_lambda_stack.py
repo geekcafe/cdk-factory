@@ -599,8 +599,7 @@ class TestLambdaStackReal:
             "enabled": True,
             "ssm": {
                 "auto_export": True,
-                "organization": "test-org",
-                "environment": "test",
+                "namespace": "test-org/test",
             },
             "resources": [
                 {

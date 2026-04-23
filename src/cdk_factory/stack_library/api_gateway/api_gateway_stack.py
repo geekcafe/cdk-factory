@@ -624,21 +624,15 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             # Build SSM path using convention from lambda_stack
             # Read SSM imports from top-level ssm block via stack_config
             ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
-            # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
             namespace = ssm_imports_config.get("namespace")
-            if namespace:
-                ssm_path = f"/{namespace}/lambda/{lambda_name}/arn"
-            else:
-                workload = ssm_imports_config.get(
-                    "workload",
-                    ssm_imports_config.get(
-                        "organization", self.deployment.workload_name
-                    ),
+            if not namespace:
+                raise ValueError(
+                    f"Stack '{self.stack_config.name}': "
+                    f"'ssm.imports.namespace' is required for Lambda auto-discovery "
+                    f"(route references lambda_name='{lambda_name}'). "
+                    f"Add 'ssm.imports.namespace' to your stack config."
                 )
-                environment = ssm_imports_config.get(
-                    "environment", self.deployment.environment
-                )
-                ssm_path = f"/{workload}/{environment}/lambda/{lambda_name}/arn"
+            ssm_path = f"/{namespace}/lambda/{lambda_name}/arn"
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
 
             try:

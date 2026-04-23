@@ -68,6 +68,7 @@ class TestApiGatewaySSMLambdaImport:
             "ssm": {
                 "auto_export": True,
                 "imports": {
+                    "namespace": "test-workload/test",
                     "organization": "/test-workload/test/organization",
                     "environment": "/test-workload/test/environment",
                 },
@@ -270,6 +271,7 @@ class TestApiGatewaySSMLambdaImport:
             "ssm": {
                 "auto_export": True,
                 "imports": {
+                    "namespace": "test-workload/test",
                     "organization": "/test-workload/test/organization",
                     "environment": "/test-workload/test/environment",
                 },

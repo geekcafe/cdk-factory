@@ -100,11 +100,11 @@ class ECRConfig(EnhancedBaseConfig):
     def ecr_ssm_path(self) -> str | None:
         """SSM parameter base path for resolving ECR repository details at synth time.
 
-        Can be set explicitly, or auto-derived from ``ecr_ref`` when a deployment
-        context is available.  Resolution order:
+        Can be set explicitly, or auto-derived from ``ecr_ref`` when an SSM
+        namespace is available.  Resolution order:
 
         1. Explicit ``ecr_ssm_path`` in config (highest priority)
-        2. ``ecr_ref`` + deployment context → ``/{workload}/{environment}/ecr/{ecr_ref}``
+        2. ``ecr_ref`` + ``ssm.namespace`` or ``ssm.imports.namespace`` → ``/{namespace}/ecr/{ecr_ref}``
         3. ``None`` (fall back to explicit name/arn/uri fields)
         """
         if self.__config and isinstance(self.__config, dict):
@@ -113,12 +113,21 @@ class ECRConfig(EnhancedBaseConfig):
             if explicit:
                 return explicit
 
-            # Auto-derive from ecr_ref + deployment context
+            # Auto-derive from ecr_ref + namespace
             ref = self.__config.get("ecr_ref")
-            if ref and self.__deployment:
-                workload = self.__deployment.workload_name
-                env = self.__deployment.environment
-                return f"/{workload}/{env}/ecr/{ref}"
+            if ref:
+                ssm_ns = self.__config.get("ssm", {}).get("namespace")
+                ssm_imports_ns = (
+                    self.__config.get("ssm", {}).get("imports", {}).get("namespace")
+                )
+                ns = ssm_ns or ssm_imports_ns
+                if ns:
+                    return f"/{ns}/ecr/{ref}"
+                raise ValueError(
+                    f"'ssm.namespace' or 'ssm.imports.namespace' is required "
+                    f"when using 'ecr_ref' ('{ref}') without an explicit 'ecr_ssm_path'. "
+                    f"Add a namespace to your stack config."
+                )
 
         return None
 
@@ -323,8 +332,16 @@ class ECRConfig(EnhancedBaseConfig):
 
         # If still no template, use the default format
         if not template:
+            # Try to get namespace from config
+            ssm_ns = None
+            if self.__config and isinstance(self.__config, dict):
+                ssm_ns = self.__config.get("ssm", {}).get("namespace")
+                if not ssm_ns:
+                    ssm_ns = (
+                        self.__config.get("ssm", {}).get("imports", {}).get("namespace")
+                    )
             return self.__deployment.get_ssm_parameter_name(
-                resource_type, resource_name, attribute
+                resource_type, resource_name, attribute, ssm_namespace=ssm_ns
             )
 
         # Format the template with available variables

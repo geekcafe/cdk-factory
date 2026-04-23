@@ -80,14 +80,9 @@ class TestEnhancedSsmConfigStructure:
 
         # ssm_exports at root level won't be found by config.get("ssm")
         # EnhancedSsmConfig is enabled by default, but exports won't be found
-        exports = ssm_config.get_export_definitions()
-        # Should not have the vpc_id from ssm_exports (only auto-discovered ones)
-        vpc_id_exports = [
-            e
-            for e in exports
-            if e.attribute == "vpc_id" and "/prod/my-app/vpc/id" in e.path
-        ]
-        assert len(vpc_id_exports) == 0
+        # Without workload/organization in ssm config, auto-export will raise ValueError
+        # So we just verify the legacy key is not recognized as ssm config
+        assert ssm_config.config == {}  # No ssm block found
 
 
 class TestCustomPathHandling:
@@ -151,14 +146,20 @@ class TestExportImportPathMatching:
         """Test VPC exports and imports use same paths"""
         export_config = {
             "ssm": {
+                "workload": "acme-inc",
                 "exports": {
                     "vpc_id": "/prod/acme-inc/vpc/id",
                     "public_subnet_ids": "/prod/acme-inc/vpc/public-subnet-ids",
-                }
+                },
             }
         }
 
-        import_config = {"ssm": {"imports": {"vpc_id": "/prod/acme-inc/vpc/id"}}}
+        import_config = {
+            "ssm": {
+                "workload": "acme-inc",
+                "imports": {"vpc_id": "/prod/acme-inc/vpc/id"},
+            }
+        }
 
         workload = {"environment": "prod", "name": "acme-inc"}
 
@@ -189,11 +190,17 @@ class TestExportImportPathMatching:
     def test_security_group_export_import_match(self):
         """Test security group exports and imports use same paths"""
         sg_export_config = {
-            "ssm": {"exports": {"security_group_id": "/prod/acme-inc/sg/alb-id"}}
+            "ssm": {
+                "workload": "acme-inc",
+                "exports": {"security_group_id": "/prod/acme-inc/sg/alb-id"},
+            }
         }
 
         sg_import_config = {
-            "ssm": {"imports": {"source_security_group_id": "/prod/acme-inc/sg/alb-id"}}
+            "ssm": {
+                "workload": "acme-inc",
+                "imports": {"source_security_group_id": "/prod/acme-inc/sg/alb-id"},
+            }
         }
 
         workload = {"environment": "prod", "name": "acme-inc"}
@@ -229,7 +236,7 @@ class TestAttributeFormatting:
 
     def test_underscore_to_hyphen_conversion(self):
         """Test that underscores in attributes are converted to hyphens"""
-        config = {"ssm": {}}
+        config = {"ssm": {"workload": "my-app"}}
 
         ssm_config = EnhancedSsmConfig(
             config=config,
@@ -263,7 +270,7 @@ class TestEnvironmentResolution:
 
     def test_environment_in_generated_path(self):
         """Test environment appears in generated path"""
-        config = {"ssm": {}}
+        config = {"ssm": {"workload": "my-app"}}
 
         ssm_config = EnhancedSsmConfig(
             config=config,
@@ -403,7 +410,10 @@ class TestEdgeCases:
     def test_invalid_custom_path_ignored(self):
         """Test that non-string or non-dict export values don't break"""
         config = {
-            "ssm": {"exports": {"enabled": True}}  # This shouldn't be treated as a path
+            "ssm": {
+                "workload": "my-app",
+                "exports": {"enabled": True},
+            }  # This shouldn't be treated as a path
         }
 
         ssm_config = EnhancedSsmConfig(

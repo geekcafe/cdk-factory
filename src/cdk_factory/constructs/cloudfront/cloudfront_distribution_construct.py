@@ -82,7 +82,7 @@ class CloudFrontDistributionConstruct(Construct):
         """
         Validate CloudFront function association configuration.
         Provides clear error messages for common misconfigurations.
-        
+
         CloudFront limits:
         - 1 CloudFront Function (JavaScript) per event type
         - 1 Lambda@Edge (Python/Node) per event type
@@ -90,21 +90,23 @@ class CloudFrontDistributionConstruct(Construct):
         """
         if not self.stack_config or not isinstance(self.stack_config, StackConfig):
             return  # No config to validate
-        
+
         cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
-        
+
         # Get configuration flags
         enable_url_rewrite = cloudfront_config.get("enable_url_rewrite", False)
         enable_ip_gating = cloudfront_config.get("enable_ip_gating", False)
-        restrict_to_known_hosts = cloudfront_config.get("restrict_to_known_hosts", self.restrict_to_known_hosts)
-        
+        restrict_to_known_hosts = cloudfront_config.get(
+            "restrict_to_known_hosts", self.restrict_to_known_hosts
+        )
+
         # Count CloudFront Functions at viewer-request
         cloudfront_functions_at_viewer_request = 0
         if enable_url_rewrite:
             cloudfront_functions_at_viewer_request += 1
         if restrict_to_known_hosts and self.aliases:
             cloudfront_functions_at_viewer_request += 1
-        
+
         # Note: Multiple CloudFront Functions are OK - we combine them automatically
         if cloudfront_functions_at_viewer_request > 1:
             logger.info(
@@ -113,14 +115,14 @@ class CloudFrontDistributionConstruct(Construct):
                 f"Features: enable_url_rewrite={enable_url_rewrite}, "
                 f"restrict_to_known_hosts={restrict_to_known_hosts}"
             )
-        
+
         # Check for manual Lambda@Edge associations that might conflict
         lambda_edge_associations = cloudfront_config.get("lambda_edge_associations", [])
         manual_viewer_request = any(
-            assoc.get("event_type") == "viewer-request" 
+            assoc.get("event_type") == "viewer-request"
             for assoc in lambda_edge_associations
         )
-        
+
         # ERROR: Manual Lambda@Edge + enable_ip_gating both at viewer-request
         if enable_ip_gating and manual_viewer_request:
             raise ValueError(
@@ -134,7 +136,7 @@ class CloudFrontDistributionConstruct(Construct):
                 f"\n  enable_ip_gating: {enable_ip_gating}"
                 f"\n  lambda_edge_associations with viewer-request: {manual_viewer_request}"
             )
-        
+
         # WARNING: Both Lambda@Edge IP gating and CloudFront Functions enabled
         # This is VALID but might indicate misconfiguration
         if enable_ip_gating and cloudfront_functions_at_viewer_request > 0:
@@ -143,7 +145,7 @@ class CloudFrontDistributionConstruct(Construct):
                 features.append("URL rewrite")
             if restrict_to_known_hosts:
                 features.append("Host restrictions")
-            
+
             logger.info(
                 f"✓ CloudFront configuration at viewer-request:"
                 f"\n  - CloudFront Function: {', '.join(features)}"
@@ -158,7 +160,7 @@ class CloudFrontDistributionConstruct(Construct):
         """
         # Validate CloudFront function association configuration
         self.__validate_function_associations()
-        
+
         self.oai = cloudfront.OriginAccessIdentity(
             self, "OAI", comment="OAI for accessing S3 bucket content securely"
         )
@@ -179,12 +181,12 @@ class CloudFrontDistributionConstruct(Construct):
         """
         # print(f"cloudfront dist {self.aliases}")
         # print(f"cert: {self.certificate}")
-        
+
         # Prepare origin_path - only set if we have a subdirectory
         origin_kwargs = {}
         if self.source_bucket_sub_directory:
             origin_kwargs["origin_path"] = f"/{self.source_bucket_sub_directory}"
-        
+
         origin: origins.S3Origin | cloudfront.IOrigin
         if self.use_oac:
             origin = origins.S3BucketOrigin.with_origin_access_control(
@@ -207,7 +209,7 @@ class CloudFrontDistributionConstruct(Construct):
         if self.stack_config and isinstance(self.stack_config, StackConfig):
             cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
             comment = cloudfront_config.get("comment", comment)
-        
+
         distribution = cloudfront.Distribution(
             self,
             "cloudfront-dist",
@@ -285,7 +287,7 @@ class CloudFrontDistributionConstruct(Construct):
         if self.stack_config and isinstance(self.stack_config, StackConfig):
             cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
             enable_url_rewrite = cloudfront_config.get("enable_url_rewrite", False)
-        
+
         # CloudFront only allows ONE function per event type
         # If both URL rewrite and host restrictions are needed, combine them
         if enable_url_rewrite and self.restrict_to_known_hosts and self.aliases:
@@ -317,103 +319,94 @@ class CloudFrontDistributionConstruct(Construct):
     def __get_lambda_edge_associations(self) -> Optional[List[cloudfront.EdgeLambda]]:
         """
         Get the Lambda@Edge associations for the distribution from config.
-        
+
         Supports two configuration methods:
         1. Convenience flag: "enable_ip_gating": true
            - Automatically adds Lambda@Edge IP gating function
            - Uses auto-derived SSM parameter path: /{env}/{workload}/lambda-edge/version-arn
-        
+
         2. Manual configuration: "lambda_edge_associations": [...]
            - Full control over Lambda@Edge associations
            - Can specify custom ARNs, event types, etc.
-        
+
         Returns:
             List[cloudfront.EdgeLambda] or None: list of Lambda@Edge associations
         """
         edge_lambdas = []
-        
+
         if self.stack_config and isinstance(self.stack_config, StackConfig):
             cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
-            
+
             # Check for convenience IP gating flag
             enable_ip_gating = cloudfront_config.get("enable_ip_gating", False)
             if enable_ip_gating:
-                logger.info("IP gating enabled via convenience flag - adding Lambda@Edge association")
-                
-                # Extract environment and workload name from config
-                # Architecture: One workload deployment = One environment
-                workload_dict = self.stack_config.workload
-                
-                # CRITICAL: Environment must be at workload level - no defaults!
-                # Defaulting to "dev" is dangerous and can cause cross-environment contamination
-                # Try workload["environment"] first (STANDARD), then workload["deployment"]["environment"] (legacy)
-                environment = workload_dict.get("environment")
-                if not environment:
-                    # Backward compatibility: try deployment.environment
-                    environment = workload_dict.get("deployment", {}).get("environment")
-                
-                if not environment:
-                    raise ValueError(
-                        "Environment must be explicitly specified at workload level. "
-                        "Cannot default to 'dev' as this may cause cross-environment resource contamination. "
-                        "Best practice: Add 'environment' to your workload config:\n"
-                        '  {\"workload\": {\"name\": \"...\", \"environment\": \"dev|prod\"}}\n'
-                        "Legacy: 'deployment.environment' is also supported for backward compatibility."
+                logger.info(
+                    "IP gating enabled via convenience flag - adding Lambda@Edge association"
+                )
+
+                # Require explicit SSM path — no auto-derivation from deployment properties
+                ip_gate_ssm_path = cloudfront_config.get("ip_gate_function_ssm_path")
+                if not ip_gate_ssm_path:
+                    stack_name = (
+                        self.stack_config.name if self.stack_config else "unknown"
                     )
-                
-                workload_name = workload_dict.get("name")
-                if not workload_name:
                     raise ValueError(
-                        "Workload name must be specified in configuration. "
-                        "Please set 'name' in your workload config."
+                        f"Stack '{stack_name}': "
+                        f"'cloudfront.ip_gate_function_ssm_path' is required when "
+                        f"'enable_ip_gating' is true. "
+                        f"Provide the SSM path to the Lambda@Edge version ARN."
                     )
-                
-                # Auto-derive SSM parameter path or use override
-                default_ssm_path = f"/{environment}/{workload_name}/lambda-edge/version-arn"
-                ip_gate_ssm_path = cloudfront_config.get("ip_gate_function_ssm_path", default_ssm_path)
-                
+
                 logger.info(f"Using IP gate Lambda ARN from SSM: {ip_gate_ssm_path}")
-                
+
                 # Add the IP gating Lambda@Edge association
                 # MUST use viewer-request to run BEFORE cache check!
-                lambda_edge_associations = [{
-                    "event_type": "viewer-request",
-                    "lambda_arn": f"{{{{ssm:{ip_gate_ssm_path}}}}}",
-                    "include_body": False
-                }]
+                lambda_edge_associations = [
+                    {
+                        "event_type": "viewer-request",
+                        "lambda_arn": f"{{{{ssm:{ip_gate_ssm_path}}}}}",
+                        "include_body": False,
+                    }
+                ]
             else:
                 # Use manual configuration
-                lambda_edge_associations = cloudfront_config.get("lambda_edge_associations", [])
-            
+                lambda_edge_associations = cloudfront_config.get(
+                    "lambda_edge_associations", []
+                )
+
             for association in lambda_edge_associations:
                 event_type_str = association.get("event_type", "origin-request")
                 lambda_arn = association.get("lambda_arn")
                 include_body = association.get("include_body", False)
-                
+
                 if not lambda_arn:
                     continue  # Skip if no ARN provided
-                
+
                 # Check if ARN is an SSM parameter reference
                 if lambda_arn.startswith("{{ssm:") and lambda_arn.endswith("}}"):
                     ssm_param_path = lambda_arn[6:-2]  # Extract parameter path
-                    logger.info(f"Importing Lambda ARN from SSM parameter: {ssm_param_path}")
-                    
+                    logger.info(
+                        f"Importing Lambda ARN from SSM parameter: {ssm_param_path}"
+                    )
+
                     # CRITICAL: Import SSM parameter using CloudFormation parameter type
                     # This ensures CloudFormation validates the parameter EXISTS at deployment time
                     # If the parameter is missing, CloudFormation will FAIL the deployment
                     # This prevents accidentally using wrong/missing Lambda@Edge functions
-                    
+
                     # Create CloudFormation parameter that resolves SSM value
                     cfn_param = cdk.CfnParameter(
                         self,
                         f"lambda-edge-arn-{hash(ssm_param_path) % 10000}-param",
                         type="AWS::SSM::Parameter::Value<String>",
                         default=ssm_param_path,
-                        description=f"Lambda@Edge function ARN from SSM: {ssm_param_path}"
+                        description=f"Lambda@Edge function ARN from SSM: {ssm_param_path}",
                     )
                     lambda_arn = cfn_param.value_as_string
-                    logger.info(f"Lambda ARN will be resolved from SSM (validated at deploy): {ssm_param_path}")
-                
+                    logger.info(
+                        f"Lambda ARN will be resolved from SSM (validated at deploy): {ssm_param_path}"
+                    )
+
                 # Map event type string to CloudFront enum
                 event_type_map = {
                     "viewer-request": cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
@@ -421,39 +414,39 @@ class CloudFrontDistributionConstruct(Construct):
                     "origin-response": cloudfront.LambdaEdgeEventType.ORIGIN_RESPONSE,
                     "viewer-response": cloudfront.LambdaEdgeEventType.VIEWER_RESPONSE,
                 }
-                
-                event_type = event_type_map.get(event_type_str, cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST)
-                
+
+                event_type = event_type_map.get(
+                    event_type_str, cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST
+                )
+
                 # Import the Lambda function version by ARN
                 lambda_version = _lambda.Version.from_version_arn(
-                    self,
-                    f"LambdaEdge-{event_type_str}",
-                    version_arn=lambda_arn
+                    self, f"LambdaEdge-{event_type_str}", version_arn=lambda_arn
                 )
-                
+
                 edge_lambdas.append(
                     cloudfront.EdgeLambda(
                         function_version=lambda_version,
                         event_type=event_type,
-                        include_body=include_body
+                        include_body=include_body,
                     )
                 )
-        
+
         return edge_lambdas if edge_lambdas else None
 
     def __get_combined_function(self, hosts: List[str]) -> cloudfront.Function:
         """
         Creates a combined CloudFront function that does both URL rewriting and host restrictions.
         This is necessary because CloudFront only allows one function per event type.
-        
+
         Args:
             hosts: List of allowed hostnames
-            
+
         Returns:
             cloudfront.Function: Combined function
         """
         allowed_hosts = "[" + ", ".join(f"'{host}'" for host in hosts) + "]"
-        
+
         function_code = f"""
         function handler(event) {{
             var request = event.request;
@@ -497,7 +490,7 @@ class CloudFrontDistributionConstruct(Construct):
         """
         Creates a CloudFront function that rewrites URLs for SPA/static site routing.
         This enables clean URLs by routing /about to /about/index.html
-        
+
         Returns:
             cloudfront.Function: URL rewrite function for static site routing
         """

@@ -121,15 +121,13 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
     def test_enhanced_ssm_authorizer_id_import_definitions(self):
         """Test that API Gateway can generate correct import definitions for authorizer_id"""
 
-        api_gateway_config = {
-            "api_gateway": {
-                "ssm": {
-                    "enabled": True,
-                    "organization": "test-app",
-                    "environment": "dev",
-                    "auto_import": True,
-                    "imports": {"authorizer_id": "auto"},
-                }
+        api_gateway_ssm_config = {
+            "ssm": {
+                "enabled": True,
+                "workload": "test-app",
+                "environment": "dev",
+                "auto_import": True,
+                "imports": {"authorizer_id": "auto"},
             }
         }
 
@@ -138,7 +136,7 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
 
         # Use consistent resource name for cross-stack compatibility
         api_gateway_ssm = EnhancedSsmConfig(
-            config=api_gateway_config,
+            config=api_gateway_ssm_config,
             resource_type="api-gateway",
             resource_name="cdk-factory-api-gw",
         )
@@ -156,7 +154,7 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
             authorizer_import, "authorizer_id should be in auto-import definitions"
         )
 
-        expected_path = "/default/dev/cognito/user-pool/authorizer-id"
+        expected_path = "/test-app/dev/cognito/user-pool/authorizer-id"
         self.assertEqual(
             authorizer_import.path,
             expected_path,
@@ -166,14 +164,12 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
     def test_cognito_authorizer_id_export_definitions(self):
         """Test that Cognito can export authorizer_id for API Gateway to import"""
 
-        cognito_config = {
-            "cognito": {
-                "ssm": {
-                    "enabled": True,
-                    "organization": "test-app",
-                    "environment": "dev",
-                    "auto_export": True,
-                }
+        cognito_ssm_config = {
+            "ssm": {
+                "enabled": True,
+                "workload": "test-app",
+                "environment": "dev",
+                "auto_export": True,
             }
         }
 
@@ -181,7 +177,9 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
         from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig
 
         cognito_ssm = EnhancedSsmConfig(
-            config=cognito_config, resource_type="cognito", resource_name="user-pool"
+            config=cognito_ssm_config,
+            resource_type="cognito",
+            resource_name="user-pool",
         )
 
         # Get export definitions
@@ -198,7 +196,7 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
             "authorizer_id should be in auto-export definitions for cognito",
         )
 
-        expected_path = "/default/dev/cognito/user-pool/authorizer-id"
+        expected_path = "/test-app/dev/cognito/user-pool/authorizer-id"
         self.assertEqual(
             authorizer_export.path,
             expected_path,
@@ -208,29 +206,29 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
     def test_full_authorizer_ssm_integration_flow(self):
         """Test the full flow of Cognito exporting and API Gateway importing authorizer_id"""
 
-        base_config = {
-            "ssm": {"enabled": True, "organization": "test-app", "environment": "dev"}
-        }
+        base_ssm = {"enabled": True, "workload": "test-app", "environment": "dev"}
 
-        cognito_config = {**base_config, "auto_export": True}
+        cognito_config = {"ssm": {**base_ssm, "auto_export": True}}
         api_gateway_config = {
-            **base_config,
-            "auto_import": True,
-            "imports": {"authorizer_id": "auto"},
+            "ssm": {
+                **base_ssm,
+                "auto_import": True,
+                "imports": {"authorizer_id": "auto"},
+            }
         }
 
         # Test that paths match between export and import
         from cdk_factory.configurations.enhanced_ssm_config import EnhancedSsmConfig
 
         cognito_ssm = EnhancedSsmConfig(
-            config={"cognito": {"ssm": cognito_config}},
+            config=cognito_config,
             resource_type="cognito",
             resource_name="user-pool",
         )
 
         # Use consistent resource name for cross-stack compatibility
         api_gateway_ssm = EnhancedSsmConfig(
-            config={"api_gateway": {"ssm": api_gateway_config}},
+            config=api_gateway_config,
             resource_type="api-gateway",
             resource_name="cdk-factory-api-gw",
         )
@@ -262,8 +260,8 @@ class TestApiGatewayAuthorizerSsmIntegration(unittest.TestCase):
             "Cognito authorizer_id export path should match API Gateway import path",
         )
 
-        # Verify the expected path format (using "default" organization as that's what the config generates)
-        expected_path = "/default/dev/cognito/user-pool/authorizer-id"
+        # Verify the expected path format
+        expected_path = "/test-app/dev/cognito/user-pool/authorizer-id"
         self.assertEqual(cognito_authorizer_export.path, expected_path)
         self.assertEqual(api_gateway_authorizer_import.path, expected_path)
 

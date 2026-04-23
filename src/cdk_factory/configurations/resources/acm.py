@@ -68,15 +68,19 @@ class AcmConfig:
     def ssm_exports(self) -> Dict[str, str]:
         """SSM parameter paths to export certificate details"""
         exports = self.ssm.get("exports", {})
-        
-        # Provide default SSM export path if not specified
-        if not exports and self.__deployment:
-            workload_env = self.__deployment.workload.get("environment", self.__deployment.environment)
-            workload_name = self.__deployment.workload.get("name", self.__deployment.workload_name)
-            exports = {
-                "certificate_arn": f"/{workload_env}/{workload_name}/certificate/arn"
-            }
-        
+
+        if not exports:
+            ssm_config = self.__config.get("ssm", {})
+            if ssm_config.get("auto_export", False):
+                namespace = ssm_config.get("namespace")
+                if not namespace:
+                    raise ValueError(
+                        "'ssm.namespace' is required for ACM SSM exports when "
+                        "'ssm.auto_export' is enabled. Add 'ssm.namespace' to "
+                        "your ACM stack config, or define explicit 'ssm.exports'."
+                    )
+                exports = {"certificate_arn": f"/{namespace}/certificate/arn"}
+
         return exports
 
     @property

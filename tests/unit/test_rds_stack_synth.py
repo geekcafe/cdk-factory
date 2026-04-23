@@ -172,6 +172,7 @@ def test_rds_stack_synth(dummy_workload):
                 "instance_class": "t3.micro",
                 "database_name": "testdb",
                 "master_username": "admin",
+                "secret_name": "/test/test-workload/rds/credentials",
                 "removal_policy": "destroy",
                 "security_group_ids": [],
             },

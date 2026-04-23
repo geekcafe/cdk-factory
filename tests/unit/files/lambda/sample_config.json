@@ -181,6 +181,11 @@
                     "name": "factory-lambda-{{ENVIRONMENT}}-api-gateway",
                     "module": "api_gateway_stack",
                     "enabled": true,
+                    "ssm": {
+                      "imports": {
+                        "namespace": "factory-lambda/{{ENVIRONMENT}}"
+                      }
+                    },
                     "api_gateway": {
                       "name": "factory-lambda-{{ENVIRONMENT}}-api",
                       "description": "API Gateway for Lambda functions",
@@ -191,6 +196,7 @@
                         "workload": "factory-lambda",
                         "environment": "{{ENVIRONMENT}}",
                         "imports": {
+                          "namespace": "factory-lambda/{{ENVIRONMENT}}",
                           "workload": "/factory-lambda/{{ENVIRONMENT}}/lambda",
                           "environment": "/factory-lambda/{{ENVIRONMENT}}/environment"
                         }

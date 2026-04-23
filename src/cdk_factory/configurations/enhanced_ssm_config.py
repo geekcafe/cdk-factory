@@ -39,7 +39,9 @@ class EnhancedSsmConfig:
         self.resource_type = resource_type
         self.resource_name = resource_name
         self._workload_config = workload_config or {}
-        self._deployment_config = deployment_config or {}  # Deprecated, for backward compatibility
+        self._deployment_config = (
+            deployment_config or {}
+        )  # Deprecated, for backward compatibility
 
     @property
     def enabled(self) -> bool:
@@ -49,24 +51,31 @@ class EnhancedSsmConfig:
     def workload(self) -> str:
         """Get workload name for SSM parameter paths (backward compatible with 'organization')"""
         # Try 'workload' first, fall back to 'organization' for backward compatibility
-        return self.config.get("workload", self.config.get("organization", "default"))
+        value = self.config.get("workload", self.config.get("organization"))
+        if not value:
+            raise ValueError(
+                "'ssm.workload' (or 'ssm.organization') is required in SSM config. "
+                "Cannot fall back to 'default'. "
+                "Add 'workload' to your ssm config block."
+            )
+        return value
 
     @property
     def environment(self) -> str:
         """
         Get environment - MUST be at workload level.
-        
+
         Architecture: One workload deployment = One environment
-        
+
         Priority:
         1. workload_config["environment"] - **STANDARD LOCATION** (required)
         2. workload_config["deployment"]["environment"] - Legacy (backward compatibility)
         3. deployment_config["environment"] - Legacy (backward compatibility)
         4. config["ssm"]["environment"] - Legacy (backward compatibility)
         5. ${ENVIRONMENT} - Environment variable (with validation)
-        
+
         NO DEFAULT to 'dev' - fails explicitly to prevent cross-environment contamination
-        
+
         Best Practice:
             {
               "workload": {
@@ -77,19 +86,19 @@ class EnhancedSsmConfig:
         """
         # 1. Try workload config first (STANDARD LOCATION)
         env = self._workload_config.get("environment")
-        
+
         # 2. Try workload["deployment"]["environment"] (backward compatibility)
         if not env:
             env = self._workload_config.get("deployment", {}).get("environment")
-        
+
         # 3. Try deployment config (backward compatibility)
         if not env:
             env = self._deployment_config.get("environment")
-        
+
         # 4. Fall back to SSM config (backward compatibility)
         if not env:
             env = self.config.get("environment", "${ENVIRONMENT}")
-        
+
         # 5. Resolve environment variables
         if isinstance(env, str) and env.startswith("${") and env.endswith("}"):
             env_var = env[2:-1]
@@ -102,7 +111,7 @@ class EnhancedSsmConfig:
                     f"Alternatively, set the {env_var} environment variable."
                 )
             return env_value
-        
+
         # If still no environment, fail explicitly
         if not env:
             raise ValueError(
@@ -111,7 +120,7 @@ class EnhancedSsmConfig:
                 "Best practice: Add 'environment' to your workload config:\n"
                 '  {"workload": {"name": "...", "environment": "dev|prod"}}'
             )
-        
+
         return env
 
     @property
@@ -120,7 +129,6 @@ class EnhancedSsmConfig:
             "pattern",
             "/{workload}/{environment}/{stack_type}/{resource_name}/{attribute}",
         )
-
 
     @property
     def auto_export(self) -> bool:
@@ -187,53 +195,61 @@ class EnhancedSsmConfig:
 
         return definitions
 
-    def get_import_definitions(self, context: Dict[str, Any] = None) -> List[SsmParameterDefinition]:
+    def get_import_definitions(
+        self, context: Dict[str, Any] = None
+    ) -> List[SsmParameterDefinition]:
         """Get SSM parameter definitions for imports"""
         definitions = []
-        
+
         # Process explicit imports (can be dict format like {"user_pool_arn": "auto"} or list format)
         if self.ssm_imports:
             if isinstance(self.ssm_imports, dict):
                 # Handle dict format: {"attribute": "auto" or path}
                 # Skip metadata fields that are not actual imports
                 metadata_fields = {"workload", "environment", "organization"}
-                
+
                 for attribute, import_value in self.ssm_imports.items():
                     # Skip metadata fields - they specify context, not what to import
                     if attribute in metadata_fields:
                         continue
-                        
+
                     if import_value == "auto":
                         # Use auto-discovery with source mapping
-                        imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
+                        imports_config = RESOURCE_AUTO_IMPORTS.get(
+                            self.resource_type, {}
+                        )
                         import_info = imports_config.get(attribute, {})
                         source_resource_type = import_info.get("source_resource_type")
-                        
+
                         if source_resource_type:
                             # Use default resource name for the source type
                             default_names = {
                                 "vpc": "main-vpc",
-                                "cognito": "user-pool", 
+                                "cognito": "user-pool",
                                 "security_group": "main-sg",
                                 "dynamodb": "cdk-factory-table",
                                 "api_gateway": "cdk-factory-api-gw",
-                                "api-gateway": "cdk-factory-api-gw"
+                                "api-gateway": "cdk-factory-api-gw",
                             }
-                            source_resource_name = default_names.get(source_resource_type, f"main-{source_resource_type}")
-                            path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
+                            source_resource_name = default_names.get(
+                                source_resource_type, f"main-{source_resource_type}"
+                            )
+                            path = self._get_parameter_path_for_source(
+                                attribute, source_resource_type, source_resource_name
+                            )
                         else:
                             # Fallback to current resource path
                             path = self.get_parameter_path(attribute)
                     else:
                         # Use explicit path
                         path = import_value
-                    
+
                     definitions.append(
                         SsmParameterDefinition(
                             attribute=attribute,
                             path=path,
                             parameter_type="String",
-                            description=f"Imported {attribute}"
+                            description=f"Imported {attribute}",
                         )
                     )
             elif isinstance(self.ssm_imports, list):
@@ -244,47 +260,59 @@ class EnhancedSsmConfig:
                             attribute=import_config["attribute"],
                             path=import_config["path"],
                             parameter_type=import_config.get("type", "String"),
-                            description=import_config.get("description", f"Imported {import_config['attribute']}")
+                            description=import_config.get(
+                                "description", f"Imported {import_config['attribute']}"
+                            ),
                         )
                     )
-        
+
         # Process auto-discovered imports
         if self.auto_import:
             imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
             for attribute, import_info in imports_config.items():
                 # Skip if already processed in explicit imports
-                if self.ssm_imports and isinstance(self.ssm_imports, dict) and attribute in self.ssm_imports:
+                if (
+                    self.ssm_imports
+                    and isinstance(self.ssm_imports, dict)
+                    and attribute in self.ssm_imports
+                ):
                     continue
-                    
+
                 source_resource_type = import_info.get("source_resource_type")
                 source_resource_name = import_info.get("source_resource_name")
-                
+
                 if source_resource_type:
                     # Generate path using source resource type and name
                     if source_resource_name:
-                        path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
+                        path = self._get_parameter_path_for_source(
+                            attribute, source_resource_type, source_resource_name
+                        )
                     else:
                         # Use a default/generic resource name pattern for the source type
                         default_names = {
                             "vpc": "main-vpc",
-                            "cognito": "user-pool", 
+                            "cognito": "user-pool",
                             "security_group": "main-sg",
                             "dynamodb": "cdk-factory-table",
                             "api_gateway": "cdk-factory-api-gw",
-                            "api-gateway": "cdk-factory-api-gw"
+                            "api-gateway": "cdk-factory-api-gw",
                         }
-                        source_resource_name = default_names.get(source_resource_type, f"main-{source_resource_type}")
-                        path = self._get_parameter_path_for_source(attribute, source_resource_type, source_resource_name)
+                        source_resource_name = default_names.get(
+                            source_resource_type, f"main-{source_resource_type}"
+                        )
+                        path = self._get_parameter_path_for_source(
+                            attribute, source_resource_type, source_resource_name
+                        )
                 else:
                     # Fallback to current behavior if no source specified
                     path = self.get_parameter_path(attribute)
-                
+
                 definitions.append(
                     SsmParameterDefinition(
                         attribute=attribute,
                         path=path,
                         parameter_type="String",
-                        description=f"Auto-imported {attribute} from {source_resource_type or 'unknown'}"
+                        description=f"Auto-imported {attribute} from {source_resource_type or 'unknown'}",
                     )
                 )
 
@@ -299,13 +327,15 @@ class EnhancedSsmConfig:
         imports_config = RESOURCE_AUTO_IMPORTS.get(self.resource_type, {})
         return list(imports_config.keys())
 
-    def _get_parameter_path_for_source(self, attribute: str, source_resource_type: str, source_resource_name: str) -> str:
+    def _get_parameter_path_for_source(
+        self, attribute: str, source_resource_type: str, source_resource_name: str
+    ) -> str:
         """Generate SSM parameter path using source resource type and name instead of current resource"""
         # Convert underscores to hyphens for consistent path formatting
         formatted_attribute = attribute.replace("_", "-")
         formatted_resource_name = source_resource_name.replace("_", "-")
         formatted_resource_type = source_resource_type.replace("_", "-")
-        
+
         return f"/{self.workload}/{self.environment}/{formatted_resource_type}/{formatted_resource_name}/{formatted_attribute}"
 
 
@@ -348,37 +378,35 @@ RESOURCE_AUTO_EXPORTS = {
 
 # Enhanced import structure that maps attributes to their source resource types
 RESOURCE_AUTO_IMPORTS = {
-    "security_group": {
-        "vpc_id": {"source_resource_type": "vpc"}
-    },
+    "security_group": {"vpc_id": {"source_resource_type": "vpc"}},
     "rds": {
         "vpc_id": {"source_resource_type": "vpc"},
         "security_group_ids": {"source_resource_type": "security_group"},
-        "subnet_group_name": {"source_resource_type": "vpc"}
+        "subnet_group_name": {"source_resource_type": "vpc"},
     },
     "lambda": {
         "vpc_id": {"source_resource_type": "vpc"},
         "security_group_ids": {"source_resource_type": "security_group"},
         "subnet_ids": {"source_resource_type": "vpc"},
         "user_pool_arn": {"source_resource_type": "cognito"},
-        "table_name": {"source_resource_type": "dynamodb"}
+        "table_name": {"source_resource_type": "dynamodb"},
     },
     "api_gateway": {
         "user_pool_arn": {"source_resource_type": "cognito"},
-        "authorizer_id": {"source_resource_type": "cognito"}
+        "authorizer_id": {"source_resource_type": "cognito"},
     },
     "api-gateway": {
         "user_pool_arn": {"source_resource_type": "cognito"},
-        "authorizer_id": {"source_resource_type": "cognito"}
+        "authorizer_id": {"source_resource_type": "cognito"},
     },
     "ecs": {
         "vpc_id": {"source_resource_type": "vpc"},
         "security_group_ids": {"source_resource_type": "security_group"},
-        "subnet_ids": {"source_resource_type": "vpc"}
+        "subnet_ids": {"source_resource_type": "vpc"},
     },
     "alb": {
         "vpc_id": {"source_resource_type": "vpc"},
         "security_group_ids": {"source_resource_type": "security_group"},
-        "subnet_ids": {"source_resource_type": "vpc"}
+        "subnet_ids": {"source_resource_type": "vpc"},
     },
 }

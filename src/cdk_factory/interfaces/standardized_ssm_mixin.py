@@ -449,41 +449,48 @@ class StandardizedSsmMixin:
         if not template_string:
             return template_string
 
-        # Prepare template variables
+        # Only resolve variables that actually appear in the template
+        needed_vars = re.findall(r"\{\{([^}]+)\}\}", template_string)
+        if not needed_vars:
+            return template_string
+
+        # Prepare template variables — no hardcoded fallback defaults
         variables = {}
 
-        # Always prioritize workload environment for consistency
         if self.workload:
-            variables["ENVIRONMENT"] = self.workload.dictionary.get(
-                "environment", "test"
-            )
-            variables["WORKLOAD_NAME"] = self.workload.dictionary.get(
-                "name", "test-workload"
-            )
-            variables["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")
+            variables["ENVIRONMENT"] = self.workload.dictionary.get("environment")
+            variables["WORKLOAD_NAME"] = self.workload.dictionary.get("name")
+            variables["AWS_REGION"] = os.getenv("AWS_REGION")
         elif self.deployment:
-            # Fallback to deployment only if workload not available
             variables["ENVIRONMENT"] = self.deployment.environment
             variables["WORKLOAD_NAME"] = self.deployment.workload_name
             variables["AWS_REGION"] = getattr(
                 self.deployment, "region", None
-            ) or os.getenv("AWS_REGION", "us-east-1")
-        else:
-            # Final fallback to environment variables
-            variables["ENVIRONMENT"] = os.getenv("ENVIRONMENT", "test")
-            variables["WORKLOAD_NAME"] = os.getenv("WORKLOAD_NAME", "test-workload")
-            variables["AWS_REGION"] = os.getenv("AWS_REGION", "us-east-1")
+            ) or os.getenv("AWS_REGION")
+
+        # Check that all needed variables are resolved (no silent defaults)
+        for var in needed_vars:
+            if var in variables and not variables[var]:
+                raise ValueError(
+                    f"Template variable '{{{{{var}}}}}' could not be resolved. "
+                    f"No value found in workload or deployment config. "
+                    f"Provide '{var}' in your config or use 'ssm.namespace' instead of template variables."
+                )
 
         # Replace template variables
         resolved = template_string
         for key, value in variables.items():
-            pattern = r"\{\{" + re.escape(key) + r"\}\}"
-            resolved = re.sub(pattern, str(value), resolved)
+            if value:
+                pattern = r"\{\{" + re.escape(key) + r"\}\}"
+                resolved = re.sub(pattern, str(value), resolved)
 
         # Check for unresolved variables
         unresolved_vars = re.findall(r"\{\{([^}]+)\}\}", resolved)
         if unresolved_vars:
-            logger.warning(f"Unresolved template variables: {unresolved_vars}")
+            raise ValueError(
+                f"Unresolved template variables: {unresolved_vars}. "
+                f"Provide values in your config or use 'ssm.namespace' instead."
+            )
 
         return resolved
 
@@ -509,35 +516,7 @@ class StandardizedSsmMixin:
             raise ValueError(
                 f"{context}: SSM path must have at least 4 segments: {path}"
             )
-
-        # Validate path structure
-        # segments[0] = "" (empty from leading /)
-        # segments[1] = environment
-        # segments[2] = workload_name
-        # segments[3] = resource_type
-        # segments[4+] = attribute
-
-        if len(segments) >= 4:
-            environment = segments[1]
-            resource_type = segments[3]
-
-            # Check for valid environment patterns
-            if environment not in [
-                "dev",
-                "staging",
-                "prod",
-                "test",
-                "alpha",
-                "beta",
-                "sandbox",
-            ]:
-                logger.warning(f"{context}: Unusual environment segment: {environment}")
-
-            # Check for valid resource type patterns
-            if not re.match(r"^[a-z][a-z0-9_-]*$", resource_type):
-                logger.warning(
-                    f"{context}: Unusual resource type segment: {resource_type}"
-                )
+        # No environment allowlist check — accept any valid string
 
     def _validate_ssm_configuration(self) -> None:
         """
@@ -796,11 +775,6 @@ class SsmStandardValidator:
                 errors.append(
                     f"{context}: SSM path must have at least 4 segments: {path}"
                 )
-
-            # Check for template variables
-            if "{{ENVIRONMENT}}" not in path and "{{WORKLOAD_NAME}}" not in path:
-                errors.append(
-                    f"{context}: SSM path should use template variables: {path}"
-                )
+            # Removed: template variable requirement check
 
         return errors

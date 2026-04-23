@@ -500,20 +500,16 @@ class LambdaStack(IStack):
             logger.info("SSM export is not enabled for this stack")
             return
 
-        # Build SSM parameter prefix
-        # Prefer 'namespace' (new), fall back to 'workload'/'environment' (legacy)
+        # Build SSM parameter prefix — requires ssm.namespace
         namespace = ssm_config.get("namespace")
-        workload = ssm_config.get(
-            "workload",
-            ssm_config.get("organization", self.deployment.workload_name),
-        )
-        environment = ssm_config.get("environment", self.deployment.environment)
-        stack_name = self.stack_config.name
+        if not namespace:
+            raise ValueError(
+                f"Stack '{self.stack_config.name}': "
+                f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                f"Add 'ssm.namespace' to your stack config."
+            )
 
-        if namespace:
-            prefix = f"/{namespace}/lambda"
-        else:
-            prefix = f"/{workload}/{environment}/lambda"
+        prefix = f"/{namespace}/lambda"
 
         logger.info(
             f"Exporting {len(self.exported_lambda_arns)} Lambda functions to SSM under {prefix}"
@@ -549,10 +545,7 @@ class LambdaStack(IStack):
             if function_config and (
                 function_config.docker.file or function_config.docker.image
             ):
-                if namespace:
-                    docker_prefix = f"/{namespace}/docker-lambdas"
-                else:
-                    docker_prefix = f"/{workload}/{environment}/docker-lambdas"
+                docker_prefix = f"/{namespace}/docker-lambdas"
 
                 ssm.StringParameter(
                     self,
@@ -590,16 +583,14 @@ class LambdaStack(IStack):
             return
 
         namespace = ssm_config.get("namespace")
-        workload = ssm_config.get(
-            "workload",
-            ssm_config.get("organization", self.deployment.workload_name),
-        )
-        environment = ssm_config.get("environment", self.deployment.environment)
+        if not namespace:
+            raise ValueError(
+                f"Stack '{self.stack_config.name}': "
+                f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                f"Add 'ssm.namespace' to your stack config."
+            )
 
-        if namespace:
-            prefix = f"/{namespace}/lambda"
-        else:
-            prefix = f"/{workload}/{environment}/lambda"
+        prefix = f"/{namespace}/lambda"
 
         exported_count = 0
         for lambda_name, lambda_info in self.exported_lambda_arns.items():

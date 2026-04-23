@@ -102,7 +102,7 @@ class TestApiGatewaySSMImports:
         )
 
     def test_apigw_lambda_import_legacy(self, app, deployment_config, workload_config):
-        """Verify legacy SSM path for Lambda ARN import."""
+        """Verify that missing ssm.imports.namespace raises ValueError."""
         workload_dict = {"name": "test-workload"}
         stack_dict = {
             "name": "test-api-gateway",
@@ -130,24 +130,12 @@ class TestApiGatewaySSMImports:
             id="test-apigw-legacy-import",
             env=Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build(
-            stack_config=stack_config,
-            deployment=deployment_config,
-            workload=workload_config,
-        )
-        template = Template.from_stack(stack)
-
-        template_json = template.to_json()
-        params = template_json.get("Parameters", {})
-        # Legacy path: /{workload}/{env}/lambda/{name}/arn
-        found = any(
-            "/test-workload/test/lambda/my-lambda/arn" in str(v.get("Default", ""))
-            for v in params.values()
-        )
-        assert found, (
-            "Expected SSM parameter lookup at /test-workload/test/lambda/my-lambda/arn "
-            f"in template parameters, got: {params}"
-        )
+        with pytest.raises(ValueError, match="ssm.imports.namespace"):
+            stack.build(
+                stack_config=stack_config,
+                deployment=deployment_config,
+                workload=workload_config,
+            )
 
     def test_apigw_explicit_ssm_path(self, app, deployment_config, workload_config):
         """Verify explicit SSM path is used without modification."""

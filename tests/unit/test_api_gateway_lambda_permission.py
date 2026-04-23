@@ -65,6 +65,11 @@ class TestApiGatewayLambdaPermission:
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
+            "ssm": {
+                "imports": {
+                    "namespace": "test-workload/test",
+                },
+            },
             "api_gateway": {
                 "name": "test-api",
                 "description": "Test API Gateway with Lambda permission",
@@ -75,6 +80,7 @@ class TestApiGatewayLambdaPermission:
                     "organization": "test-workload",
                     "environment": "/test-workload/test/environment",
                     "imports": {
+                        "namespace": "test-workload/test",
                         "organization": "/test-workload/test/organization",
                         "environment": "/test-workload/test/environment",
                     },
@@ -235,6 +241,11 @@ class TestApiGatewayLambdaPermission:
         stack_dict = {
             "name": "test-api-gateway",
             "enabled": True,
+            "ssm": {
+                "imports": {
+                    "namespace": "test-workload/test",
+                },
+            },
             "api_gateway": {
                 "name": "test-api",
                 "description": "Test API Gateway with multiple routes",
@@ -243,6 +254,7 @@ class TestApiGatewayLambdaPermission:
                 "ssm": {
                     "enabled": True,
                     "imports": {
+                        "namespace": "test-workload/test",
                         "organization": "/test-workload/test/organization",
                         "environment": "/test-workload/test/environment",
                     },

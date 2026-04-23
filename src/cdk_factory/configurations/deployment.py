@@ -378,6 +378,7 @@ class DeploymentConfig:
         resource_type: str,
         resource_name: str,
         resource_property: Optional[str] = None,
+        ssm_namespace: Optional[str] = None,
     ) -> str:
         """
         Gets an SSM Parameter for parameter store.
@@ -386,18 +387,23 @@ class DeploymentConfig:
             resource_type {str} -- Resource Type (e.g S3)
             resource_name {str} -- Resource Name (bucket name)
             resource_property {str} -- Resource Property (optional) (arn)
+            ssm_namespace {str} -- SSM namespace prefix (required)
         Returns:
             str: The SSM Parameter Name
-        Best Practice Nameing Convention:
-            /<env>/<workload-or-app-name>/<resource-type>/<name>/<optional-sub-property>
-            /dev/workload-name/s3/primary-bucket
-            /dev/workload-name/hosted-zone/example.com/id
+        Best Practice Naming Convention:
+            /<namespace>/<resource-type>/<name>/<optional-sub-property>
+            /my-app/dev/s3/primary-bucket
+            /my-app/dev/hosted-zone/example.com/id
         """
 
-        parameter_name = (
-            f"/{self.environment}/{self.workload_name}/{resource_type}"
-            f"/{resource_name}"
-        )
+        if not ssm_namespace:
+            raise ValueError(
+                "'ssm_namespace' is required for get_ssm_parameter_name(). "
+                "Pass the stack's ssm.namespace or define SSM paths explicitly. "
+                "Cannot auto-derive from deployment.environment/workload_name."
+            )
+
+        parameter_name = f"/{ssm_namespace}/{resource_type}" f"/{resource_name}"
         if resource_property:
             parameter_name = f"{parameter_name}/{resource_property}"
 

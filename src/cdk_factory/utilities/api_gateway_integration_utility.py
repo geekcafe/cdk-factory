@@ -563,15 +563,13 @@ class ApiGatewayIntegrationUtility:
                         ssm_imports_ns = stack_config.ssm_config.get("imports", {}).get(
                             "namespace"
                         )
-                        if ssm_imports_ns:
-                            cognito_ssm_path = (
-                                f"/{ssm_imports_ns}/cognito/user-pool/arn"
+                        if not ssm_imports_ns:
+                            raise ValueError(
+                                f"Stack '{stack_config.name}': "
+                                f"'ssm.imports.namespace' is required when cognito ssm_path is 'auto'. "
+                                f"Add 'ssm.imports.namespace' to your stack config."
                             )
-                        else:
-                            # Fall back to workload/environment pattern
-                            wl = deployment.workload_name if deployment else "unknown"
-                            env = deployment.environment if deployment else "unknown"
-                            cognito_ssm_path = f"/{wl}/{env}/cognito/user-pool/arn"
+                        cognito_ssm_path = f"/{ssm_imports_ns}/cognito/user-pool/arn"
 
                         api_gateway_config["ssm"]["imports"][
                             "user_pool_arn"

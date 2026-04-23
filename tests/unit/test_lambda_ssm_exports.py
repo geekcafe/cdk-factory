@@ -222,11 +222,11 @@ class TestLambdaSSMExports:
     # ── Task 1.2: Legacy mode and disabled tests ──
 
     def test_lambda_ssm_legacy_arn(self, app, deployment_config, workload_config):
-        """Verify legacy SSM path for Lambda ARN."""
+        """Verify SSM path for Lambda ARN using namespace."""
         stack_dict = {
             "name": "test-lambda-stack",
             "auto_export": True,
-            "ssm": {"auto_export": True, "workload": "wl", "environment": "dev"},
+            "ssm": {"auto_export": True, "namespace": "wl/dev"},
             "resources": [
                 {
                     "name": "test-function",
@@ -265,11 +265,11 @@ class TestLambdaSSMExports:
     def test_lambda_ssm_legacy_docker_arn(
         self, app, deployment_config, workload_config
     ):
-        """Verify legacy SSM path for Docker Lambda ARN."""
+        """Verify SSM path for Docker Lambda ARN using namespace."""
         stack_dict = {
             "name": "test-lambda-stack",
             "auto_export": True,
-            "ssm": {"auto_export": True, "workload": "wl", "environment": "dev"},
+            "ssm": {"auto_export": True, "namespace": "wl/dev"},
             "resources": [
                 {
                     "name": "test-function",
