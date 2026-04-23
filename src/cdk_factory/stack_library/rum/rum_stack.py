@@ -57,20 +57,9 @@ class RumStack(IStack, StandardizedSsmMixin):
         # Setup enhanced SSM integration
         rum_config = stack_config.dictionary.get("rum", {}).copy()
 
-        # Configure SSM imports for cognito resources if needed
-        if not self.rum_config.cognito_identity_pool_id:
-            # Build SSM path from the stack's own namespace
-            ssm_ns = stack_config.ssm_config.get("namespace")
-            if not ssm_ns:
-                ssm_ns = f"{deployment.workload_name}/{deployment.environment}"
-
-            if "ssm" not in rum_config:
-                rum_config["ssm"] = {}
-            if "imports" not in rum_config["ssm"]:
-                rum_config["ssm"]["imports"] = {}
-            rum_config["ssm"]["imports"][
-                "cognito_identity_pool_id"
-            ] = f"/{ssm_ns}/cognito/user-pool/identity-pool-id"
+        # Configure SSM imports for cognito resources only if explicitly configured.
+        # Don't auto-inject SSM imports — if no cognito_identity_pool_id is provided
+        # and no SSM import is configured, the stack will create its own Cognito resources.
 
         self.setup_ssm_integration(
             scope=self,
