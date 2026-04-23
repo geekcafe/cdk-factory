@@ -434,15 +434,15 @@ class Route53Stack(IStack, StandardizedSsmMixin):
             return
 
         # Build SSM parameter paths using top-level ssm config
-        # Path pattern: /{namespace}/route53/{stack_name}/{attribute}
+        # Path pattern: /{namespace}/route53/{attribute}
         namespace = self.stack_config.ssm_namespace
         stack_name = self.stack_config.name
         if namespace:
-            prefix = f"/{namespace}/route53/{stack_name}"
+            prefix = f"/{namespace}/route53"
         else:
             workload = self.deployment.workload_name
             environment = self.deployment.environment
-            prefix = f"/{workload}/{environment}/route53/{stack_name}"
+            prefix = f"/{workload}/{environment}/route53"
 
         from aws_cdk import aws_ssm as ssm_module
 
