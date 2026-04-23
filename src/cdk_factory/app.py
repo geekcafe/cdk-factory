@@ -213,6 +213,11 @@ class CdkAppFactory:
         # Resource summary report
         self._print_resource_summary(assembly)
 
+        # Synth messages summary (warnings, info collected during synthesis)
+        from cdk_factory.utilities.synth_messages import synth_messages
+
+        synth_messages.print_summary()
+
     def _print_unexpected_error(self, error: Exception) -> None:
         """Format an unexpected error with a clean, readable output."""
         import re
