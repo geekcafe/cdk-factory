@@ -59,18 +59,18 @@ class RumStack(IStack, StandardizedSsmMixin):
 
         # Configure SSM imports for cognito resources if needed
         if not self.rum_config.cognito_identity_pool_id:
-            # Only add SSM imports if we have the required template variables
-            # Check if deployment has organization info for template resolution
-            if (hasattr(deployment, 'organization') and deployment.organization and
-                hasattr(deployment, 'environment') and deployment.environment):
-                # Add explicit import path for cognito identity pool using new pattern
-                if "ssm" not in rum_config:
-                    rum_config["ssm"] = {}
-                if "imports" not in rum_config["ssm"]:
-                    rum_config["ssm"]["imports"] = {}
-                rum_config["ssm"]["imports"][
-                    "cognito_identity_pool_id"
-                ] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/identity-pool-id"
+            # Build SSM path from the stack's own namespace
+            ssm_ns = stack_config.ssm_config.get("namespace")
+            if not ssm_ns:
+                ssm_ns = f"{deployment.workload_name}/{deployment.environment}"
+
+            if "ssm" not in rum_config:
+                rum_config["ssm"] = {}
+            if "imports" not in rum_config["ssm"]:
+                rum_config["ssm"]["imports"] = {}
+            rum_config["ssm"]["imports"][
+                "cognito_identity_pool_id"
+            ] = f"/{ssm_ns}/cognito/user-pool/identity-pool-id"
 
         self.setup_ssm_integration(
             scope=self,
@@ -105,7 +105,9 @@ class RumStack(IStack, StandardizedSsmMixin):
             logger.info(f"Using existing Cognito Identity Pool: {identity_pool_id}")
         else:
             # Try to import from SSM using standardized approach
-            cognito_identity_pool_id = self.get_ssm_imported_value("cognito_identity_pool_id")
+            cognito_identity_pool_id = self.get_ssm_imported_value(
+                "cognito_identity_pool_id"
+            )
 
             if cognito_identity_pool_id:
                 identity_pool_id = cognito_identity_pool_id

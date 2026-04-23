@@ -40,7 +40,9 @@ class ApiGatewayIntegrationUtility:
         self.account = scope.account
         self.api_gateway = None
         self.authorizer = None
-        self.cognito_configured = False  # Flag for when Cognito is configured but authorizer not created
+        self.cognito_configured = (
+            False  # Flag for when Cognito is configured but authorizer not created
+        )
         self._log_group = None
         self._log_role = None
 
@@ -545,16 +547,36 @@ class ApiGatewayIntegrationUtility:
 
                     # Setup enhanced SSM integration for auto-import
                     # Use "user-pool" as resource identifier for SSM paths to match cognito exports
-                    api_gateway_config = stack_config.dictionary.get("api_gateway", {}).copy()
-                    
-                    # Configure SSM imports for auto-discovery
+                    api_gateway_config = stack_config.dictionary.get(
+                        "api_gateway", {}
+                    ).copy()
+
+                    # Configure SSM imports for auto-discovery using the stack's
+                    # own SSM namespace rather than hardcoded organization/environment.
                     if ssm_path == "auto":
                         if "ssm" not in api_gateway_config:
                             api_gateway_config["ssm"] = {}
                         if "imports" not in api_gateway_config["ssm"]:
                             api_gateway_config["ssm"]["imports"] = {}
-                        api_gateway_config["ssm"]["imports"]["user_pool_arn"] = "/{{ORGANIZATION}}/{{ENVIRONMENT}}/cognito/user-pool/arn"
-                    
+
+                        # Build the SSM path from the stack's import namespace
+                        ssm_imports_ns = stack_config.ssm_config.get("imports", {}).get(
+                            "namespace"
+                        )
+                        if ssm_imports_ns:
+                            cognito_ssm_path = (
+                                f"/{ssm_imports_ns}/cognito/user-pool/arn"
+                            )
+                        else:
+                            # Fall back to workload/environment pattern
+                            wl = deployment.workload_name if deployment else "unknown"
+                            env = deployment.environment if deployment else "unknown"
+                            cognito_ssm_path = f"/{wl}/{env}/cognito/user-pool/arn"
+
+                        api_gateway_config["ssm"]["imports"][
+                            "user_pool_arn"
+                        ] = cognito_ssm_path
+
                     ssm_mixin.setup_ssm_integration(
                         scope=self.scope,
                         config=api_gateway_config,
@@ -565,14 +587,18 @@ class ApiGatewayIntegrationUtility:
                     # Get user pool ARN using new pattern - read directly from config
                     if ssm_path == "auto":
                         logger.info("Using auto-import for user pool ARN")
-                        ssm_imports = api_gateway_config.get("ssm", {}).get("imports", {})
+                        ssm_imports = api_gateway_config.get("ssm", {}).get(
+                            "imports", {}
+                        )
                         user_pool_arn = ssm_imports.get("user_pool_arn")
                     else:
                         # Use direct parameter import for specific SSM path
                         logger.info(
                             f"Looking up user pool ARN from SSM parameter: {ssm_path}"
                         )
-                        user_pool_arn = ssm_mixin._resolve_single_ssm_import(ssm_path, "user_pool_arn")
+                        user_pool_arn = ssm_mixin._resolve_single_ssm_import(
+                            ssm_path, "user_pool_arn"
+                        )
 
             # Extract user pool ID from ARN if we have it
             if user_pool_arn and not user_pool_id:
@@ -625,7 +651,7 @@ class ApiGatewayIntegrationUtility:
             authorizer_name=authorizer_name,
             identity_source=identity_source,
         )
-        
+
         # The authorizer is automatically attached to the API Gateway when used in a method
         # But we need to ensure it's created in the context of the API's scope
         # The actual attachment happens when the authorizer is referenced in method creation
@@ -1134,18 +1160,20 @@ class ApiGatewayIntegrationUtility:
             "request_parameters": api_config.request_parameters,
             "integration": integration_props,
         }
-        
+
         # Only add authorizer_id if authorization type is not NONE
         if auth_type != "NONE":
-            method_props["authorizer_id"] = self._get_existing_authorizer_id_with_ssm_fallback(
-                api_config, stack_config
+            method_props["authorizer_id"] = (
+                self._get_existing_authorizer_id_with_ssm_fallback(
+                    api_config, stack_config
+                )
             )
 
         # Create method using L1 construct with validated authorization configuration
         method = apigateway.CfnMethod(
             self.scope,
             f"method-{http_method.lower()}-{resource.node.id}-existing-auth",
-            **method_props
+            **method_props,
         )
 
         # Add Lambda permission for API Gateway to invoke the function
@@ -1185,11 +1213,8 @@ class ApiGatewayIntegrationUtility:
             f"Creating deployment for API Gateway with {len(integrations)} integrations"
         )
 
-        # Create deployment
-        deployment_id = f"api-gateway-{counter}-deployment-final"
-        if len(integrations) == 1 and integrations[0].get("function_name"):
-            # Lambda stack deployment
-            deployment_id = "api-gateway-deployment"
+        # Use a stable deployment construct ID that doesn't change with route count
+        deployment_id = "api-gateway-deployment"
 
         deployment = apigateway.Deployment(
             scope,
@@ -1209,8 +1234,14 @@ class ApiGatewayIntegrationUtility:
             )
             stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage"
             if len(integrations) == 1 and integrations[0].get("function_name"):
-                # Lambda stack stage
+                # Lambda stack stage — use stable ID to prevent recreation on name changes
                 stage_id = f"{api_gateway.rest_api_name}-{stage_name}-stage-lambdas"
+
+            # Use a stable stage construct ID based on stage_name only.
+            # This prevents CloudFormation from trying to create a new Stage
+            # resource when the API Gateway name changes, which would fail
+            # because the physical stage (e.g., "prod") already exists.
+            stage_id = f"api-gateway-stage-{stage_name}"
 
             stage_kwargs = {
                 "deployment": deployment,
@@ -1408,7 +1439,7 @@ class ApiGatewayIntegrationUtility:
         auth_type = str(getattr(api_config, "authorization_type", "COGNITO")).upper()
         route_path = getattr(api_config, "routes", "unknown")
         method = getattr(api_config, "method", "unknown")
-        
+
         logger = logging.getLogger(__name__)
 
         # Check for explicit override flag
@@ -1418,7 +1449,7 @@ class ApiGatewayIntegrationUtility:
             explicit_override = explicit_override.lower() in ("true", "1", "yes")
         else:
             explicit_override = bool(explicit_override)
-        
+
         logger = logging.getLogger(__name__)
 
         # Case 1: Cognito available + NONE requested + No explicit override = ERROR
