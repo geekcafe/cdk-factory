@@ -45,6 +45,7 @@ from cdk_factory.utilities.docker_utilities import DockerUtilities
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.interfaces.istack import IStack
 from cdk_factory.configurations.resources.lambda_triggers import LambdaTriggersConfig
+from cdk_factory.utilities.route_metadata_validator import RouteMetadataValidator
 
 logger = Logger(__name__)
 
@@ -124,6 +125,9 @@ class LambdaStack(IStack):
 
         # Export Lambda ARNs to SSM Parameter Store for API Gateway integration
         self.__export_lambda_arns_to_ssm()
+
+        # Export route metadata to SSM for API Gateway route discovery
+        self.__export_route_metadata_to_ssm()
 
     def __nag_rule_suppressions(self):
         pass
@@ -575,6 +579,61 @@ class LambdaStack(IStack):
         print(
             f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store"
         )
+
+    def __export_route_metadata_to_ssm(self) -> None:
+        """Export route metadata to SSM for API Gateway route discovery."""
+        if not self.exported_lambda_arns:
+            return
+
+        ssm_config = self.stack_config.dictionary.get("ssm", {})
+        if not ssm_config.get("auto_export", False):
+            return
+
+        namespace = ssm_config.get("namespace")
+        workload = ssm_config.get(
+            "workload",
+            ssm_config.get("organization", self.deployment.workload_name),
+        )
+        environment = ssm_config.get("environment", self.deployment.environment)
+
+        if namespace:
+            prefix = f"/{namespace}/lambda"
+        else:
+            prefix = f"/{workload}/{environment}/lambda"
+
+        exported_count = 0
+        for lambda_name, lambda_info in self.exported_lambda_arns.items():
+            config: LambdaFunctionConfig = lambda_info["config"]
+            if not config.api or not config.api.route:
+                continue
+
+            api_dict = config.api._config
+            RouteMetadataValidator.validate_route_metadata(api_dict, lambda_name)
+
+            route_metadata = {
+                "route": api_dict.get("route", ""),
+                "method": api_dict.get("method", "GET"),
+                "skip_authorizer": api_dict.get("skip_authorizer", False),
+                "authorization_type": api_dict.get("authorization_type", ""),
+                "routes": api_dict.get("routes", []),
+            }
+
+            param_path = f"{prefix}/{lambda_name}/api-route"
+            ssm.StringParameter(
+                self,
+                f"ssm-export-{lambda_name}-api-route",
+                parameter_name=param_path,
+                string_value=json.dumps(route_metadata),
+                description=f"API route metadata for {lambda_name}",
+                tier=ssm.ParameterTier.STANDARD,
+            )
+            exported_count += 1
+            logger.info(
+                f"✅ Exported route metadata for '{lambda_name}' to SSM: {param_path}"
+            )
+
+        if exported_count > 0:
+            print(f"📤 Exported {exported_count} route metadata parameter(s) to SSM")
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig
