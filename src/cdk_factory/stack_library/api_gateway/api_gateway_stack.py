@@ -1153,16 +1153,55 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         return options
 
     def __setup_custom_domain(self, api: apigateway.RestApi):
-        record_name = self.api_config.custom_domain.get(
-            "domain_name"
-        ) or self.api_config.hosted_zone.get("record_name", None)
+        # Support: single dict, array of dicts, or comma-separated domain_names in a single dict
+        domains = self.api_config.custom_domains
 
+        # Expand comma-separated domain_names into multiple domain configs
+        # e.g., {"domain_names": "api.example.com,v3.api.example.com", "hosted_zone_name": "example.com"}
+        # becomes two separate domain configs
+        if len(domains) == 1 and "domain_names" in domains[0]:
+            template = domains[0]
+            names = [
+                n.strip() for n in template["domain_names"].split(",") if n.strip()
+            ]
+            domains = []
+            for name in names:
+                entry = dict(template)
+                entry["domain_name"] = name
+                entry.pop("domain_names", None)
+                domains.append(entry)
+
+        # Backward compatibility: check old hosted_zone config if no custom_domain
+        if not domains:
+            record_name = self.api_config.hosted_zone.get("record_name", None)
+            if record_name:
+                domains = [
+                    {
+                        "domain_name": record_name,
+                        "hosted_zone_id": self.api_config.hosted_zone.get("id"),
+                        "hosted_zone_name": self.api_config.hosted_zone.get("name"),
+                        "certificate_arn": self.api_config.ssl_cert_arn,
+                    }
+                ]
+
+        if not domains:
+            return
+
+        for i, domain_config in enumerate(domains):
+            self.__setup_single_custom_domain(api, domain_config, i)
+
+    def __setup_single_custom_domain(
+        self, api: apigateway.RestApi, domain_config: dict, index: int
+    ):
+        """Setup a single custom domain with certificate, base path mapping, and DNS records."""
+        record_name = domain_config.get("domain_name")
         if not record_name:
             return
 
-        hosted_zone_id = self.api_config.custom_domain.get(
-            "hosted_zone_id"
-        ) or self.api_config.hosted_zone.get("id", None)
+        # Use index suffix for unique construct IDs (empty for first/only domain)
+        suffix = f"-{index}" if index > 0 else ""
+
+        hosted_zone_id = domain_config.get("hosted_zone_id")
 
         # If hosted_zone_id is not provided, try SSM auto-discovery
         if not hosted_zone_id:
@@ -1172,75 +1211,66 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 ssm_path = f"/{namespace}/route53/hosted-zone-id"
                 logger.info(f"Auto-discovering hosted zone ID from SSM: {ssm_path}")
                 param = ssm.StringParameter.from_string_parameter_name(
-                    self, "hosted-zone-id-param", ssm_path
+                    self, f"hosted-zone-id-param{suffix}", ssm_path
                 )
                 hosted_zone_id = param.string_value
 
         if not hosted_zone_id:
             raise ValueError(
-                "Hosted zone id is required, when you specify a hosted zone record name. "
+                f"Hosted zone id is required for custom domain '{record_name}'. "
                 "Provide it via custom_domain.hosted_zone_id, or configure "
                 "ssm.imports.namespace so it can be auto-discovered from SSM."
             )
 
-        hosted_zone_name = self.api_config.custom_domain.get(
-            "hosted_zone_name"
-        ) or self.api_config.hosted_zone.get("name", None)
+        hosted_zone_name = domain_config.get("hosted_zone_name")
         if not hosted_zone_name:
             raise ValueError(
-                "Hosted zone name is required, when you specify a hosted zone record name"
+                f"Hosted zone name is required for custom domain '{record_name}'"
             )
 
         hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
             self,
-            "HostedZone",
+            f"HostedZone{suffix}",
             hosted_zone_id=hosted_zone_id,
             zone_name=hosted_zone_name,
         )
 
         certificate: acm.Certificate | None = None
-        cert_arn = (
-            self.api_config.custom_domain.get("certificate_arn")
-            or self.api_config.ssl_cert_arn
-        )
-        # either get or create the cert
+        cert_arn = domain_config.get("certificate_arn") or self.api_config.ssl_cert_arn
         if cert_arn:
             certificate = acm.Certificate.from_certificate_arn(
                 self,
-                "ApiCertificate",
+                f"ApiCertificate{suffix}",
                 cert_arn,
             )
         else:
             certificate = acm.Certificate(
                 self,
-                id="ApiCertificate",
+                id=f"ApiCertificate{suffix}",
                 domain_name=record_name,
                 validation=acm.CertificateValidation.from_dns(hosted_zone=hosted_zone),
             )
 
         if certificate:
-            # API Gateway custom domain
             api_gateway_domain_resource = apigateway.DomainName(
                 self,
-                "ApiCustomDomain",
+                f"ApiCustomDomain{suffix}",
                 domain_name=record_name,
                 certificate=certificate,
             )
 
-            # Base path mapping - root path to your stage
             apigateway.BasePathMapping(
                 self,
-                "ApiBasePathMapping",
+                f"ApiBasePathMapping{suffix}",
                 domain_name=api_gateway_domain_resource,
                 rest_api=api,
                 stage=getattr(api, "_deployment_stage", None) or api.deployment_stage,
-                base_path="",  # Root path
+                base_path="",
             )
 
-            # A Record
             route53.ARecord(
                 self,
-                "ARecordApi",
+                f"ARecordApi{suffix}",
                 zone=hosted_zone,
                 record_name=record_name,
                 target=route53.RecordTarget.from_alias(
@@ -1248,10 +1278,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 ),
             )
 
-            # AAAA Record
             route53.AaaaRecord(
                 self,
-                "AAAARecordApi",
+                f"AAAARecordApi{suffix}",
                 zone=hosted_zone,
                 record_name=record_name,
                 target=route53.RecordTarget.from_alias(

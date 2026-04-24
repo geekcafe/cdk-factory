@@ -134,6 +134,22 @@ class ApiGatewayConfig(EnhancedBaseConfig):
         return self.__config.get("custom_domain", {})
 
     @property
+    def custom_domains(self) -> list[dict]:
+        """Custom domain configs as a list. Supports both single dict and array formats.
+
+        Single: {"custom_domain": {"domain_name": "api.example.com", ...}}
+        Array:  {"custom_domain": [{"domain_name": "api.example.com", ...}, {"domain_name": "v3.api.example.com", ...}]}
+        """
+        raw = self.__config.get("custom_domain")
+        if not raw:
+            return []
+        if isinstance(raw, list):
+            return raw
+        if isinstance(raw, dict):
+            return [raw]
+        return []
+
+    @property
     def ssl_cert_arn(self) -> str | None:
         return self.__config.get("ssl_cert_arn")
 
