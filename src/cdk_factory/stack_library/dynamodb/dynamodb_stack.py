@@ -270,16 +270,6 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
             logger.info("SSM auto-export is not enabled for DynamoDB stack")
             return
 
-        # Setup SSM integration using the top-level ssm block via stack_config
-        # Path pattern: /{namespace}/{resource_type}/{stack_name}/{attribute}
-
-        self.setup_ssm_integration(
-            scope=self,
-            config=self.stack_config.dictionary,
-            resource_type="dynamodb",
-            resource_name=self.stack_config.name,
-        )
-
         # Prepare resource values for export
         resource_values = {
             "table_name": self.table.table_name,
@@ -298,10 +288,27 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         # Filter out None values
         resource_values = {k: v for k, v in resource_values.items() if v is not None}
 
-        # Use enhanced SSM parameter export
-        exported_params = self.export_ssm_parameters(resource_values)
+        # Path pattern: /{namespace}/{attribute}
+        # The namespace in config should include the resource context,
+        # e.g. "my-app/prod/dynamodb/app"
+        namespace = self.stack_config.ssm_namespace
+        if not namespace:
+            raise ValueError(
+                f"Stack '{self.stack_config.name}': "
+                f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                f"Add 'ssm.namespace' to your stack config."
+            )
 
-        if exported_params:
-            logger.info(f"Exported {len(exported_params)} DynamoDB parameters to SSM")
-        else:
-            logger.info("No SSM parameters configured for export")
+        prefix = f"/{namespace}"
+
+        for export_key, export_value in resource_values.items():
+            parameter_path = f"{prefix}/{export_key}"
+            self.export_ssm_parameter(
+                scope=self,
+                id=f"{self.id}-{export_key}",
+                value=export_value,
+                parameter_name=parameter_path,
+                description=f"DynamoDB {export_key}",
+            )
+
+        logger.info(f"Auto-exported {len(resource_values)} DynamoDB parameters to SSM")
