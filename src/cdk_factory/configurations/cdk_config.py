@@ -227,6 +227,17 @@ class CdkConfig:
         self._resolve_lambda_config_paths(config)
 
         JsonLoadingUtility.save(config, path)
+
+        # Save a fully-resolved runtime snapshot for debugging/troubleshooting
+        # This includes the cdk parameters with resolved values
+        runtime_path = os.path.join(Path(path).parent, "runtime.config.json")
+        runtime_config = dict(config)
+        if replacements and cdk:
+            resolved_cdk = JsonLoadingUtility.recursive_replace(cdk, replacements)
+            runtime_config["cdk"] = resolved_cdk
+        JsonLoadingUtility.save(runtime_config, runtime_path)
+        print(f"📀 Saving runtime config to {runtime_path}")
+
         return config
 
     @staticmethod
