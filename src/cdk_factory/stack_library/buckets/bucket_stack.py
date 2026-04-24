@@ -153,16 +153,18 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
         }
 
         if auto_export:
-            # Build SSM parameter paths using top-level ssm config
-            # Path pattern: /{namespace}/s3/{stack_name}/{attribute}
+            # Path pattern: /{namespace}/{attribute}
+            # The namespace in config should include the resource context,
+            # e.g. "my-app/prod/s3"
             namespace = self.stack_config.ssm_namespace
-            stack_name = self.stack_config.name
-            if namespace:
-                prefix = f"/{namespace}/s3/{stack_name}"
-            else:
-                workload = self.deployment.workload_name
-                environment = self.deployment.environment
-                prefix = f"/{workload}/{environment}/s3/{stack_name}"
+            if not namespace:
+                raise ValueError(
+                    f"Stack '{self.stack_config.name}': "
+                    f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                    f"Add 'ssm.namespace' to your stack config."
+                )
+
+            prefix = f"/{namespace}"
 
             for export_key, export_value in known_key_values.items():
                 parameter_path = f"{prefix}/{export_key}"

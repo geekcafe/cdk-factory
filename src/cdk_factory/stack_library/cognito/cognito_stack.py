@@ -547,24 +547,30 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # Export secret ARN to SSM for cross-stack reference
         ssm_config = self.stack_config.ssm_config
         if ssm_config.get("auto_export"):
-            safe_client_name = client_name.replace("-", "_").replace(" ", "_")
-            org = ssm_config.get("organization", "default")
-            env = ssm_config.get("environment", "dev")
+            namespace = self.stack_config.ssm_namespace
+            if namespace:
+                safe_client_name = client_name.replace("-", "_").replace(" ", "_")
 
-            ssm.StringParameter(
-                self,
-                f"{client_name}-secret-arn-param",
-                parameter_name=f"/{org}/{env}/cognito/user-pool/app_client_{safe_client_name}_secret_arn",
-                string_value=secret_with_metadata.secret_arn,
-                description=f"Secrets Manager ARN for {client_name} credentials",
-            )
+                ssm.StringParameter(
+                    self,
+                    f"{client_name}-secret-arn-param",
+                    parameter_name=f"/{namespace}/app_client_{safe_client_name}_secret_arn",
+                    string_value=secret_with_metadata.secret_arn,
+                    description=f"Secrets Manager ARN for {client_name} credentials",
+                )
 
     def _export_ssm_parameters(self, user_pool: cognito.UserPool):
         """Export Cognito resources to SSM using top-level ssm config"""
 
-        # Setup SSM integration using the top-level ssm block via stack_config
-        # Path pattern: /{namespace}/cognito/{stack_name}/{attribute}
+        ssm_config = self.stack_config.ssm_config
+        exports = ssm_config.get("exports", {})
+        auto_export = self.stack_config.ssm_auto_export
 
+        if not ssm_config or (not auto_export and not exports):
+            logger.info("No SSM parameters configured for export")
+            return
+
+        # Setup SSM integration using the top-level ssm block via stack_config
         self.setup_ssm_integration(
             scope=self,
             config=self.stack_config.dictionary,
@@ -581,20 +587,46 @@ class CognitoStack(IStack, StandardizedSsmMixin):
 
         # Add app client IDs to export
         for client_name, app_client in self.app_clients.items():
-            # Export client ID
             safe_client_name = client_name.replace("-", "_").replace(" ", "_")
             resource_values[f"app_client_{safe_client_name}_id"] = (
                 app_client.user_pool_client_id
             )
 
-            # Note: Client secrets cannot be exported via SSM as they are only available
-            # at creation time and CDK doesn't expose them. Use AWS Secrets Manager
-            # or retrieve via AWS Console/CLI if needed.
+        if auto_export:
+            # Path pattern: /{namespace}/{attribute}
+            # The namespace in config should include the resource context,
+            # e.g. "aplos-nca-saas/beta/cognito"
+            namespace = self.stack_config.ssm_namespace
+            if not namespace:
+                raise ValueError(
+                    f"Stack '{self.stack_config.name}': "
+                    f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                    f"Add 'ssm.namespace' to your stack config."
+                )
 
-        # Use enhanced SSM parameter export
-        exported_params = self.export_ssm_parameters(resource_values)
+            prefix = f"/{namespace}"
 
-        if exported_params:
-            logger.info(f"Exported {len(exported_params)} Cognito parameters to SSM")
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                parameter_path = f"{prefix}/{export_key}"
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=parameter_path,
+                    description=f"Cognito {export_key}",
+                )
+
+            logger.info(
+                f"Auto-exported {len(resource_values)} Cognito parameters to SSM"
+            )
         else:
-            logger.info("No SSM parameters configured for export")
+            # Use explicit exports mapping
+            exported_params = self.export_ssm_parameters(resource_values)
+            if exported_params:
+                logger.info(
+                    f"Exported {len(exported_params)} Cognito parameters to SSM"
+                )
+            else:
+                logger.info("No SSM exports configured")

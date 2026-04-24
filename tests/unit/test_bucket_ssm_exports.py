@@ -68,7 +68,7 @@ class TestBucketSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/s3/my-bucket-stack/bucket_name"},
+            {"Name": "/my-ns/bucket_name"},
         )
 
     def test_bucket_ssm_namespace_bucket_arn(
@@ -98,13 +98,13 @@ class TestBucketSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/s3/my-bucket-stack/bucket_arn"},
+            {"Name": "/my-ns/bucket_arn"},
         )
 
     def test_bucket_ssm_legacy_bucket_name(
         self, app, deployment_config, workload_config
     ):
-        """Verify legacy SSM path for bucket_name (no namespace, falls back to workload/env)."""
+        """Verify auto_export without namespace raises ValueError."""
         stack_config = StackConfig(
             {
                 "name": "my-bucket-stack",
@@ -122,13 +122,9 @@ class TestBucketSSMExports:
             "TestLegacyBucketName",
             env=cdk.Environment(account="123456789012", region="us-east-1"),
         )
-        stack.build(stack_config, deployment_config, workload_config)
-        template = Template.from_stack(stack)
 
-        template.has_resource_properties(
-            "AWS::SSM::Parameter",
-            {"Name": "/test-workload/test/s3/my-bucket-stack/bucket_name"},
-        )
+        with pytest.raises(ValueError, match="ssm.namespace.*required"):
+            stack.build(stack_config, deployment_config, workload_config)
 
     def test_bucket_ssm_auto_export_disabled(
         self, app, deployment_config, workload_config

@@ -433,16 +433,19 @@ class Route53Stack(IStack, StandardizedSsmMixin):
         if not self.stack_config.ssm_auto_export:
             return
 
-        # Build SSM parameter paths using top-level ssm config
-        # Path pattern: /{namespace}/route53/{attribute}
+        # Path pattern: /{namespace}/{attribute}
+        # The namespace in config should include the resource context,
+        # e.g. "my-app/prod/route53"
         namespace = self.stack_config.ssm_namespace
+        if not namespace:
+            raise ValueError(
+                f"Stack '{self.stack_config.name}': "
+                f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                f"Add 'ssm.namespace' to your stack config."
+            )
+
+        prefix = f"/{namespace}"
         stack_name = self.stack_config.name
-        if namespace:
-            prefix = f"/{namespace}/route53"
-        else:
-            workload = self.deployment.workload_name
-            environment = self.deployment.environment
-            prefix = f"/{workload}/{environment}/route53"
 
         from aws_cdk import aws_ssm as ssm_module
 

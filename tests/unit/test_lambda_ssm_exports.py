@@ -85,7 +85,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/lambda/test-function/arn"},
+            {"Name": "/my-ns/test-function/arn"},
         )
 
     def test_lambda_ssm_namespace_function_name(
@@ -128,7 +128,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/lambda/test-function/function-name"},
+            {"Name": "/my-ns/test-function/function-name"},
         )
 
     def test_lambda_ssm_namespace_docker_arn(
@@ -172,7 +172,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/docker-lambdas/test-function/arn"},
+            {"Name": "/my-ns/test-function/arn"},
         )
 
     def test_lambda_ssm_namespace_docker_function_name(
@@ -216,7 +216,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/my-ns/docker-lambdas/test-function/function-name"},
+            {"Name": "/my-ns/test-function/function-name"},
         )
 
     # ── Task 1.2: Legacy mode and disabled tests ──
@@ -259,7 +259,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/wl/dev/lambda/test-function/arn"},
+            {"Name": "/wl/dev/test-function/arn"},
         )
 
     def test_lambda_ssm_legacy_docker_arn(
@@ -303,7 +303,7 @@ class TestLambdaSSMExports:
 
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/wl/dev/docker-lambdas/test-function/arn"},
+            {"Name": "/wl/dev/test-function/arn"},
         )
 
     def test_lambda_ssm_disabled(self, app, deployment_config, workload_config):

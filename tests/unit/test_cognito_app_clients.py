@@ -355,11 +355,7 @@ class TestCognitoAppClients:
                 "name": "test-cognito-stack",
                 "ssm": {
                     "auto_export": True,
-                    "organization": "my-app",
-                    "environment": "prod",
-                    "exports": {
-                        "user_pool_id": "/my-app/prod/cognito/user-pool/user-pool-id"
-                    },
+                    "namespace": "my-app/prod/cognito",
                 },
                 "cognito": {
                     "user_pool_name": "test-pool",
@@ -381,17 +377,15 @@ class TestCognitoAppClients:
         template = Template.from_stack(stack)
 
         # Verify SSM parameters created for user pool
-        # Enhanced SSM uses hyphens in parameter names
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/my-app/prod/cognito/user-pool/user-pool-id",
+                "Name": "/my-app/prod/cognito/user_pool_id",
                 "Type": "String",
             },
         )
 
-        # Note: App client ID export is done through enhanced SSM mixin
-        # which uses export_ssm_parameters, so we check that the client was created
+        # Note: App client ID export is done through auto_export
         template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
 
     def test_app_client_secret_ssm_arn_export(
@@ -403,8 +397,7 @@ class TestCognitoAppClients:
                 "name": "test-cognito-stack",
                 "ssm": {
                     "auto_export": True,
-                    "organization": "my-app",
-                    "environment": "prod",
+                    "namespace": "my-app/prod/cognito",
                 },
                 "cognito": {
                     "user_pool_name": "test-pool",
@@ -429,7 +422,7 @@ class TestCognitoAppClients:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/my-app/prod/cognito/user-pool/app_client_backend_service_secret_arn",
+                "Name": "/my-app/prod/cognito/app_client_backend_service_secret_arn",
                 "Type": "String",
                 "Description": "Secrets Manager ARN for backend-service credentials",
             },
@@ -706,8 +699,7 @@ class TestCognitoAppClients:
                 "name": "test-cognito-stack",
                 "ssm": {
                     "auto_export": True,
-                    "organization": "test-org",
-                    "environment": "dev",
+                    "namespace": "test-org/dev/cognito",
                 },
                 "cognito": {
                     "user_pool_name": "test-pool",
@@ -732,7 +724,7 @@ class TestCognitoAppClients:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/test-org/dev/cognito/user-pool/app_client_my_backend_service_secret_arn",
+                "Name": "/test-org/dev/cognito/app_client_my_backend_service_secret_arn",
             },
         )
 
@@ -745,11 +737,7 @@ class TestCognitoAppClients:
                 "name": "test-cognito-stack",
                 "ssm": {
                     "auto_export": True,
-                    "organization": "prod-app",
-                    "environment": "prod",
-                    "exports": {
-                        "user_pool_id": "/prod-app/prod/cognito/user-pool/user-pool-id"
-                    },
+                    "namespace": "prod-app/prod/cognito",
                 },
                 "cognito": {
                     "user_pool_name": "production-pool",
@@ -804,14 +792,12 @@ class TestCognitoAppClients:
             "AWS::SecretsManager::Secret", 2
         )  # 2 secrets for backend-api
 
-        # Verify SSM parameters (enhanced SSM uses hyphens)
+        # Verify SSM parameters
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/prod-app/prod/cognito/user-pool/user-pool-id"},
+            {"Name": "/prod-app/prod/cognito/user_pool_id"},
         )
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {
-                "Name": "/prod-app/prod/cognito/user-pool/app_client_backend_api_secret_arn"
-            },
+            {"Name": "/prod-app/prod/cognito/app_client_backend_api_secret_arn"},
         )
