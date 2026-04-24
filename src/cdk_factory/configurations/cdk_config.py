@@ -198,6 +198,15 @@ class CdkConfig:
             if not changed:
                 break
 
+        # Update _env_vars with pre-resolved values so pipeline env vars
+        # (e.g., TARGET_ACCOUNT_ROLE_ARN in CodeBuild) get fully resolved values
+        for env_name, env_value in self._env_vars.items():
+            if isinstance(env_value, str) and "{{" in env_value:
+                for find_str, replace_str in replacements.items():
+                    if isinstance(replace_str, str):
+                        env_value = env_value.replace(find_str, replace_str)
+                self._env_vars[env_name] = env_value
+
         if self._resolved_config_file_path is None:
             raise ValueError("Config file path is not set")
 
