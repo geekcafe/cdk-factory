@@ -191,23 +191,37 @@ class StepFunctionStack(IStack, StandardizedSsmMixin):
         if not ssm_config:
             return
 
-        sm_name = self.sf_config.name or "state-machine"
-
-        self.setup_ssm_integration(
-            scope=self,
-            config=self.stack_config.dictionary.get("state_machine", {}),
-            resource_type="step-functions",
-            resource_name=sm_name,
-        )
-
         resource_values = {
             "state_machine_arn": self.state_machine.state_machine_arn,
             "state_machine_name": self.state_machine.state_machine_name,
         }
 
-        exported_params = self.export_ssm_parameters(resource_values)
+        namespace = self.stack_config.ssm_namespace if self.stack_config else None
+        auto_export = self.stack_config.ssm_auto_export if self.stack_config else False
 
-        if exported_params:
-            logger.info(
-                f"Exported {len(exported_params)} Step Functions parameters to SSM"
+        if namespace and auto_export:
+            prefix = f"/{namespace}"
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.node.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=f"{prefix}/{export_key}",
+                    description=f"Step Functions {export_key}",
+                )
+            logger.info(f"Auto-exported Step Functions parameters to SSM")
+        else:
+            sm_name = self.sf_config.name or "state-machine"
+            self.setup_ssm_integration(
+                scope=self,
+                config=self.stack_config.dictionary.get("state_machine", {}),
+                resource_type="step-functions",
+                resource_name=sm_name,
             )
+            exported_params = self.export_ssm_parameters(resource_values)
+            if exported_params:
+                logger.info(
+                    f"Exported {len(exported_params)} Step Functions parameters to SSM"
+                )

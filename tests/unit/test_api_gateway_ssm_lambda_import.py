@@ -66,11 +66,8 @@ class TestApiGatewaySSMLambdaImport:
             "name": "test-api-gateway",
             "enabled": True,
             "ssm": {
-                "auto_export": True,
                 "imports": {
                     "namespace": "test-workload/test",
-                    "organization": "/test-workload/test/organization",
-                    "environment": "/test-workload/test/environment",
                 },
             },
             "api_gateway": {
@@ -269,11 +266,8 @@ class TestApiGatewaySSMLambdaImport:
             "name": "test-api-gateway",
             "enabled": True,
             "ssm": {
-                "auto_export": True,
                 "imports": {
                     "namespace": "test-workload/test",
-                    "organization": "/test-workload/test/organization",
-                    "environment": "/test-workload/test/environment",
                 },
             },
             "api_gateway": {

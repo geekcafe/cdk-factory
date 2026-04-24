@@ -125,7 +125,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.launch_template = self._create_launch_template(asg_name)
 
         # Create Auto Scaling Group
-        self.auto_scaling_group = self._create_auto_scaling_group(asg_name, stable_asg_id)
+        self.auto_scaling_group = self._create_auto_scaling_group(
+            asg_name, stable_asg_id
+        )
 
         # Add scaling policies
         self._add_scaling_policies(stable_asg_id)
@@ -392,7 +394,7 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Note: When using a launch template with ASG, associate_public_ip_address
         # must be set in the ASG's network configuration, not the launch template
         # The launch template just defines the instance configuration
-        
+
         launch_template = ec2.LaunchTemplate(
             self,
             f"{asg_name}-LaunchTemplate",
@@ -430,7 +432,9 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         logger.info(f"Created launch template: {launch_template.launch_template_name}")
         return launch_template
 
-    def _create_auto_scaling_group(self, asg_name: str, stable_asg_id: str) -> autoscaling.AutoScalingGroup:
+    def _create_auto_scaling_group(
+        self, asg_name: str, stable_asg_id: str
+    ) -> autoscaling.AutoScalingGroup:
         """Create Auto Scaling Group"""
         # Use the shared VPC and subnets
         vpc = self._get_or_create_vpc()
@@ -570,19 +574,27 @@ class AutoScalingStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             logger.warning("No Auto Scaling Group to export")
             return
 
-        # Note: AWS::AutoScaling::AutoScalingGroup doesn't expose an ARN attribute via Fn::GetAtt
-        # ECS Capacity Providers accept either the ARN or just the ASG name
-        # We'll export the name which works for all use cases
-        
-        # Prepare resource values for export
         resource_values = {
             "auto_scaling_group_name": self.auto_scaling_group.auto_scaling_group_name,
         }
 
-        # Export using standardized SSM mixin
-        exported_params = self.export_ssm_parameters(resource_values)
-
-        logger.info(f"Exported SSM parameters: {exported_params}")
+        namespace = self.stack_config.ssm_namespace
+        if namespace and self.stack_config.ssm_auto_export:
+            prefix = f"/{namespace}"
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.node.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=f"{prefix}/{export_key}",
+                    description=f"Auto Scaling {export_key}",
+                )
+            logger.info(f"Auto-exported ASG parameters to SSM")
+        else:
+            exported_params = self.export_ssm_parameters(resource_values)
+            logger.info(f"Exported SSM parameters: {exported_params}")
 
     def _configure_instance_refresh(self, asg: autoscaling.AutoScalingGroup) -> None:
         """Configure instance refresh for rolling updates"""

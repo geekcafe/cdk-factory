@@ -112,7 +112,7 @@ class SQSStack(IStack):
         )
         namespace = ssm_config.get("namespace")
         if namespace:
-            prefix = f"/{namespace}/sqs"
+            prefix = f"/{namespace}"
         else:
             prefix = (
                 f"/{self.deployment.workload_name}/{self.deployment.environment}/sqs"

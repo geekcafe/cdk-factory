@@ -43,7 +43,7 @@ class TestSQSSSMNamespace:
             stack._publish_queue_to_ssm(mock_queue, queue_config, is_dlq=False)
 
             arn_call = mock_ssm.call_args_list[0]
-            assert arn_call[1]["parameter_name"] == "/my-ns/sqs/test-queue/arn"
+            assert arn_call[1]["parameter_name"] == "/my-ns/test-queue/arn"
 
     def test_sqs_ssm_namespace_url(self):
         """Verify namespace SSM path for queue URL."""
@@ -74,7 +74,7 @@ class TestSQSSSMNamespace:
             stack._publish_queue_to_ssm(mock_queue, queue_config, is_dlq=False)
 
             url_call = mock_ssm.call_args_list[1]
-            assert url_call[1]["parameter_name"] == "/my-ns/sqs/test-queue/url"
+            assert url_call[1]["parameter_name"] == "/my-ns/test-queue/url"
 
     def test_sqs_ssm_namespace_dlq(self):
         """Verify namespace SSM path for DLQ ARN uses -dlq suffix."""
@@ -105,7 +105,7 @@ class TestSQSSSMNamespace:
             stack._publish_queue_to_ssm(mock_dlq, queue_config, is_dlq=True)
 
             arn_call = mock_ssm.call_args_list[0]
-            assert arn_call[1]["parameter_name"] == "/my-ns/sqs/test-queue-dlq/arn"
+            assert arn_call[1]["parameter_name"] == "/my-ns/test-queue-dlq/arn"
 
     def test_sqs_ssm_legacy_arn(self):
         """Verify legacy SSM path for queue ARN (no namespace)."""

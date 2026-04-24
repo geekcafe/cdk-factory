@@ -632,7 +632,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                     f"(route references lambda_name='{lambda_name}'). "
                     f"Add 'ssm.imports.namespace' to your stack config."
                 )
-            ssm_path = f"/{namespace}/lambda/{lambda_name}/arn"
+            ssm_path = f"/{namespace}/{lambda_name}/arn"
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
 
             try:
@@ -982,17 +982,15 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         return created_stage
 
     def _export_ssm_parameters(self, api_gateway, authorizer=None):
-        """Export API Gateway resources to SSM using enhanced SSM parameter mixin"""
+        """Export API Gateway resources to SSM using top-level ssm config"""
 
-        # Setup enhanced SSM integration with proper resource type and name
-        api_name = self.api_config.name or "api-gateway"
+        ssm_config = self.stack_config.ssm_config
+        auto_export = self.stack_config.ssm_auto_export
+        exports = ssm_config.get("exports", {})
 
-        self.setup_ssm_integration(
-            scope=self,
-            config=self.stack_config.dictionary,
-            resource_type="api-gateway",
-            resource_name=api_name,
-        )
+        if not ssm_config or (not auto_export and not exports):
+            logger.info("No SSM parameters configured for export")
+            return
 
         # Prepare resource values for export
         resource_values = {
@@ -1003,29 +1001,51 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
 
         # Add URL by constructing it manually since we have a custom deployment pattern
         try:
-            # Construct the API URL manually using the API ID and region
             region = self.deployment.region
-            stage_name = "prod"  # Default stage name we use
+            stage_name = "prod"
             api_url = f"https://{api_gateway.rest_api_id}.execute-api.{region}.amazonaws.com/{stage_name}"
             resource_values["api_url"] = api_url
             logger.info(f"Successfully constructed API URL: {api_url}")
         except Exception as e:
             logger.warning(f"Could not construct API URL: {e}")
-            pass
 
         # Add authorizer ID if available
         if authorizer:
             resource_values["authorizer_id"] = authorizer.authorizer_id
 
-        # Use enhanced SSM parameter export
-        exported_params = self.export_ssm_parameters(resource_values)
-
-        if exported_params:
+        if auto_export:
+            namespace = self.stack_config.ssm_namespace
+            if not namespace:
+                raise ValueError(
+                    f"Stack '{self.stack_config.name}': "
+                    f"'ssm.namespace' is required when 'ssm.auto_export' is true."
+                )
+            prefix = f"/{namespace}"
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.node.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=f"{prefix}/{export_key}",
+                    description=f"API Gateway {export_key}",
+                )
             logger.info(
-                f"Exported {len(exported_params)} API Gateway parameters to SSM"
+                f"Auto-exported {len(resource_values)} API Gateway parameters to SSM"
             )
         else:
-            logger.info("No SSM parameters configured for export")
+            self.setup_ssm_integration(
+                scope=self,
+                config=self.stack_config.dictionary,
+                resource_type="api-gateway",
+                resource_name=self.api_config.name or "api-gateway",
+            )
+            exported_params = self.export_ssm_parameters(resource_values)
+            if exported_params:
+                logger.info(
+                    f"Exported {len(exported_params)} API Gateway parameters to SSM"
+                )
 
     def _create_http_api(self, api_id: str, routes: List[Dict[str, Any]]):
         # HTTP API (v2)

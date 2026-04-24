@@ -312,29 +312,39 @@ class RumStack(IStack, StandardizedSsmMixin):
         logger.info(f"Created RUM app monitor: {self.app_monitor.name}")
 
     def _export_ssm_parameters(self) -> None:
-        """Export RUM resources to SSM using enhanced SSM parameter mixin"""
+        """Export RUM resources to SSM"""
         if not self.app_monitor:
             logger.warning("No app monitor to export")
             return
 
-        # Prepare resource values for export
         resource_values = {
             "app_monitor_name": self.app_monitor.name,
             "app_monitor_id": self.app_monitor.ref,
         }
 
-        # Add identity pool info if available
         if self.identity_pool:
             resource_values["identity_pool_id"] = self.identity_pool.ref
 
-        # Add user pool info if available
         if self.user_pool:
             resource_values["user_pool_id"] = self.user_pool.user_pool_id
 
-        # Use enhanced SSM parameter export
-        exported_params = self.export_ssm_parameters(resource_values)
+        namespace = self.stack_config.ssm_namespace if self.stack_config else None
+        auto_export = self.stack_config.ssm_auto_export if self.stack_config else False
 
-        if exported_params:
-            logger.info(f"Exported {len(exported_params)} RUM parameters to SSM")
+        if namespace and auto_export:
+            prefix = f"/{namespace}"
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=f"{prefix}/{export_key}",
+                    description=f"RUM {export_key}",
+                )
+            logger.info(f"Auto-exported {len(resource_values)} RUM parameters to SSM")
         else:
-            logger.info("No SSM parameters configured for export")
+            exported_params = self.export_ssm_parameters(resource_values)
+            if exported_params:
+                logger.info(f"Exported {len(exported_params)} RUM parameters to SSM")

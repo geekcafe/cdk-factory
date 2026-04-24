@@ -46,15 +46,15 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         """
         Initialize the ECS Cluster stack.
-        
+
         Args:
             scope: The CDK construct scope
             id: The construct ID
         """
         super().__init__(scope, id, **kwargs)
-        
+
         self._initialize_vpc_cache()
-        
+
         self.ecs_config: Optional[EcsClusterConfig] = None
         self.stack_config: Optional[StackConfig] = None
         self.deployment: Optional[DeploymentConfig] = None
@@ -82,22 +82,22 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         self.stack_config = stack_config
         self.deployment = deployment
         self.workload = workload
-        
+
         # Initialize VPC cache from mixin
         self._initialize_vpc_cache()
-        
+
         # Load ECS cluster configuration with full stack config for SSM access
         ecs_cluster_dict = stack_config.dictionary.get("ecs_cluster", {})
         # Merge SSM config from root level into ECS config for VPC resolution
         if "ssm" in stack_config.dictionary:
             ecs_cluster_dict["ssm"] = stack_config.dictionary["ssm"]
-        
+
         self.ecs_config: EcsClusterConfig = EcsClusterConfig(ecs_cluster_dict)
-        
+
         cluster_name = deployment.build_resource_name(self.ecs_config.name)
-        
+
         logger.info(f"Creating ECS Cluster stack: {cluster_name}")
-        
+
         # Setup standardized SSM integration
         self.setup_ssm_integration(
             scope=self,
@@ -105,26 +105,26 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             resource_type="ecs_cluster",
             resource_name=cluster_name,
             deployment=deployment,
-            workload=workload
+            workload=workload,
         )
 
         # Process SSM imports using standardized method
         self.process_ssm_imports()
-        
+
         # Create the ECS cluster
         self._create_ecs_cluster()
-        
+
         # Create IAM roles if needed
         self._create_iam_roles()
-        
+
         # Export cluster information
         self._export_cluster_info()
-        
+
         # Export SSM parameters
         logger.info("Starting SSM parameter export for ECS cluster")
         self._export_ssm_parameters()
         logger.info("Completed SSM parameter export for ECS cluster")
-        
+
         logger.info(f"ECS Cluster stack created: {cluster_name}")
 
     def _create_ecs_cluster(self):
@@ -144,14 +144,18 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Get VPC using standardized approach
         self.vpc = self._get_vpc()
-        
+
         # Create the ECS cluster
         self.ecs_cluster = ecs.Cluster(
             self,
             "ECSCluster",
             cluster_name=self.ecs_config.name,
             vpc=self.vpc,
-            container_insights_v2=ecs.ContainerInsights.ENABLED if self.ecs_config.container_insights else ecs.ContainerInsights.DISABLED,
+            container_insights_v2=(
+                ecs.ContainerInsights.ENABLED
+                if self.ecs_config.container_insights
+                else ecs.ContainerInsights.DISABLED
+            ),
             default_cloud_map_namespace=(
                 self.ecs_config.cloud_map_namespace
                 if self.ecs_config.cloud_map_namespace
@@ -170,18 +174,18 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         """
         Get VPC using the centralized VPC provider mixin.
         """
-        
+
         # Use the stack_config (not ecs_config) to ensure SSM imports are available
         return self.resolve_vpc(
-            config=self.ecs_config,
-            deployment=self.deployment,
-            workload=self.workload
+            config=self.ecs_config, deployment=self.deployment, workload=self.workload
         )
 
     def _create_iam_roles(self):
         """Create IAM roles for the ECS cluster if configured."""
-        logger.info(f"create_instance_role setting: {self.ecs_config.create_instance_role}")
-        
+        logger.info(
+            f"create_instance_role setting: {self.ecs_config.create_instance_role}"
+        )
+
         if not self.ecs_config.create_instance_role:
             logger.info("Skipping instance role creation (disabled in config)")
             return
@@ -194,9 +198,15 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             "ECSInstanceRole",
             assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AmazonEC2ContainerServiceforEC2Role"),
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerRegistryReadOnly"),
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore"),
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AmazonEC2ContainerServiceforEC2Role"
+                ),
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "AmazonEC2ContainerRegistryReadOnly"
+                ),
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "AmazonSSMManagedInstanceCore"
+                ),
             ],
             role_name=f"{self.ecs_config.name}-ecs-instance-role",
         )
@@ -211,7 +221,9 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             roles=[self.instance_role.role_name],
         )
 
-        logger.info(f"Created ECS instance profile: {self.instance_profile.instance_profile_name}")
+        logger.info(
+            f"Created ECS instance profile: {self.instance_profile.instance_profile_name}"
+        )
 
         logger.info("ECS instance role and profile created")
 
@@ -241,7 +253,7 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         )
 
         # Export security group if available
-        if hasattr(self.ecs_cluster, 'connections') and self.ecs_cluster.connections:
+        if hasattr(self.ecs_cluster, "connections") and self.ecs_cluster.connections:
             security_groups = self.ecs_cluster.connections.security_groups
             if security_groups:
                 CfnOutput(
@@ -266,51 +278,51 @@ class EcsClusterStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
     def _export_ssm_parameters(self) -> None:
         """Export SSM parameters using standardized approach"""
-        logger.info("=== Starting SSM Parameter Export ===")
-        
         if not self.ecs_cluster:
             logger.warning("No ECS cluster to export")
             return
 
-        logger.info(f"ECS cluster found: {self.ecs_cluster.cluster_name}")
-        logger.info(f"SSM exports configured: {self.ssm_config.get('exports', {})}")
-
-        # Prepare resource values for export
         resource_values = {
             "cluster_name": self.ecs_cluster.cluster_name,
             "cluster_arn": self.ecs_cluster.cluster_arn,
         }
-        
-        # Add instance role ARN if created
+
         if self.instance_role:
             resource_values["instance_role_arn"] = self.instance_role.role_arn
-            logger.info(f"Instance role ARN added: {self.instance_role.role_name}")
-        else:
-            logger.info("No instance role to export")
-        
-        # Add security group ID if available
-        if hasattr(self.ecs_cluster, 'connections') and self.ecs_cluster.connections:
+
+        if hasattr(self.ecs_cluster, "connections") and self.ecs_cluster.connections:
             security_groups = self.ecs_cluster.connections.security_groups
             if security_groups:
-                resource_values["security_group_id"] = security_groups[0].security_group_id
-                logger.info(f"Security group ID added: {security_groups[0].security_group_id}")
-        
-        # Add instance profile ARN if created
+                resource_values["security_group_id"] = security_groups[
+                    0
+                ].security_group_id
+
         if self.instance_profile:
             resource_values["instance_profile_arn"] = self.instance_profile.attr_arn
-            logger.info(f"Instance profile ARN added: {self.instance_profile.instance_profile_name}")
 
-        # Export using standardized SSM mixin
-        logger.info(f"Resource values available for export: {list(resource_values.keys())}")
-        for key, value in resource_values.items():
-            logger.info(f"  {key}: {value}")
-            
-        try:
+        namespace = self.stack_config.ssm_namespace if self.stack_config else None
+        auto_export = self.stack_config.ssm_auto_export if self.stack_config else False
+
+        if namespace and auto_export:
+            prefix = f"/{namespace}"
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.node.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=f"{prefix}/{export_key}",
+                    description=f"ECS Cluster {export_key}",
+                )
+            logger.info(
+                f"Auto-exported {len(resource_values)} ECS Cluster parameters to SSM"
+            )
+        else:
             exported_params = self.export_ssm_parameters(resource_values)
-            logger.info(f"Successfully exported SSM parameters: {exported_params}")
-        except Exception as e:
-            logger.error(f"Failed to export SSM parameters: {str(e)}")
-            raise
+            logger.info(f"Exported SSM parameters: {exported_params}")
 
     # Backward compatibility alias
+
+
 EcsClusterStackStandardized = EcsClusterStack

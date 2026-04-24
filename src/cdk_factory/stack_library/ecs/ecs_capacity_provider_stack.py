@@ -7,7 +7,9 @@ from aws_cdk import aws_ecs as ecs
 from constructs import Construct
 
 from cdk_factory.configurations.deployment import DeploymentConfig
-from cdk_factory.configurations.resources.ecs_capacity_provider import EcsCapacityProviderConfig
+from cdk_factory.configurations.resources.ecs_capacity_provider import (
+    EcsCapacityProviderConfig,
+)
 from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.interfaces.istack import IStack
 from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
@@ -21,11 +23,11 @@ logger = logging.getLogger(__name__)
 class EcsCapacityProviderStack(IStack):
     """
     Stack for creating and associating ECS Capacity Providers with clusters.
-    
+
     This stack should be deployed AFTER:
     - ECS Cluster stack
     - Auto Scaling Group stack
-    
+
     It creates the capacity provider and associates it with the cluster,
     enabling automatic ASG scaling based on ECS task placement needs.
     """
@@ -80,7 +82,7 @@ class EcsCapacityProviderStack(IStack):
             resource_type="capacity_provider",
             resource_name=cp_name,
             deployment=deployment,
-            workload=workload
+            workload=workload,
         )
 
         # Process SSM imports
@@ -109,9 +111,7 @@ class EcsCapacityProviderStack(IStack):
 
         # Resolve SSM parameter if ASG identifier is a reference
         resolved_asg_identifier = self.resolve_ssm_value(
-            scope=self,
-            value=asg_identifier,
-            unique_id="asg-identifier"
+            scope=self, value=asg_identifier, unique_id="asg-identifier"
         )
 
         logger.info(
@@ -132,10 +132,10 @@ class EcsCapacityProviderStack(IStack):
                     target_capacity=self.cp_config.target_capacity,
                     minimum_scaling_step_size=self.cp_config.minimum_scaling_step_size,
                     maximum_scaling_step_size=self.cp_config.maximum_scaling_step_size,
-                    instance_warmup_period=self.cp_config.instance_warmup_period
+                    instance_warmup_period=self.cp_config.instance_warmup_period,
                 ),
-                managed_termination_protection=self.cp_config.managed_termination_protection
-            )
+                managed_termination_protection=self.cp_config.managed_termination_protection,
+            ),
         )
 
         logger.info(f"Created capacity provider: {cp_name}")
@@ -152,18 +152,18 @@ class EcsCapacityProviderStack(IStack):
         if self.cp_config.capacity_provider_strategy:
             for strategy_config in self.cp_config.capacity_provider_strategy:
                 strategy = ecs.CfnClusterCapacityProviderAssociations.CapacityProviderStrategyProperty(
-                    capacity_provider=strategy_config.get("capacity_provider", self.cp_config.name),
+                    capacity_provider=strategy_config.get(
+                        "capacity_provider", self.cp_config.name
+                    ),
                     weight=strategy_config.get("weight", 1),
-                    base=strategy_config.get("base", 0)
+                    base=strategy_config.get("base", 0),
                 )
                 strategies.append(strategy)
         else:
             # Default strategy: use this provider with weight 1
             strategies.append(
                 ecs.CfnClusterCapacityProviderAssociations.CapacityProviderStrategyProperty(
-                    capacity_provider=self.cp_config.name,
-                    weight=1,
-                    base=0
+                    capacity_provider=self.cp_config.name, weight=1, base=0
                 )
             )
 
@@ -175,7 +175,7 @@ class EcsCapacityProviderStack(IStack):
             "ClusterCapacityProviderAssociation",
             cluster=cluster_name,
             capacity_providers=[self.capacity_provider.ref],
-            default_capacity_provider_strategy=strategies
+            default_capacity_provider_strategy=strategies,
         )
 
         logger.info(
@@ -188,15 +188,27 @@ class EcsCapacityProviderStack(IStack):
             logger.warning("No capacity provider to export")
             return
 
-        # Prepare resource values for export
-        # Note: Capacity providers don't have a separate ARN attribute
-        # The .ref returns the ARN of the capacity provider
         resource_values = {
             "capacity_provider_name": self.cp_config.name,
             "capacity_provider_arn": self.capacity_provider.ref,
         }
 
-        # Export using standardized SSM mixin
-        exported_params = self.export_ssm_parameters(resource_values)
+        namespace = self.stack_config.ssm_namespace if self.stack_config else None
+        auto_export = self.stack_config.ssm_auto_export if self.stack_config else False
 
-        logger.info(f"Exported SSM parameters: {exported_params}")
+        if namespace and auto_export:
+            prefix = f"/{namespace}"
+            for export_key, export_value in resource_values.items():
+                if export_value is None:
+                    continue
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.node.id}-{export_key}",
+                    value=export_value,
+                    parameter_name=f"{prefix}/{export_key}",
+                    description=f"ECS Capacity Provider {export_key}",
+                )
+            logger.info(f"Auto-exported capacity provider parameters to SSM")
+        else:
+            exported_params = self.export_ssm_parameters(resource_values)
+            logger.info(f"Exported SSM parameters: {exported_params}")

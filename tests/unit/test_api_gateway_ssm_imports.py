@@ -52,7 +52,6 @@ class TestApiGatewaySSMImports:
             "name": "test-api-gateway",
             "enabled": True,
             "ssm": {
-                "auto_export": True,
                 "imports": {
                     "namespace": "my-ns",
                 },
@@ -93,11 +92,10 @@ class TestApiGatewaySSMImports:
         template_json = template.to_json()
         params = template_json.get("Parameters", {})
         found = any(
-            "/my-ns/lambda/my-lambda/arn" in str(v.get("Default", ""))
-            for v in params.values()
+            "/my-ns/my-lambda/arn" in str(v.get("Default", "")) for v in params.values()
         )
         assert found, (
-            "Expected SSM parameter lookup at /my-ns/lambda/my-lambda/arn "
+            "Expected SSM parameter lookup at /my-ns/my-lambda/arn "
             f"in template parameters, got: {params}"
         )
 

@@ -305,7 +305,7 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
             parameter_path = f"{prefix}/{export_key}"
             self.export_ssm_parameter(
                 scope=self,
-                id=f"{self.id}-{export_key}",
+                id=f"{self.node.id}-{export_key}",
                 value=export_value,
                 parameter_name=parameter_path,
                 description=f"DynamoDB {export_key}",
