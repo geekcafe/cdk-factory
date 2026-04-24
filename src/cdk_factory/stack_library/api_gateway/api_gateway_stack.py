@@ -1164,9 +1164,23 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             "hosted_zone_id"
         ) or self.api_config.hosted_zone.get("id", None)
 
+        # If hosted_zone_id is not provided, try SSM auto-discovery
+        if not hosted_zone_id:
+            ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
+            namespace = ssm_imports_config.get("namespace")
+            if namespace:
+                ssm_path = f"/{namespace}/route53/hosted-zone-id"
+                logger.info(f"Auto-discovering hosted zone ID from SSM: {ssm_path}")
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self, "hosted-zone-id-param", ssm_path
+                )
+                hosted_zone_id = param.string_value
+
         if not hosted_zone_id:
             raise ValueError(
-                "Hosted zone id is required, when you specify a hosted zone record name"
+                "Hosted zone id is required, when you specify a hosted zone record name. "
+                "Provide it via custom_domain.hosted_zone_id, or configure "
+                "ssm.imports.namespace so it can be auto-discovered from SSM."
             )
 
         hosted_zone_name = self.api_config.custom_domain.get(

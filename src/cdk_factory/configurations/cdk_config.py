@@ -182,6 +182,22 @@ class CdkConfig:
                     # do a find replace on the config
                     print(f"\t\t👉 Replacing {placeholder} with {value}")
 
+        # Pre-resolve chained references in replacement values
+        # (e.g., TARGET_ACCOUNT_ROLE_ARN value contains {{AWS_ACCOUNT}})
+        for _ in range(5):  # max passes to prevent infinite loops on circular refs
+            changed = False
+            for key, value in replacements.items():
+                if isinstance(value, str) and "{{" in value:
+                    new_value = value
+                    for find_str, replace_str in replacements.items():
+                        if isinstance(replace_str, str):
+                            new_value = new_value.replace(find_str, replace_str)
+                    if new_value != value:
+                        replacements[key] = new_value
+                        changed = True
+            if not changed:
+                break
+
         if self._resolved_config_file_path is None:
             raise ValueError("Config file path is not set")
 
