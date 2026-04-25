@@ -139,3 +139,21 @@ class DynamoDBConfig(EnhancedBaseConfig):
         if self.__config and isinstance(self.__config, dict):
             return self.__config.get("global_secondary_indexes", [])
         return []
+
+    @property
+    def stream_specification(self) -> str | None:
+        """
+        Returns the stream view type for DynamoDB Streams, or None if
+        streams are not enabled.
+        Valid values: "NEW_AND_OLD_IMAGES", "NEW_IMAGE", "OLD_IMAGE", "KEYS_ONLY"
+        """
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("stream_specification")
+        return None
+
+    @property
+    def streams_enabled(self) -> bool:
+        """
+        Returns True when DynamoDB Streams are enabled (stream_specification is set).
+        """
+        return self.stream_specification is not None
