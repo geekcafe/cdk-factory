@@ -109,6 +109,13 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         if self.db_config.ttl_attribute:
             props["time_to_live_attribute"] = self.db_config.ttl_attribute
 
+        if self.db_config.stream_specification:
+            stream_view_type = self._STREAM_VIEW_TYPE_MAP.get(
+                self.db_config.stream_specification
+            )
+            if stream_view_type:
+                props["dynamodb_stream"] = stream_view_type
+
         # Create the table
         logger.info(f"Creating DynamoDB table: {table_name}")
         self.table = dynamodb.TableV2(self, id=table_name, **props)
@@ -147,6 +154,13 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         "ALL": dynamodb.ProjectionType.ALL,
         "KEYS_ONLY": dynamodb.ProjectionType.KEYS_ONLY,
         "INCLUDE": dynamodb.ProjectionType.INCLUDE,
+    }
+
+    _STREAM_VIEW_TYPE_MAP = {
+        "NEW_AND_OLD_IMAGES": dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+        "NEW_IMAGE": dynamodb.StreamViewType.NEW_IMAGE,
+        "OLD_IMAGE": dynamodb.StreamViewType.OLD_IMAGE,
+        "KEYS_ONLY": dynamodb.StreamViewType.KEYS_ONLY,
     }
 
     def _configure_gsi(self) -> None:
@@ -274,12 +288,11 @@ class DynamoDBStack(IStack, StandardizedSsmMixin):
         resource_values = {
             "table_name": self.table.table_name,
             "table_arn": self.table.table_arn,
-            "table_stream_arn": (
-                self.table.table_stream_arn
-                if hasattr(self.table, "table_stream_arn")
-                else None
-            ),
         }
+
+        # Only include stream ARN when streams are explicitly enabled in config
+        if self.db_config.streams_enabled:
+            resource_values["table_stream_arn"] = self.table.table_stream_arn
 
         # Add GSI names if available
         if hasattr(self, "_gsi_names") and self._gsi_names:

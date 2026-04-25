@@ -450,3 +450,8 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
     @execution_role_name.setter
     def execution_role_name(self, value: str) -> None:
         self.__execution_role_name = value
+
+    @property
+    def raw_ecr_name(self) -> str:
+        """Raw ECR repository name from config, without build_resource_name transformation."""
+        return self.__config.get("ecr", {}).get("name", "")

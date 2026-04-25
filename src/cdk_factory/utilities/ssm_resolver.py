@@ -9,7 +9,7 @@ route53_delegation.py.
 Usage as a CLI (called from pipeline steps):
 
     python -m cdk_factory.utilities.ssm_resolver \
-        --parameter-name "/aplos-nca-saas/beta/route53/hosted-zone-id" \
+        --parameter-name "/acme-saas/beta/route53/hosted-zone-id" \
         --role-arn "arn:aws:iam::111111111111:role/CrossAccountRole" \
         --region "us-east-1"
 
@@ -76,7 +76,7 @@ class SsmResolver:
         Resolve an SSM parameter value by name.
 
         Args:
-            parameter_name: The SSM parameter path (e.g., "/aplos-nca-saas/beta/route53/hosted-zone-id")
+            parameter_name: The SSM parameter path (e.g., "/acme-saas/beta/route53/hosted-zone-id")
             role_arn: Optional IAM role ARN for cross-account access
             region: Optional AWS region override
 

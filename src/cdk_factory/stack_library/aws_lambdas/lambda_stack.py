@@ -565,12 +565,66 @@ class LambdaStack(IStack):
                     tier=ssm.ParameterTier.STANDARD,
                 )
 
+                # Export ecr-repo SSM parameter for Docker Lambdas
+                raw_ecr_name = function_config.raw_ecr_name
+                if raw_ecr_name:
+                    ssm.StringParameter(
+                        self,
+                        f"ssm-docker-{lambda_name}-ecr-repo",
+                        parameter_name=f"{docker_prefix}/{lambda_name}/ecr-repo",
+                        string_value=raw_ecr_name,
+                        description=f"ECR repo name for Docker Lambda {lambda_name}",
+                        tier=ssm.ParameterTier.STANDARD,
+                    )
+
                 logger.info(
                     f"✅ Exported Docker Lambda '{lambda_name}' to SSM: {docker_prefix}/{lambda_name}"
                 )
 
         print(
             f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store"
+        )
+
+        # Export discovery manifest for Docker Lambda auto-discovery
+        self.__export_discovery_manifest_to_ssm()
+
+    def __export_discovery_manifest_to_ssm(self) -> None:
+        """Export a discovery manifest mapping ECR repos to Docker Lambda paths."""
+        ssm_config = self.stack_config.dictionary.get("ssm", {})
+        if not ssm_config.get("auto_export", False):
+            return
+
+        namespace = ssm_config.get("namespace")
+        if not namespace:
+            return  # Already validated in __export_lambda_arns_to_ssm
+
+        prefix = f"/{namespace}"
+        manifest: dict[str, list[str]] = {}
+
+        for lambda_name, lambda_info in self.exported_lambda_arns.items():
+            function_config = lambda_info.get("config")
+            if not function_config:
+                continue
+            if not (function_config.docker.file or function_config.docker.image):
+                continue
+
+            raw_ecr_name = function_config.raw_ecr_name
+            if not raw_ecr_name:
+                continue
+
+            path_prefix = f"{prefix}/{lambda_name}"
+            manifest.setdefault(raw_ecr_name, []).append(path_prefix)
+
+        if not manifest:
+            return  # No Docker Lambdas — skip manifest creation
+
+        ssm.StringParameter(
+            self,
+            "ssm-docker-lambdas-manifest",
+            parameter_name=f"{prefix}/docker-lambdas/manifest",
+            string_value=json.dumps(manifest),
+            description="Discovery manifest mapping ECR repos to Docker Lambda paths",
+            tier=ssm.ParameterTier.STANDARD,
         )
 
     def __export_route_metadata_to_ssm(self) -> None:

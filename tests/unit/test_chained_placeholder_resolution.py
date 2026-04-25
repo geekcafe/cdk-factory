@@ -91,7 +91,7 @@ class TestBugConditionChainedPlaceholdersUnresolved(unittest.TestCase):
         replacements = OrderedDict()
         replacements["{{DEPLOYMENT_NAMESPACE}}"] = "beta"
         replacements["{{TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME}}"] = (
-            "/aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"
+            "/acme-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"
         )
 
         config = {"ssm": "{{TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME}}"}
@@ -101,7 +101,7 @@ class TestBugConditionChainedPlaceholdersUnresolved(unittest.TestCase):
 
         self.assertEqual(
             result["ssm"],
-            "/aplos-nca-saas/beta/route53/hosted-zone-id",
+            "/acme-saas/beta/route53/hosted-zone-id",
         )
 
     def test_three_level_chain(self):

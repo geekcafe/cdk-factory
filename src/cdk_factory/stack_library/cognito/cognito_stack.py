@@ -595,7 +595,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         if auto_export:
             # Path pattern: /{namespace}/{attribute}
             # The namespace in config should include the resource context,
-            # e.g. "aplos-nca-saas/beta/cognito"
+            # e.g. "acme-saas/beta/cognito"
             namespace = self.stack_config.ssm_namespace
             if not namespace:
                 raise ValueError(

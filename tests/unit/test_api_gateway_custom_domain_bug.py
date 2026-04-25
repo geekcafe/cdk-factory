@@ -81,18 +81,18 @@ class TestBugConditionCustomDomainIgnored:
     def test_bug_condition_concrete_example(self):
         """Concrete example: custom_domain with all fields returns correct dict."""
         input_cd = {
-            "domain_name": "api.beta.aplos-nca.com",
+            "domain_name": "api.beta.acme.com",
             "hosted_zone_id": "Z123",
-            "hosted_zone_name": "beta.aplos-nca.com",
+            "hosted_zone_name": "beta.acme.com",
             "certificate_arn": "arn:aws:acm:us-east-1:123456789012:certificate/abc",
         }
         config = ApiGatewayConfig({"custom_domain": input_cd})
 
         result = config.custom_domain
 
-        assert result.get("domain_name") == "api.beta.aplos-nca.com"
+        assert result.get("domain_name") == "api.beta.acme.com"
         assert result.get("hosted_zone_id") == "Z123"
-        assert result.get("hosted_zone_name") == "beta.aplos-nca.com"
+        assert result.get("hosted_zone_name") == "beta.acme.com"
         assert result.get("certificate_arn") == (
             "arn:aws:acm:us-east-1:123456789012:certificate/abc"
         )
