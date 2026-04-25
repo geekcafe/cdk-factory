@@ -540,92 +540,73 @@ class LambdaStack(IStack):
 
             logger.info(f"✅ Exported Lambda '{lambda_name}' to SSM: {param_name}")
 
-            # Docker lambdas also register under /docker-lambdas/ path
+            # Docker lambdas: register under ECR-keyed path for auto-discovery
+            # Path: /{ecr_prefix}/ecr/{repo-name}/{lambda-name}/arn
             function_config = lambda_info.get("config")
             if function_config and (
                 function_config.docker.file or function_config.docker.image
             ):
-                docker_prefix = f"/{namespace}"
-
-                ssm.StringParameter(
-                    self,
-                    f"ssm-docker-{lambda_name}-arn",
-                    parameter_name=f"{docker_prefix}/{lambda_name}/arn",
-                    string_value=lambda_info["arn"],
-                    description=f"Docker Lambda ARN for {lambda_name}",
-                    tier=ssm.ParameterTier.STANDARD,
-                )
-
-                ssm.StringParameter(
-                    self,
-                    f"ssm-docker-{lambda_name}-name",
-                    parameter_name=f"{docker_prefix}/{lambda_name}/function-name",
-                    string_value=lambda_info["name"],
-                    description=f"Docker Lambda function name for {lambda_name}",
-                    tier=ssm.ParameterTier.STANDARD,
-                )
-
-                # Export ecr-repo SSM parameter for Docker Lambdas
                 raw_ecr_name = function_config.raw_ecr_name
                 if raw_ecr_name:
+                    # Derive ECR prefix from namespace: strip /lambda/... suffix
+                    # e.g. "aplos-nca-saas/beta/lambda/tenants" → "aplos-nca-saas/beta"
+                    ecr_prefix = self._get_ecr_prefix(namespace)
+
+                    # Sanitize repo name for SSM path (replace / with -)
+                    safe_repo = raw_ecr_name.replace("/", "-")
+
+                    ecr_base = f"/{ecr_prefix}/ecr/{safe_repo}/{lambda_name}"
+
                     ssm.StringParameter(
                         self,
-                        f"ssm-docker-{lambda_name}-ecr-repo",
-                        parameter_name=f"{docker_prefix}/{lambda_name}/ecr-repo",
-                        string_value=raw_ecr_name,
-                        description=f"ECR repo name for Docker Lambda {lambda_name}",
+                        f"ssm-ecr-reg-{lambda_name}-arn",
+                        parameter_name=f"{ecr_base}/arn",
+                        string_value=lambda_info["arn"],
+                        description=f"Docker Lambda ARN for {lambda_name} (ECR: {raw_ecr_name})",
                         tier=ssm.ParameterTier.STANDARD,
                     )
 
-                logger.info(
-                    f"✅ Exported Docker Lambda '{lambda_name}' to SSM: {docker_prefix}/{lambda_name}"
-                )
+                    ssm.StringParameter(
+                        self,
+                        f"ssm-ecr-reg-{lambda_name}-function-name",
+                        parameter_name=f"{ecr_base}/function-name",
+                        string_value=lambda_info["name"],
+                        description=f"Docker Lambda function name for {lambda_name}",
+                        tier=ssm.ParameterTier.STANDARD,
+                    )
+
+                    logger.info(
+                        f"✅ Registered Docker Lambda '{lambda_name}' at ECR path: {ecr_base}"
+                    )
 
         print(
             f"📤 Exported {len(self.exported_lambda_arns)} Lambda function(s) to SSM Parameter Store"
         )
 
-        # Export discovery manifest for Docker Lambda auto-discovery
-        self.__export_discovery_manifest_to_ssm()
+    @staticmethod
+    def _get_ecr_prefix(namespace: str) -> str:
+        """
+        Derive the ECR registration prefix from the lambda stack namespace.
 
-    def __export_discovery_manifest_to_ssm(self) -> None:
-        """Export a discovery manifest mapping ECR repos to Docker Lambda paths."""
-        ssm_config = self.stack_config.dictionary.get("ssm", {})
-        if not ssm_config.get("auto_export", False):
-            return
+        Strips the /lambda/... suffix to get the workload/deployment prefix.
+        e.g. "aplos-nca-saas/beta/lambda/tenants" → "aplos-nca-saas/beta"
+        e.g. "aplos-nca-saas/beta/lambda" → "aplos-nca-saas/beta"
+        e.g. "my-app/prod" → "my-app/prod"
 
-        namespace = ssm_config.get("namespace")
-        if not namespace:
-            return  # Already validated in __export_lambda_arns_to_ssm
+        Args:
+            namespace: The ssm.namespace value from the stack config
 
-        prefix = f"/{namespace}"
-        manifest: dict[str, list[str]] = {}
-
-        for lambda_name, lambda_info in self.exported_lambda_arns.items():
-            function_config = lambda_info.get("config")
-            if not function_config:
-                continue
-            if not (function_config.docker.file or function_config.docker.image):
-                continue
-
-            raw_ecr_name = function_config.raw_ecr_name
-            if not raw_ecr_name:
-                continue
-
-            path_prefix = f"{prefix}/{lambda_name}"
-            manifest.setdefault(raw_ecr_name, []).append(path_prefix)
-
-        if not manifest:
-            return  # No Docker Lambdas — skip manifest creation
-
-        ssm.StringParameter(
-            self,
-            "ssm-docker-lambdas-manifest",
-            parameter_name=f"{prefix}/docker-lambdas/manifest",
-            string_value=json.dumps(manifest),
-            description="Discovery manifest mapping ECR repos to Docker Lambda paths",
-            tier=ssm.ParameterTier.STANDARD,
-        )
+        Returns:
+            The prefix to use for ECR registration paths
+        """
+        parts = namespace.split("/")
+        # Find the "lambda" segment and take everything before it
+        try:
+            lambda_idx = parts.index("lambda")
+            return "/".join(parts[:lambda_idx])
+        except ValueError:
+            # No "lambda" segment — use the full namespace
+            return namespace
 
     def __export_route_metadata_to_ssm(self) -> None:
         """Export route metadata to SSM for API Gateway route discovery."""

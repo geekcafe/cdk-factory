@@ -286,22 +286,21 @@ class DockerLambdaUpdater:
             Validation error message string, or None if valid.
         """
         has_ssm_parameter = bool(deployment.get("ssm_parameter"))
+        has_ssm_prefix = bool(deployment.get("ssm_prefix"))
+        # Backward compat: also accept ssm_namespace as alias for ssm_prefix
         has_ssm_namespace = bool(deployment.get("ssm_namespace"))
-        has_ssm_namespaces = bool(deployment.get("ssm_namespaces"))
 
-        if not has_ssm_parameter and not has_ssm_namespace and not has_ssm_namespaces:
+        if not has_ssm_parameter and not has_ssm_prefix and not has_ssm_namespace:
             return (
                 f"Deployment entry [{deployment_index}] for image '{image_name}' "
-                f"is missing 'ssm_parameter', 'ssm_namespace', or 'ssm_namespaces'. "
+                f"is missing 'ssm_prefix' or 'ssm_parameter'. "
                 f"At least one discovery field is required."
             )
 
-        # When both ssm_parameter and ssm_namespace/ssm_namespaces are present,
-        # prefer namespace-based discovery and log info
-        if has_ssm_parameter and (has_ssm_namespace or has_ssm_namespaces):
+        if has_ssm_parameter and (has_ssm_prefix or has_ssm_namespace):
             logger.info(
                 "Deployment entry [%d] for image '%s' has both 'ssm_parameter' and "
-                "'ssm_namespace'/'ssm_namespaces'. Using namespace-based discovery; "
+                "'ssm_prefix'. Using ssm_prefix (auto-discovery); "
                 "'ssm_parameter' will be ignored.",
                 deployment_index,
                 image_name,
@@ -309,156 +308,93 @@ class DockerLambdaUpdater:
 
         return None
 
-    def _get_namespaces_from_deployment(
+    def _get_ssm_prefix_from_deployment(
         self, deployment: Dict[str, Any]
-    ) -> Optional[List[str]]:
+    ) -> Optional[str]:
         """
-        Extract the list of SSM namespaces from a deployment entry.
+        Extract the SSM prefix from a deployment entry.
 
-        Handles both singular ssm_namespace (treated as single-element list)
-        and plural ssm_namespaces. Returns None if neither is present.
+        Checks ssm_prefix first, then ssm_namespace as a backward-compat alias.
 
         Args:
             deployment: Deployment entry dict
 
         Returns:
-            List of namespace strings, or None if no namespace fields present.
+            SSM prefix string, or None if not present.
         """
-        ssm_namespaces = deployment.get("ssm_namespaces")
-        if ssm_namespaces:
-            return list(ssm_namespaces)
-
-        ssm_namespace = deployment.get("ssm_namespace")
-        if ssm_namespace:
-            return [ssm_namespace]
-
-        return None
+        return deployment.get("ssm_prefix") or deployment.get("ssm_namespace")
 
     # ------------------------------------------------------------------
-    # Manifest-based discovery (Task 3.3)
+    # ECR-keyed discovery
     # ------------------------------------------------------------------
 
-    def _discover_from_manifest(
+    def _discover_docker_lambdas(
         self,
         ssm_client: Any,
-        namespace: str,
+        ssm_prefix: str,
         repo_name: str,
         account: str = "",
         region: str = "",
-    ) -> List[str]:
+    ) -> List[Dict[str, str]]:
         """
-        Read the discovery manifest from SSM and return path prefixes for repo_name.
+        Discover all Docker Lambda ARNs registered under an ECR repo path.
 
-        Reads /{namespace}/docker-lambdas/manifest, parses the JSON, and returns
-        the list of Lambda path prefixes associated with the given ECR repo name.
+        Lambda stacks register Docker Lambdas at:
+            /{ssm_prefix}/ecr/{safe-repo-name}/{lambda-name}/arn
+
+        This method does a single get_parameters_by_path call on
+        /{ssm_prefix}/ecr/{safe-repo-name}/ to find all registered lambdas.
 
         Args:
-            ssm_client: boto3 SSM client for the target account/region
-            namespace: SSM namespace (without leading slash)
-            repo_name: ECR repository name to look up in the manifest
-            account: AWS account ID (used in error messages)
-            region: AWS region (used in error messages)
+            ssm_client: boto3 SSM client
+            ssm_prefix: Workload/deployment prefix (e.g. "aplos-nca-saas/dev")
+            repo_name: ECR repository name (e.g. "aplos-analytics/v3/aplos-saas-core-services")
+            account: AWS account ID (for error messages)
+            region: AWS region (for error messages)
 
         Returns:
-            List of Lambda path prefixes (e.g. ["/ns/lambda-a", "/ns/lambda-b"]).
-            Returns empty list if manifest not found or repo not in manifest.
+            List of dicts with 'arn', 'name', and 'param_path' keys.
         """
-        manifest_path = f"/{namespace}/docker-lambdas/manifest"
+        safe_repo = repo_name.replace("/", "-")
+        ecr_path = f"/{ssm_prefix}/ecr/{safe_repo}"
+
+        discovered: List[Dict[str, str]] = []
 
         try:
-            response = ssm_client.get_parameter(Name=manifest_path)
-            raw_value = response["Parameter"]["Value"]
+            paginator = ssm_client.get_paginator("get_parameters_by_path")
+            for page in paginator.paginate(Path=ecr_path, Recursive=True):
+                for param in page.get("Parameters", []):
+                    if param["Name"].endswith("/arn"):
+                        # Extract lambda name from path:
+                        # /{prefix}/ecr/{repo}/{lambda-name}/arn → lambda-name
+                        parts = param["Name"].rsplit("/", 2)
+                        lambda_name = parts[-2] if len(parts) >= 2 else "unknown"
+                        discovered.append(
+                            {
+                                "arn": param["Value"],
+                                "name": lambda_name,
+                                "param_path": param["Name"],
+                            }
+                        )
         except ClientError as e:
-            if e.response["Error"]["Code"] == "ParameterNotFound":
-                logger.error(
-                    "Discovery manifest SSM parameter not found: %s "
-                    "(account=%s, region=%s)",
-                    manifest_path,
-                    account,
-                    region,
-                )
-                return []
-            raise
-
-        try:
-            manifest: Dict[str, List[str]] = json.loads(raw_value)
-        except json.JSONDecodeError as e:
             logger.error(
-                "Failed to parse discovery manifest at %s: %s",
-                manifest_path,
+                "Failed to discover Docker Lambdas at %s (account=%s, region=%s): %s",
+                ecr_path,
+                account,
+                region,
                 e,
             )
             return []
 
-        path_prefixes = manifest.get(repo_name)
-        if path_prefixes is None:
+        if not discovered:
             logger.warning(
-                "ECR repo '%s' not found in discovery manifest at %s "
-                "(account=%s, region=%s). Skipping.",
-                repo_name,
-                manifest_path,
+                "No Docker Lambdas found at %s (account=%s, region=%s)",
+                ecr_path,
                 account,
                 region,
             )
-            return []
 
-        return list(path_prefixes)
-
-    # ------------------------------------------------------------------
-    # Multi-namespace aggregation (Task 3.4)
-    # ------------------------------------------------------------------
-
-    def _discover_from_namespaces(
-        self,
-        ssm_client: Any,
-        namespaces: List[str],
-        repo_name: str,
-        account: str = "",
-        region: str = "",
-    ) -> List[str]:
-        """
-        Query the discovery manifest in each namespace and aggregate path prefixes.
-
-        For each namespace, reads the manifest and collects path prefixes for the
-        given repo_name. Results are deduplicated while preserving order.
-
-        Args:
-            ssm_client: boto3 SSM client for the target account/region
-            namespaces: List of SSM namespace strings to query
-            repo_name: ECR repository name to look up
-            account: AWS account ID (used in error messages)
-            region: AWS region (used in error messages)
-
-        Returns:
-            Deduplicated list of Lambda path prefixes aggregated across all namespaces.
-        """
-        seen: set = set()
-        aggregated: List[str] = []
-
-        for namespace in namespaces:
-            try:
-                prefixes = self._discover_from_manifest(
-                    ssm_client,
-                    namespace,
-                    repo_name,
-                    account=account,
-                    region=region,
-                )
-                for prefix in prefixes:
-                    if prefix not in seen:
-                        seen.add(prefix)
-                        aggregated.append(prefix)
-            except Exception as e:
-                logger.warning(
-                    "Failed to query manifest for namespace '%s' "
-                    "(account=%s, region=%s): %s. Continuing with remaining namespaces.",
-                    namespace,
-                    account,
-                    region,
-                    e,
-                )
-
-        return aggregated
+        return discovered
 
     # ------------------------------------------------------------------
     # Legacy SSM parameter direct resolution (Task 3.5)
@@ -867,52 +803,41 @@ class DockerLambdaUpdater:
         if not ecr_account:
             ecr_account = self._get_caller_account()
 
-        # Discover Lambda path prefixes
-        namespaces = self._get_namespaces_from_deployment(deployment)
+        # Discover Docker Lambdas
+        ssm_prefix = self._get_ssm_prefix_from_deployment(deployment)
         lambda_arns: List[Dict[str, Any]] = []
 
-        if namespaces:
-            # Namespace-based auto-discovery via manifest
-            path_prefixes = self._discover_from_namespaces(
+        if ssm_prefix:
+            # ECR-keyed auto-discovery
+            discovered = self._discover_docker_lambdas(
                 ssm_client,
-                namespaces,
+                ssm_prefix,
                 repo_name,
                 account=account,
                 region=region,
             )
-            for prefix in path_prefixes:
-                arn_path = f"{prefix}/arn"
-                arn_value = self._resolve_ssm_parameter(ssm_client, arn_path)
-                if arn_value:
-                    # Extract lambda name from path prefix (last segment)
-                    lambda_name = prefix.rstrip("/").rsplit("/", 1)[-1]
-                    lambda_arns.append(
-                        {
-                            "arn": arn_value,
-                            "name": lambda_name,
-                            "path_prefix": prefix,
-                            "namespace": (
-                                namespaces[0] if len(namespaces) == 1 else None
-                            ),
-                        }
-                    )
+            for entry in discovered:
+                lambda_arns.append(
+                    {
+                        "arn": entry["arn"],
+                        "name": entry["name"],
+                        "param_path": entry["param_path"],
+                    }
+                )
         else:
             # Legacy ssm_parameter direct resolution
             ssm_parameter = deployment.get("ssm_parameter", "")
             arn_value = self._resolve_ssm_parameter(ssm_client, ssm_parameter)
             if arn_value:
-                # Extract lambda name from ssm_parameter path
-                lambda_name = ssm_parameter.rstrip("/").rsplit("/", 1)[-1]
-                if lambda_name == "arn":
-                    # Path like /ns/lambda-name/arn → extract lambda-name
-                    parts = ssm_parameter.rstrip("/").rsplit("/", 2)
-                    lambda_name = parts[-2] if len(parts) >= 2 else lambda_name
+                parts = ssm_parameter.rstrip("/").rsplit("/", 2)
+                lambda_name = (
+                    parts[-2] if len(parts) >= 2 and parts[-1] == "arn" else parts[-1]
+                )
                 lambda_arns.append(
                     {
                         "arn": arn_value,
                         "name": lambda_name,
-                        "path_prefix": ssm_parameter,
-                        "namespace": None,
+                        "param_path": ssm_parameter,
                     }
                 )
 
@@ -920,9 +845,7 @@ class DockerLambdaUpdater:
         dep_result: Dict[str, Any] = {
             "account": account,
             "region": region,
-            "namespace": (
-                namespaces[0] if namespaces and len(namespaces) == 1 else None
-            ),
+            "ssm_prefix": ssm_prefix,
             "discovered": len(lambda_arns),
             "updated": 0,
             "failed": 0,
@@ -1024,18 +947,17 @@ class DockerLambdaUpdater:
 
     def _run_namespace_mode(self) -> Dict[str, Any]:
         """
-        Run in direct namespace mode: discover all Docker Lambdas under
-        namespace.
+        Run in direct namespace/prefix mode: discover all Docker Lambdas
+        registered under the ECR subtree.
 
-        Uses get_parameters_by_path (recursive) to find all /arn suffixed
-        params. When --refresh is set, re-deploys with current image URI.
-        When --refresh is not set, requires image_name to build new image
-        URI.
+        Scans /{ssm_prefix}/ecr/ recursively to find all /arn params.
+        When --refresh is set, re-deploys with current image URI.
+        When --refresh is not set, requires image_name to build new image URI.
 
         Returns:
             Results dict with deployment details.
         """
-        namespace = self.ssm_namespace
+        ssm_prefix = self.ssm_namespace  # ssm_prefix via CLI or env var
         account = self.account or self._get_caller_account()
         region = self.region
 
@@ -1048,26 +970,26 @@ class DockerLambdaUpdater:
             locked_versions = self._load_locked_versions(self.locked_versions_path)
             self.locked_versions = locked_versions
 
-        # Discover all Docker Lambda ARN parameters under the namespace
+        # Discover all Docker Lambda ARN parameters under /{prefix}/ecr/
         arn_params: List[Dict[str, Any]] = []
-        path_prefix = f"/{namespace}"
+        ecr_path = f"/{ssm_prefix}/ecr"
 
         try:
             paginator = ssm_client.get_paginator("get_parameters_by_path")
-            for page in paginator.paginate(Path=path_prefix, Recursive=True):
+            for page in paginator.paginate(Path=ecr_path, Recursive=True):
                 for param in page.get("Parameters", []):
                     if param["Name"].endswith("/arn"):
                         arn_params.append(param)
         except ClientError as e:
             logger.error(
-                "Failed to discover parameters under %s " "(account=%s, region=%s): %s",
-                path_prefix,
+                "Failed to discover parameters under %s (account=%s, region=%s): %s",
+                ecr_path,
                 account,
                 region,
                 e,
             )
             return {
-                "namespace": namespace,
+                "ssm_prefix": ssm_prefix,
                 "error": str(e),
                 "discovered": 0,
                 "updated": 0,
@@ -1078,14 +1000,14 @@ class DockerLambdaUpdater:
 
         if not arn_params:
             logger.warning(
-                "No Docker Lambda parameters found under %s " "(account=%s, region=%s)",
-                path_prefix,
+                "No Docker Lambda parameters found under %s (account=%s, region=%s)",
+                ecr_path,
                 account,
                 region,
             )
 
         result: Dict[str, Any] = {
-            "namespace": namespace,
+            "ssm_prefix": ssm_prefix,
             "account": account,
             "region": region,
             "discovered": len(arn_params),
