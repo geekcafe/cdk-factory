@@ -13,10 +13,10 @@ Placeholders (`{{PLACEHOLDER}}`) are resolved before the name is used:
 }
 ```
 
-With `WORKLOAD_NAME=aplos-nca-saas` and `DEPLOYMENT_NAMESPACE=development`, the CloudFormation stack name is:
+With `WORKLOAD_NAME=acme-saas` and `DEPLOYMENT_NAMESPACE=development`, the CloudFormation stack name is:
 
 ```
-aplos-nca-saas-development-dynamodb-app-table
+acme-saas-development-dynamodb-app-table
 ```
 
 There is no `naming` block, no `prefix`, no `stack_pattern`, and no `build_stack_name()`. The `name` field is what you see in CloudFormation.
@@ -47,8 +47,8 @@ Controls both stack naming and SSM parameter paths. Defined in the deployment JS
 ```
 
 This enables multi-tenant deployments where each tenant gets isolated:
-- Stack names: `aplos-nca-saas-beta-dynamodb-app-table`
-- SSM paths: `/aplos-nca-saas/beta/dynamodb/dynamodb-app-table/table_name`
+- Stack names: `acme-saas-beta-dynamodb-app-table`
+- SSM paths: `/acme-saas/beta/dynamodb/dynamodb-app-table/table_name`
 
 ---
 
@@ -60,14 +60,14 @@ This enables multi-tenant deployments where each tenant gets isolated:
 /{namespace}/{resource_type}/{stack_name}/{attribute}
 ```
 
-Where `namespace` is configured via `ssm.namespace` (e.g., `aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}`):
+Where `namespace` is configured via `ssm.namespace` (e.g., `acme-saas/{{DEPLOYMENT_NAMESPACE}}`):
 
 ```
-/aplos-nca-saas/beta/dynamodb/dynamodb-app-table/table_name
-/aplos-nca-saas/beta/s3/s3-workload-bucket/bucket_name
-/aplos-nca-saas/beta/cognito/cognito-primary/user-pool-id
-/aplos-nca-saas/beta/lambda/app-configurations/arn
-/aplos-nca-saas/beta/route53/route53/hosted-zone-id
+/acme-saas/beta/dynamodb/dynamodb-app-table/table_name
+/acme-saas/beta/s3/s3-workload-bucket/bucket_name
+/acme-saas/beta/cognito/cognito-primary/user-pool-id
+/acme-saas/beta/lambda/app-configurations/arn
+/acme-saas/beta/route53/route53/hosted-zone-id
 ```
 
 ### Configuring SSM
@@ -80,7 +80,7 @@ SSM is always a **top-level** block — peer of `name`, `module`, `enabled`. Nev
   "module": "dynamodb_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}"
+    "namespace": "acme-saas/{{DEPLOYMENT_NAMESPACE}}"
   },
   "dynamodb": {
     "name": "{{DYNAMODB_APP_TABLE_NAME}}",
@@ -107,7 +107,7 @@ Stacks that consume SSM parameters from other stacks (API Gateway, Monitoring) u
   "module": "api_gateway_stack",
   "ssm": {
     "imports": {
-      "namespace": "aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}"
+      "namespace": "acme-saas/{{DEPLOYMENT_NAMESPACE}}"
     }
   },
   "api_gateway": {
@@ -124,12 +124,12 @@ Stacks that consume SSM parameters from other stacks (API Gateway, Monitoring) u
 
 The `lambda_name` is resolved to an SSM path:
 ```
-/aplos-nca-saas/beta/lambda/app-configurations/arn
+/acme-saas/beta/lambda/app-configurations/arn
 ```
 
 For direct SSM path references (bypassing namespace):
 ```json
 {
-  "lambda_arn_ssm_path": "/aplos-nca-saas/dev/lambda/callback-handler/arn"
+  "lambda_arn_ssm_path": "/acme-saas/dev/lambda/callback-handler/arn"
 }
 ```

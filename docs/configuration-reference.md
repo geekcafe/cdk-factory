@@ -526,7 +526,7 @@ In `deployment.dev.json`:
   "parameters": {
     "TENANT_NAME": "development",
     "DEPLOYMENT_NAMESPACE": "{{TENANT_NAME}}",
-    "HOSTED_ZONE_NAME": "{{TENANT_NAME}}.aplos-nca.com",
+    "HOSTED_ZONE_NAME": "{{TENANT_NAME}}.acme.com",
     "API_DNS_RECORD": "api.{{HOSTED_ZONE_NAME}}"
   }
 }
@@ -534,8 +534,8 @@ In `deployment.dev.json`:
 
 Resolution (multi-pass):
 1. `DEPLOYMENT_NAMESPACE` → `development`
-2. `HOSTED_ZONE_NAME` → `development.aplos-nca.com`
-3. `API_DNS_RECORD` → `api.development.aplos-nca.com`
+2. `HOSTED_ZONE_NAME` → `development.acme.com`
+3. `API_DNS_RECORD` → `api.development.acme.com`
 
 ### Unresolved Placeholder Errors
 

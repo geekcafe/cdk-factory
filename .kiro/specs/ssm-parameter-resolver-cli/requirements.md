@@ -7,7 +7,7 @@ A generic, reusable CLI utility within the cdk-factory project that resolves AWS
 ## Glossary
 
 - **SSM_Resolver**: The CLI utility module (`cdk_factory.utilities.ssm_resolver`) that resolves SSM parameter values and prints them to stdout.
-- **SSM_Parameter**: An AWS Systems Manager Parameter Store parameter identified by a hierarchical name (e.g., `/aplos-nca-saas/beta/route53/hosted-zone-id`).
+- **SSM_Parameter**: An AWS Systems Manager Parameter Store parameter identified by a hierarchical name (e.g., `/acme-saas/beta/route53/hosted-zone-id`).
 - **Role_ARN**: An AWS IAM role Amazon Resource Name used for cross-account STS role assumption.
 - **Cross_Account_Role_Assumption**: The process of assuming an IAM role in another AWS account via STS to obtain temporary credentials for API calls.
 - **Pipeline_Script**: A shell script executed within a CI/CD pipeline build step (e.g., CodeBuild) that invokes the SSM_Resolver.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `CdkConfig.__resolved_config()` method builds a `replacements` dictionary from `cdk.parameters` and passes it to `JsonLoadingUtility.recursive_replace()` to substitute `{{PLACEHOLDER}}` tokens throughout the config. When a parameter's `value` itself contains a reference to another parameter (a chained reference), the replacement values are applied as-is — meaning inner placeholders like `{{AWS_ACCOUNT}}` inside `TARGET_ACCOUNT_ROLE_ARN`'s value are never resolved. The fix adds a multi-pass pre-resolution step on the replacement dictionary values before they are applied to the config, mirroring the proven pattern already used in `Aplos-NCA-SaaS-IaC/cdk/deploy.py::_resolve_deployment_placeholders`.
+The `CdkConfig.__resolved_config()` method builds a `replacements` dictionary from `cdk.parameters` and passes it to `JsonLoadingUtility.recursive_replace()` to substitute `{{PLACEHOLDER}}` tokens throughout the config. When a parameter's `value` itself contains a reference to another parameter (a chained reference), the replacement values are applied as-is — meaning inner placeholders like `{{AWS_ACCOUNT}}` inside `TARGET_ACCOUNT_ROLE_ARN`'s value are never resolved. The fix adds a multi-pass pre-resolution step on the replacement dictionary values before they are applied to the config, mirroring the proven pattern already used in `acme-SaaS-IaC/cdk/deploy.py::_resolve_deployment_placeholders`.
 
 ## Glossary
 
@@ -37,7 +37,7 @@ END FUNCTION
 
 - `{{TARGET_ACCOUNT_ROLE_ARN}}` has value `"arn:aws:iam::{{AWS_ACCOUNT}}:role/DevOpsCrossAccountAccessRole"` and `{{AWS_ACCOUNT}}` resolves to `"959096737760"`. After replacement, the config contains the literal string `arn:aws:iam::{{AWS_ACCOUNT}}:role/DevOpsCrossAccountAccessRole` instead of `arn:aws:iam::959096737760:role/DevOpsCrossAccountAccessRole`.
 
-- `{{TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME}}` has value `"/aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"` and `{{DEPLOYMENT_NAMESPACE}}` resolves to `"beta"`. After replacement, the config contains `/aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id` instead of `/aplos-nca-saas/beta/route53/hosted-zone-id`.
+- `{{TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME}}` has value `"/acme-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"` and `{{DEPLOYMENT_NAMESPACE}}` resolves to `"beta"`. After replacement, the config contains `/acme-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id` instead of `/acme-saas/beta/route53/hosted-zone-id`.
 
 - A three-level chain: `{{A}}` → `"prefix-{{B}}"`, `{{B}}` → `"mid-{{C}}"`, `{{C}}` → `"leaf"`. Expected final value of `{{A}}`: `"prefix-mid-leaf"`. Without the fix, `{{A}}` resolves to `"prefix-mid-{{C}}"` or `"prefix-{{B}}"` depending on iteration order.
 
@@ -66,7 +66,7 @@ Based on the bug description and code analysis, the root cause is:
 
 2. **Iteration-order dependency**: Even if `recursive_replace()` were called multiple times, the issue would persist because the replacement values in the dict are static. The dict itself needs an internal resolution pass where each value is resolved using the other entries in the same dict.
 
-3. **Proven pattern exists but was not applied here**: The `deploy.py` file in `Aplos-NCA-SaaS-IaC` already implements exactly this pattern — a multi-pass loop (up to 5 iterations) that resolves chained references within the parameters dict before applying them to the config. This pattern was not carried over to `CdkConfig.__resolved_config()`.
+3. **Proven pattern exists but was not applied here**: The `deploy.py` file in `acme-SaaS-IaC` already implements exactly this pattern — a multi-pass loop (up to 5 iterations) that resolves chained references within the parameters dict before applying them to the config. This pattern was not carried over to `CdkConfig.__resolved_config()`.
 
 ## Correctness Properties
 

@@ -10,7 +10,7 @@ The `CdkConfig.__resolved_config()` method builds a replacements dictionary from
 
 1.1 WHEN a parameter's `value` contains a placeholder reference to another parameter (e.g., `TARGET_ACCOUNT_ROLE_ARN` has value `"arn:aws:iam::{{AWS_ACCOUNT}}:role/DevOpsCrossAccountAccessRole"`) THEN the system produces a resolved config where the inner `{{AWS_ACCOUNT}}` placeholder remains as a literal string in the output
 
-1.2 WHEN a parameter's `value` contains a placeholder reference to another parameter (e.g., `TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME` has value `"/aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"`) THEN the system produces a resolved config where the inner `{{DEPLOYMENT_NAMESPACE}}` placeholder remains as a literal string in the output
+1.2 WHEN a parameter's `value` contains a placeholder reference to another parameter (e.g., `TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME` has value `"/acme-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"`) THEN the system produces a resolved config where the inner `{{DEPLOYMENT_NAMESPACE}}` placeholder remains as a literal string in the output
 
 1.3 WHEN the replacements dictionary is applied via `recursive_replace()` and a replacement value itself contains a placeholder that was already iterated past THEN the system does not re-resolve the newly introduced placeholder, leaving it unresolved in the final config
 
@@ -20,7 +20,7 @@ The `CdkConfig.__resolved_config()` method builds a replacements dictionary from
 
 2.1 WHEN a parameter's `value` contains a placeholder reference to another parameter (e.g., `TARGET_ACCOUNT_ROLE_ARN` has value `"arn:aws:iam::{{AWS_ACCOUNT}}:role/DevOpsCrossAccountAccessRole"`) THEN the system SHALL fully resolve the inner `{{AWS_ACCOUNT}}` placeholder to its concrete value (e.g., `"959096737760"`) in the final config output
 
-2.2 WHEN a parameter's `value` contains a placeholder reference to another parameter (e.g., `TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME` has value `"/aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"`) THEN the system SHALL fully resolve the inner `{{DEPLOYMENT_NAMESPACE}}` placeholder to its concrete value (e.g., `"beta"`) in the final config output
+2.2 WHEN a parameter's `value` contains a placeholder reference to another parameter (e.g., `TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME` has value `"/acme-saas/{{DEPLOYMENT_NAMESPACE}}/route53/hosted-zone-id"`) THEN the system SHALL fully resolve the inner `{{DEPLOYMENT_NAMESPACE}}` placeholder to its concrete value (e.g., `"beta"`) in the final config output
 
 2.3 WHEN the replacements dictionary contains values that themselves reference other placeholders THEN the system SHALL resolve all transitive placeholder references so that no `{{...}}` tokens remain in any replacement value before applying replacements to the config
 

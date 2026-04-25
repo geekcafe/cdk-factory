@@ -91,7 +91,7 @@ Replace the dual-validator setup with a single `ConfigValidator` that runs both 
     - _Requirements: 2.2_
   - [ ]* 6.4 Write integration tests for ConfigValidator with schema validation
     - Test that `ConfigValidator.validate()` catches both pattern violations and schema errors
-    - Test that real-world config files from `Aplos-NCA-SaaS-IaC/cdk/configs/` pass validation (dynamodb, lambda, api-gateway configs)
+    - Test that real-world config files from `acme-SaaS-IaC/cdk/configs/` pass validation (dynamodb, lambda, api-gateway configs)
     - Test that pattern-level errors still raise `ValueError` with correct messages
     - _Requirements: 2.3, 6.1, 6.2, 6.3, 6.4_
 
@@ -143,4 +143,4 @@ Replace the dual-validator setup with a single `ConfigValidator` that runs both 
 - The old validator at `validation/config_validator.py` is broken (import errors) and unused in production — safe to delete
 - All schemas use `additionalProperties: true` for incremental adoption
 - Property tests use Hypothesis with a minimum of 100 examples per property
-- Real-world config files from `Aplos-NCA-SaaS-IaC/cdk/configs/` should be used for integration testing
+- Real-world config files from `acme-SaaS-IaC/cdk/configs/` should be used for integration testing

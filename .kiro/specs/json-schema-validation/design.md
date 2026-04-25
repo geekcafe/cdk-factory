@@ -382,7 +382,7 @@ The project uses Python — we'll use [Hypothesis](https://hypothesis.readthedoc
 - `SchemaRegistry.clear_cache()` works
 - Specific error message format assertions
 - Integration: `ConfigValidator.validate()` catches both pattern and schema errors
-- Real-world config files from `Aplos-NCA-SaaS-IaC/cdk/configs/` pass validation
+- Real-world config files from `acme-SaaS-IaC/cdk/configs/` pass validation
 
 ### Integration Tests
 

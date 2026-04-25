@@ -31,7 +31,7 @@ SSM configuration must be a top-level peer of `name`, `module`, and `enabled`. R
     "name": "my-table",
     "ssm": {
       "auto_export": true,
-      "namespace": "aplos-nca-saas/development"
+      "namespace": "acme-saas/development"
     }
   }
 }
@@ -45,7 +45,7 @@ SSM configuration must be a top-level peer of `name`, `module`, and `enabled`. R
   "module": "dynamodb_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "aplos-nca-saas/development"
+    "namespace": "acme-saas/development"
   },
   "dynamodb": {
     "name": "my-table"
@@ -74,7 +74,7 @@ The `ssm.enabled` key (used by Lambda and SQS stacks) is replaced by `ssm.auto_e
   "module": "lambda_stack",
   "ssm": {
     "enabled": true,
-    "namespace": "aplos-nca-saas/development"
+    "namespace": "acme-saas/development"
   }
 }
 ```
@@ -87,7 +87,7 @@ The `ssm.enabled` key (used by Lambda and SQS stacks) is replaced by `ssm.auto_e
   "module": "lambda_stack",
   "ssm": {
     "auto_export": true,
-    "namespace": "aplos-nca-saas/development"
+    "namespace": "acme-saas/development"
   }
 }
 ```
@@ -237,7 +237,7 @@ With stack config:
 }
 ```
 
-No `naming` block in the deployment config. The stack `name` resolves to the literal CloudFormation stack name (e.g., `aplos-nca-saas-development-dynamodb-app-table`).
+No `naming` block in the deployment config. The stack `name` resolves to the literal CloudFormation stack name (e.g., `acme-saas-development-dynamodb-app-table`).
 
 **Validation error (if `naming` block is present in deployment config):**
 ```

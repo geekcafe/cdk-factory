@@ -61,7 +61,7 @@ class SsmResolver:
         Resolve an SSM parameter value by name.
 
         Args:
-            parameter_name: The SSM parameter path (e.g., "/aplos-nca-saas/beta/route53/hosted-zone-id")
+            parameter_name: The SSM parameter path (e.g., "/acme-saas/beta/route53/hosted-zone-id")
             role_arn: Optional IAM role ARN for cross-account access
             region: Optional AWS region override
 
@@ -129,7 +129,7 @@ class ResolverArgs:
 All error messages include the parameter name for pipeline log traceability, following the pattern:
 
 ```
-ERROR: SSM parameter not found: /aplos-nca-saas/beta/route53/hosted-zone-id
+ERROR: SSM parameter not found: /acme-saas/beta/route53/hosted-zone-id
 ```
 
 
