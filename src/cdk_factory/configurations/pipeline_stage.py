@@ -62,12 +62,27 @@ class PipelineStageConfig:
     def stable_id(self) -> str:
         """
         Returns a stable construct ID for the stage.
-        Uses the stage name directly — this is the most predictable
-        and readable approach for CodePipeline stage naming.
+
+        Three-tier logic:
+        1. Explicit ``construct_id`` in config — highest priority (migration path)
+        2. Hash-based ID from sorted stack names — immune to stage renames
+        3. Fallback to sanitized stage name — for stack-less / build-only stages
         """
         import re
+        import hashlib
 
-        # Sanitize: remove any non-alphanumeric characters except hyphens
+        # 1. Explicit override — highest priority (migration path)
+        explicit_id = self.dictionary.get("construct_id")
+        if explicit_id:
+            return re.sub(r"[^a-zA-Z0-9-]", "", explicit_id)
+
+        # 2. Hash-based ID from sorted stack names
+        stack_names = sorted(s.name for s in self.stacks)
+        if stack_names:
+            digest = hashlib.sha256("|".join(stack_names).encode()).hexdigest()[:8]
+            return f"stage-{digest}"
+
+        # 3. Fallback for stack-less stages (build-only)
         return re.sub(r"[^a-zA-Z0-9-]", "", self.name)
 
     @property
