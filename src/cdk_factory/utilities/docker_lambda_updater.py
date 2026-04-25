@@ -89,12 +89,13 @@ class DockerLambdaUpdater:
         self.image_name = image_name
         self.locked_versions_path = locked_versions_path
 
-        # Cross-account role name: constructor arg → env var → default
-        self._cross_account_role = (
-            cross_account_role
-            or os.environ.get("CROSS_ACCOUNT_ROLE_NAME")
-            or "devops-cross-account-lambda-updater"
-        )
+        # Cross-account role: constructor arg → env var (ARN or name) → default name
+        self._cross_account_role = cross_account_role
+        if not self._cross_account_role:
+            # Check for full ARN first, then role name
+            self._cross_account_role = os.environ.get(
+                "CROSS_ACCOUNT_ROLE_ARN"
+            ) or os.environ.get("CROSS_ACCOUNT_ROLE_NAME")
 
         # STS client and caller account detection (deferred until needed)
         self._sts_client: Optional[Any] = None
@@ -128,28 +129,45 @@ class DockerLambdaUpdater:
         role_name: Optional[str] = None,
     ) -> Optional[boto3.Session]:
         """
-        Get a boto3 Session with assumed-role credentials for cross-account access.
+        Get a boto3 Session with assumed-role credentials.
+
+        Assumes the role when:
+        - Target account differs from caller account, OR
+        - An explicit role ARN/name is provided (even for same account)
+
+        Supports both full ARNs and role names.
 
         Args:
             account: Target AWS account ID
             region: AWS region
-            role_name: Optional per-deployment role name override
+            role_name: Optional per-deployment role name/ARN override
 
         Returns:
-            boto3.Session with temporary credentials, or None for same-account
+            boto3.Session with temporary credentials, or None if no role assumption needed
         """
-        caller_account = self._get_caller_account()
-        if account == caller_account:
+        effective_role = role_name or self._cross_account_role
+
+        # No role configured and same account → no assumption needed
+        if not effective_role:
             return None
 
-        if account in self._session_cache:
-            return self._session_cache[account]
+        caller_account = self._get_caller_account()
+        if account == caller_account and not effective_role:
+            return None
+
+        # Cache key includes account
+        cache_key = f"{account}-{effective_role}"
+        if cache_key in self._session_cache:
+            return self._session_cache[cache_key]
 
         if self._sts_client is None:
             self._sts_client = boto3.client("sts")
 
-        effective_role = role_name or self._cross_account_role
-        role_arn = f"arn:aws:iam::{account}:role/{effective_role}"
+        # If it's already a full ARN, use it directly; otherwise construct it
+        if effective_role.startswith("arn:aws:iam::"):
+            role_arn = effective_role
+        else:
+            role_arn = f"arn:aws:iam::{account}:role/{effective_role}"
 
         response = self._sts_client.assume_role(
             RoleArn=role_arn,
@@ -162,7 +180,7 @@ class DockerLambdaUpdater:
             aws_secret_access_key=creds["SecretAccessKey"],
             aws_session_token=creds["SessionToken"],
         )
-        self._session_cache[account] = session
+        self._session_cache[cache_key] = session
         return session
 
     def _get_ssm_client(
