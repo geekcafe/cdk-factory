@@ -5,6 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 from typing import Any, Dict, List, Optional
+import hashlib
 import os
 
 import cdk_nag
@@ -117,6 +118,24 @@ class PolicyDocuments:
         self.lambda_config: LambdaFunctionConfig = lambda_config
         self.deployment: Deployment = deployment
         self._resource_resolver = None
+
+    def _make_sid_slug(
+        self, resource_name: str, extra_strip: dict | None = None
+    ) -> str:
+        """Generate a unique, alphanumeric SID slug from a resource name.
+
+        Uses a prefix + hash approach to guarantee uniqueness while maintaining
+        readability.  Output is always alphanumeric and exactly 20 characters
+        (12-char prefix + 8-char MD5 hex suffix).
+        """
+        cleaned = resource_name.replace("-", "").replace("_", "")
+        if extra_strip:
+            for char, replacement in extra_strip.items():
+                cleaned = cleaned.replace(char, replacement)
+
+        hash_suffix = hashlib.md5(cleaned.encode()).hexdigest()[:8]
+        prefix = cleaned[:12]
+        return f"{prefix}{hash_suffix}"
 
     def default_lambda_policy_doc(self) -> iam.Policy:
         """Creates the default policy document"""
@@ -365,7 +384,7 @@ class PolicyDocuments:
                 )
 
             # Make SID unique per table to avoid collisions
-            table_slug = table.replace("-", "").replace("_", "")[:20]
+            table_slug = self._make_sid_slug(table)
             details = action_map[action]
             return self._dynamodb_permissions(
                 table_name=table,
@@ -383,7 +402,7 @@ class PolicyDocuments:
                     f"Structured S3 permission requires 'bucket' field: {permission}"
                 )
 
-            bucket_slug = bucket.replace("-", "").replace("_", "")[:20]
+            bucket_slug = self._make_sid_slug(bucket)
             if action == "read":
                 return self.__s3_read_permissions(bucket, sid=f"S3Read{bucket_slug}")
             elif action == "write":
@@ -413,7 +432,7 @@ class PolicyDocuments:
             # Build ARN — path can include wildcards like /my-app/dev/cognito/*
             param_arn = f"arn:aws:ssm:{region}:{account}:parameter{path}"
 
-            path_slug = path.replace("/", "").replace("-", "").replace("*", "All")[:20]
+            path_slug = self._make_sid_slug(path, extra_strip={"/": "", "*": "All"})
 
             if action == "read":
                 return {
