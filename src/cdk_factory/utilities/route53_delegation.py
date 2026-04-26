@@ -115,6 +115,37 @@ class Route53Delegation:
             logger.error(f"Failed to upsert NS records for {record_name}: {e}")
             raise
 
+    def delete_ns_records(
+        self,
+        hosted_zone_id: str,
+        record_name: str,
+        role_arn: Optional[str] = None,
+    ) -> bool:
+        """Delete NS delegation records from a hosted zone.
+        Returns True if deleted, False if record not found (idempotent)."""
+        client = self._get_client("route53", role_arn)
+        records = client.list_resource_record_sets(
+            HostedZoneId=hosted_zone_id,
+            StartRecordName=record_name,
+            StartRecordType="NS",
+            MaxItems="1",
+        )
+        for rs in records["ResourceRecordSets"]:
+            if rs["Name"].rstrip(".") == record_name.rstrip(".") and rs["Type"] == "NS":
+                client.change_resource_record_sets(
+                    HostedZoneId=hosted_zone_id,
+                    ChangeBatch={
+                        "Changes": [
+                            {
+                                "Action": "DELETE",
+                                "ResourceRecordSet": rs,
+                            }
+                        ]
+                    },
+                )
+                return True
+        return False
+
     def get_ssm_parameter(
         self, parameter_name: str, role_arn: Optional[str] = None
     ) -> Optional[str]:
