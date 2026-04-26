@@ -66,6 +66,21 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         self.deployment = deployment
         self.workload = workload
 
+        # Validate ssm.imports keys — fail fast on unrecognized keys
+        _KNOWN_IMPORT_KEYS = {
+            "lambda_namespace",
+            "route53_namespace",
+            "cognito_namespace",
+        }
+        ssm_imports = stack_config.ssm_config.get("imports", {})
+        unknown_keys = set(ssm_imports.keys()) - _KNOWN_IMPORT_KEYS
+        if unknown_keys:
+            raise ValueError(
+                f"Stack '{stack_config.name}': unrecognized key(s) in ssm.imports: "
+                f"{sorted(unknown_keys)}. "
+                f"Valid keys are: {sorted(_KNOWN_IMPORT_KEYS)}"
+            )
+
         self.api_config = ApiGatewayConfig(
             stack_config.dictionary.get("api_gateway", {})
         )
@@ -624,13 +639,13 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             # Build SSM path using convention from lambda_stack
             # Read SSM imports from top-level ssm block via stack_config
             ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
-            namespace = ssm_imports_config.get("namespace")
+            namespace = ssm_imports_config.get("lambda_namespace")
             if not namespace:
                 raise ValueError(
                     f"Stack '{self.stack_config.name}': "
-                    f"'ssm.imports.namespace' is required for Lambda auto-discovery "
+                    f"'ssm.imports.lambda_namespace' is required for Lambda auto-discovery "
                     f"(route references lambda_name='{lambda_name}'). "
-                    f"Add 'ssm.imports.namespace' to your stack config."
+                    f"Add 'ssm.imports.lambda_namespace' to your stack config."
                 )
             ssm_path = f"/{namespace}/{lambda_name}/arn"
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
@@ -1226,18 +1241,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # If hosted_zone_id is not provided, try SSM auto-discovery
         if not hosted_zone_id:
             ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
-            # Prefer a dedicated route53 import namespace; fall back to the
-            # general imports namespace with a /route53 suffix.
             route53_ns = ssm_imports_config.get("route53_namespace")
-            general_ns = ssm_imports_config.get("namespace")
             if route53_ns:
                 ssm_path = f"/{route53_ns}/hosted-zone-id"
-            elif general_ns:
-                ssm_path = f"/{general_ns}/route53/hosted-zone-id"
-            else:
-                ssm_path = None
-
-            if ssm_path:
                 logger.info(f"Auto-discovering hosted zone ID from SSM: {ssm_path}")
                 param = ssm.StringParameter.from_string_parameter_name(
                     self, f"hosted-zone-id-param{suffix}", ssm_path
@@ -1248,7 +1254,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             raise ValueError(
                 f"Hosted zone id is required for custom domain '{record_name}'. "
                 "Provide it via custom_domain.hosted_zone_id, or configure "
-                "ssm.imports.namespace so it can be auto-discovered from SSM."
+                "ssm.imports.route53_namespace so it can be auto-discovered from SSM."
             )
 
         hosted_zone_name = domain_config.get("hosted_zone_name")

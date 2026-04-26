@@ -561,13 +561,13 @@ class ApiGatewayIntegrationUtility:
 
                         # Build the SSM path from the stack's import namespace
                         ssm_imports_ns = stack_config.ssm_config.get("imports", {}).get(
-                            "namespace"
+                            "cognito_namespace"
                         )
                         if not ssm_imports_ns:
                             raise ValueError(
                                 f"Stack '{stack_config.name}': "
-                                f"'ssm.imports.namespace' is required when cognito ssm_path is 'auto'. "
-                                f"Add 'ssm.imports.namespace' to your stack config."
+                                f"'ssm.imports.cognito_namespace' is required when cognito ssm_path is 'auto'. "
+                                f"Add 'ssm.imports.cognito_namespace' to your stack config."
                             )
                         cognito_ssm_path = f"/{ssm_imports_ns}/cognito/user-pool/arn"
 
