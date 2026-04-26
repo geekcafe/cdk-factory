@@ -89,7 +89,7 @@ class TestClientWithSsmNamespace:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/client/ns/app-client-my-client-id",
+                "Name": "/client/ns/client-id",
                 "Value": Match.any_value(),
             },
         )
@@ -158,7 +158,7 @@ class TestPoolLevelParamsUsePoolNamespace:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/pool/ns/user_pool_id",
+                "Name": "/pool/ns/user-pool-id",
                 "Value": Match.any_value(),
             },
         )
@@ -166,7 +166,7 @@ class TestPoolLevelParamsUsePoolNamespace:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/pool/ns/user_pool_arn",
+                "Name": "/pool/ns/user-pool-arn",
                 "Value": Match.any_value(),
             },
         )
@@ -174,7 +174,7 @@ class TestPoolLevelParamsUsePoolNamespace:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/pool/ns/user_pool_name",
+                "Name": "/pool/ns/user-pool-name",
                 "Value": Match.any_value(),
             },
         )
@@ -276,7 +276,7 @@ class TestMixedClientNamespaces:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/client-a/ns/app-client-client-a-id",
+                "Name": "/client-a/ns/client-id",
                 "Value": Match.any_value(),
             },
         )
@@ -319,7 +319,7 @@ class TestSecretArnUnderClientNamespace:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/secret/ns/app-client-secret-client-secret-arn",
+                "Name": "/secret/ns/secret-arn",
                 "Value": Match.any_value(),
             },
         )

@@ -572,12 +572,20 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         if ssm_config.get("auto_export"):
             namespace = self._resolve_client_namespace(client_config)
             if namespace:
-                safe_client_name = client_name.replace(" ", "-")
+                client_has_own_namespace = (
+                    client_config.get("ssm_namespace") is not None
+                )
+
+                if client_has_own_namespace:
+                    secret_key = "secret-arn"
+                else:
+                    safe_client_name = client_name.replace(" ", "-")
+                    secret_key = f"app-client-{safe_client_name}-secret-arn"
 
                 ssm.StringParameter(
                     self,
                     f"{client_name}-secret-arn-param",
-                    parameter_name=f"/{namespace}/app-client-{safe_client_name}-secret-arn",
+                    parameter_name=f"/{namespace}/{secret_key}",
                     string_value=secret_with_metadata.secret_arn,
                     description=f"Secrets Manager ARN for {client_name} credentials",
                 )
@@ -617,11 +625,11 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             resource_name="user-pool",
         )
 
-        # Prepare pool-level resource values for export
+        # Prepare pool-level resource values for export (use dashes for consistency)
         pool_resource_values = {
-            "user_pool_id": user_pool.user_pool_id,
-            "user_pool_name": self.cognito_config.user_pool_name,
-            "user_pool_arn": user_pool.user_pool_arn,
+            "user-pool-id": user_pool.user_pool_id,
+            "user-pool-name": self.cognito_config.user_pool_name,
+            "user-pool-arn": user_pool.user_pool_arn,
         }
 
         if auto_export:
@@ -660,10 +668,19 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                     continue
 
                 app_client = self.app_clients[client_name]
+                client_has_own_namespace = (
+                    client_config.get("ssm_namespace") is not None
+                )
                 client_namespace = self._resolve_client_namespace(client_config)
                 client_prefix = f"/{client_namespace}"
-                safe_client_name = client_name.replace(" ", "-")
-                export_key = f"app-client-{safe_client_name}-id"
+
+                if client_has_own_namespace:
+                    # Client has its own namespace — use simple key names
+                    export_key = "client-id"
+                else:
+                    # Fallback to pool namespace — include client name in key
+                    safe_client_name = client_name.replace(" ", "-")
+                    export_key = f"app-client-{safe_client_name}-id"
 
                 parameter_path = f"{client_prefix}/{export_key}"
                 self.export_ssm_parameter(

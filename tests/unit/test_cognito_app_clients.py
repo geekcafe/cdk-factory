@@ -380,7 +380,7 @@ class TestCognitoAppClients:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/my-app/prod/cognito/user_pool_id",
+                "Name": "/my-app/prod/cognito/user-pool-id",
                 "Type": "String",
             },
         )
@@ -795,7 +795,7 @@ class TestCognitoAppClients:
         # Verify SSM parameters
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/prod-app/prod/cognito/user_pool_id"},
+            {"Name": "/prod-app/prod/cognito/user-pool-id"},
         )
         template.has_resource_properties(
             "AWS::SSM::Parameter",
