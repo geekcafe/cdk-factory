@@ -126,12 +126,12 @@ class TestDuplicateSidBugCondition(unittest.TestCase):
         pd = _make_policy_documents()
 
         result_a = pd._get_structured_permission(
-            {"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-app-database"}
+            {"dynamodb": "read", "table": "v3-acme-saas-alpha-app-database"}
         )
         result_b = pd._get_structured_permission(
             {
                 "dynamodb": "read",
-                "table": "v3-aplos-nca-saas-alpha-audit-logger-database",
+                "table": "v3-acme-saas-alpha-audit-logger-database",
             }
         )
 
@@ -140,8 +140,8 @@ class TestDuplicateSidBugCondition(unittest.TestCase):
 
         assert sid_a != sid_b, (
             f"Bug confirmed: DynamoDB tables produce duplicate SIDs. "
-            f"table_a='v3-aplos-nca-saas-alpha-app-database' -> sid='{sid_a}', "
-            f"table_b='v3-aplos-nca-saas-alpha-audit-logger-database' -> sid='{sid_b}'"
+            f"table_a='v3-acme-saas-alpha-app-database' -> sid='{sid_a}', "
+            f"table_b='v3-acme-saas-alpha-audit-logger-database' -> sid='{sid_b}'"
         )
 
     def test_s3_collision_real_world(self):
@@ -151,12 +151,12 @@ class TestDuplicateSidBugCondition(unittest.TestCase):
         """
         pd = _make_policy_documents()
 
-        # These two buckets both produce slug 'v3aplosncasaasalphaa' (first 20 chars)
+        # These two buckets both produce slug 'v3acmesaasalphaa' (first 20 chars)
         result_a = pd._get_structured_permission(
-            {"s3": "read", "bucket": "v3-aplos-nca-saas-alpha-app-uploads"}
+            {"s3": "read", "bucket": "v3-acme-saas-alpha-app-uploads"}
         )
         result_b = pd._get_structured_permission(
-            {"s3": "read", "bucket": "v3-aplos-nca-saas-alpha-app-downloads"}
+            {"s3": "read", "bucket": "v3-acme-saas-alpha-app-downloads"}
         )
 
         sid_a = _extract_sid(result_a)
@@ -164,8 +164,8 @@ class TestDuplicateSidBugCondition(unittest.TestCase):
 
         assert sid_a != sid_b, (
             f"Bug confirmed: S3 buckets produce duplicate SIDs. "
-            f"bucket_a='v3-aplos-nca-saas-alpha-app-uploads' -> sid='{sid_a}', "
-            f"bucket_b='v3-aplos-nca-saas-alpha-app-downloads' -> sid='{sid_b}'"
+            f"bucket_a='v3-acme-saas-alpha-app-uploads' -> sid='{sid_a}', "
+            f"bucket_b='v3-acme-saas-alpha-app-downloads' -> sid='{sid_b}'"
         )
 
     def test_ssm_collision_real_world(self):
@@ -178,13 +178,13 @@ class TestDuplicateSidBugCondition(unittest.TestCase):
         result_a = pd._get_structured_permission(
             {
                 "parameter_store": "read",
-                "path": "/v3-aplos-nca-saas-alpha/dev/cognito/pool-id",
+                "path": "/v3-acme-saas-alpha/dev/cognito/pool-id",
             }
         )
         result_b = pd._get_structured_permission(
             {
                 "parameter_store": "read",
-                "path": "/v3-aplos-nca-saas-alpha/dev/cognito/client-id",
+                "path": "/v3-acme-saas-alpha/dev/cognito/client-id",
             }
         )
 
@@ -193,8 +193,8 @@ class TestDuplicateSidBugCondition(unittest.TestCase):
 
         assert sid_a != sid_b, (
             f"Bug confirmed: SSM paths produce duplicate SIDs. "
-            f"path_a='/v3-aplos-nca-saas-alpha/dev/cognito/pool-id' -> sid='{sid_a}', "
-            f"path_b='/v3-aplos-nca-saas-alpha/dev/cognito/client-id' -> sid='{sid_b}'"
+            f"path_a='/v3-acme-saas-alpha/dev/cognito/pool-id' -> sid='{sid_a}', "
+            f"path_b='/v3-acme-saas-alpha/dev/cognito/client-id' -> sid='{sid_b}'"
         )
 
     @given(

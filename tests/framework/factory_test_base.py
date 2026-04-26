@@ -26,6 +26,68 @@ from cdk_factory.configurations.stack import StackConfig
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.workload import WorkloadConfig
 from cdk_factory.configurations.config_validator import ConfigValidator
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _ValidationResult:
+    """Simple validation result container for test framework."""
+
+    valid: bool = True
+    errors: List[str] = field(default_factory=list)
+
+
+class _TestConfigValidator:
+    """Wrapper around ConfigValidator providing methods expected by the test framework."""
+
+    @staticmethod
+    def validate_module_config(module_name: str, config: dict) -> _ValidationResult:
+        try:
+            ConfigValidator.validate(config)
+            return _ValidationResult(valid=True, errors=[])
+        except ValueError as e:
+            return _ValidationResult(valid=False, errors=[str(e)])
+
+    @staticmethod
+    def validate_ssm_configuration(config: dict) -> _ValidationResult:
+        errors: List[str] = []
+        ssm_configs: List[dict] = []
+        _TestConfigValidator._find_ssm_blocks(config, ssm_configs)
+        for ssm_block in ssm_configs:
+            for section in ("imports", "exports"):
+                items = ssm_block.get(section, {})
+                if isinstance(items, dict):
+                    for key, value in items.items():
+                        paths = value if isinstance(value, list) else [value]
+                        for path in paths:
+                            if (
+                                isinstance(path, str)
+                                and not path.startswith("/")
+                                and "{{" not in path
+                            ):
+                                errors.append(
+                                    f"SSM {section} path for '{key}' must start with '/' or contain template variables: {path}"
+                                )
+        return _ValidationResult(valid=len(errors) == 0, errors=errors)
+
+    @staticmethod
+    def validate_complete_configuration(config: dict) -> _ValidationResult:
+        result = _TestConfigValidator.validate_module_config("", config)
+        if result.valid:
+            ssm_result = _TestConfigValidator.validate_ssm_configuration(config)
+            if not ssm_result.valid:
+                return ssm_result
+        return result
+
+    @staticmethod
+    def _find_ssm_blocks(d: dict, results: list) -> None:
+        if not isinstance(d, dict):
+            return
+        if "ssm" in d and isinstance(d["ssm"], dict):
+            results.append(d["ssm"])
+        for v in d.values():
+            if isinstance(v, dict):
+                _TestConfigValidator._find_ssm_blocks(v, results)
 
 
 class FactoryTestBase:
@@ -59,7 +121,7 @@ class FactoryTestBase:
         self.test_stack_config = self._create_test_stack_config()
 
         # Setup validator
-        self.validator = ConfigValidator()
+        self.validator = _TestConfigValidator()
 
         # Setup temporary directory for synthesis
         self.temp_dir = tempfile.mkdtemp()
@@ -145,7 +207,11 @@ class FactoryTestBase:
         stack_config = self._create_test_stack_config(config_override)
 
         # Instantiate stack
-        stack = stack_class(self.app, "TestStack")
+        stack = stack_class(
+            self.app,
+            "TestStack",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
 
         # Build stack
         stack.build(stack_config, self.test_deployment, self.test_workload)
@@ -170,7 +236,11 @@ class FactoryTestBase:
             CloudFormation template dictionary
         """
         app = cdk.App(context=context)
-        stack = stack_class(app, "TestStack")
+        stack = stack_class(
+            app,
+            "TestStack",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
         stack.build(self.test_stack_config, self.test_deployment, self.test_workload)
 
         cloud_assembly = app.synth()
@@ -201,7 +271,7 @@ class FactoryTestBase:
         if not isinstance(template.get("Resources"), dict):
             errors.append("Resources section must be a dictionary")
 
-        if not isinstance(template.get("Outputs"), dict):
+        if "Outputs" in template and not isinstance(template.get("Outputs"), dict):
             errors.append("Outputs section must be a dictionary")
 
         return errors

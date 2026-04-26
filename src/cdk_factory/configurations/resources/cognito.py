@@ -15,7 +15,11 @@ class CognitoConfig(EnhancedBaseConfig):
     """
 
     def __init__(self, config: dict = None) -> None:
-        super().__init__(config or {}, resource_type="cognito", resource_name=config.get("name", "cognito") if config else "cognito")
+        super().__init__(
+            config or {},
+            resource_type="cognito",
+            resource_name=config.get("name", "cognito") if config else "cognito",
+        )
         self.__config = config or {}
 
     @property
@@ -249,10 +253,17 @@ class CognitoConfig(EnhancedBaseConfig):
         """
         App clients for the user pool.
         Supports multiple clients with different auth flows and OAuth settings.
-        
+
+        Each client may optionally include an ``ssm_namespace`` field (str).
+        When present, the client's SSM parameter exports (client ID, secret ARN)
+        are written under this client-specific namespace instead of the pool-level
+        namespace.  When absent or ``None``, the pool-level ``ssm.namespace`` is
+        used as the default.  The field is fully optional with no default value.
+
         Structure:
             [{
                 "name": "web-client",
+                "ssm_namespace": "my-app/prod/web-auth",  # optional
                 "generate_secret": False,
                 "auth_flows": {
                     "user_password": True,
@@ -279,11 +290,12 @@ class CognitoConfig(EnhancedBaseConfig):
                 "read_attributes": ["email", "name"],
                 "write_attributes": ["name"]
             }]
-        
+
         Example:
             [
                 {
                     "name": "web-app",
+                    "ssm_namespace": "nca-web/beta/auth",
                     "generate_secret": False,
                     "auth_flows": {
                         "user_password": True,
@@ -301,8 +313,21 @@ class CognitoConfig(EnhancedBaseConfig):
                     }
                 }
             ]
-        
+
         Returns:
             list: List of app client configurations
         """
         return self.__config.get("app_clients")
+
+
+def get_client_ssm_namespace(client_config: dict) -> str | None:
+    """Return the client-level SSM namespace, or None if not specified.
+
+    Args:
+        client_config: A single app client configuration dict from the
+            ``app_clients`` list.
+
+    Returns:
+        The ``ssm_namespace`` value if present, otherwise ``None``.
+    """
+    return client_config.get("ssm_namespace")

@@ -12,7 +12,7 @@ The fix will replace the naive truncation with a hash-based suffix approach that
 - **Property (P)**: Every structured permission in a lambda's permission list produces a unique, valid IAM SID
 - **Preservation**: Existing behavior for single-resource lambdas, already-unique slugs, string permissions, and inline IAM dicts must remain unchanged
 - **`_get_structured_permission()`**: The method in `policy_docs.py` that converts structured permission dicts (e.g., `{"dynamodb": "read", "table": "..."}`) into IAM policy statement details including SID generation
-- **Slug**: The alphanumeric-only, truncated form of a resource name used as a SID suffix (e.g., `v3aplosncasaasalpha` from `v3-aplos-nca-saas-alpha-app-database`)
+- **Slug**: The alphanumeric-only, truncated form of a resource name used as a SID suffix (e.g., `v3acmesaasalpha` from `v3-acme-saas-alpha-app-database`)
 - **SID**: IAM Statement ID — must be alphanumeric and unique within a single policy document
 
 ## Bug Details
@@ -53,11 +53,11 @@ END FUNCTION
 
 ### Examples
 
-- **DynamoDB collision (real-world)**: Tables `v3-aplos-nca-saas-alpha-app-database` and `v3-aplos-nca-saas-alpha-audit-logger-database` both produce slug `v3aplosncasaasalphaa`. With `"dynamodb": "read"`, both generate SID `DynamoDbReadv3aplosncasaasalphaa` → duplicate SID error.
+- **DynamoDB collision (real-world)**: Tables `v3-acme-saas-alpha-app-database` and `v3-acme-saas-alpha-audit-logger-database` both produce slug `v3acmesaasalphaa`. With `"dynamodb": "read"`, both generate SID `DynamoDbReadv3acmesaasalphaa` → duplicate SID error.
 
-- **DynamoDB collision (same action, different tables)**: Tables `v3-aplos-nca-saas-alpha-app-database` and `v3-aplos-nca-saas-alpha-transient-database` both produce slug `v3aplosncasaasalphaa`. Read permissions on both → `DynamoDbReadv3aplosncasaasalphaa` appears twice.
+- **DynamoDB collision (same action, different tables)**: Tables `v3-acme-saas-alpha-app-database` and `v3-acme-saas-alpha-transient-database` both produce slug `v3acmesaasalphaa`. Read permissions on both → `DynamoDbReadv3acmesaasalphaa` appears twice.
 
-- **S3 collision**: Buckets `v3-aplos-nca-saas-alpha-user-files` and `v3-aplos-nca-saas-alpha-analysis-upload-files` both produce slug `v3aplosncasaasalphau`. Read permissions on both → `S3Readv3aplosncasaasalphau` appears twice.
+- **S3 collision**: Buckets `v3-acme-saas-alpha-user-files` and `v3-acme-saas-alpha-analysis-upload-files` both produce slug `v3acmesaasalphau`. Read permissions on both → `S3Readv3acmesaasalphau` appears twice.
 
 - **No collision (short names)**: Tables `users-table` and `orders-table` produce slugs `userstable` and `orderstable` — unique within 20 chars, no bug.
 
@@ -89,7 +89,7 @@ Based on the bug description and code analysis, the root cause is clear and sing
    - Line 387: `bucket_slug = bucket.replace("-", "").replace("_", "")[:20]` (S3)
    - Line 417: `path_slug = path.replace("/", "").replace("-", "").replace("*", "All")[:20]` (SSM)
 
-2. **Real-World Name Patterns Exceed 20 Characters**: The deployment configs use naming patterns like `v3-{{WORKLOAD_NAME}}-{{TENANT_NAME}}-<resource-specific-suffix>`. After template resolution (e.g., `v3-aplos-nca-saas-alpha-app-database`), the common prefix `v3aplosncasaasalpha` is already 19 characters, leaving only 1 character to differentiate resources. Since both `app-database` and `audit-logger-database` start with `a`, the 20th character is identical.
+2. **Real-World Name Patterns Exceed 20 Characters**: The deployment configs use naming patterns like `v3-{{WORKLOAD_NAME}}-{{TENANT_NAME}}-<resource-specific-suffix>`. After template resolution (e.g., `v3-acme-saas-alpha-app-database`), the common prefix `v3acmesaasalpha` is already 19 characters, leaving only 1 character to differentiate resources. Since both `app-database` and `audit-logger-database` start with `a`, the 20th character is identical.
 
 3. **No Collision Detection or Avoidance**: The method processes each permission independently with no awareness of other permissions in the same policy. There is no mechanism to detect or resolve SID collisions.
 
@@ -122,8 +122,8 @@ Assuming our root cause analysis is correct:
 1. **Extract a shared `_make_sid_slug()` helper method**: Create a new private method that encapsulates the slug generation logic. This centralizes the fix and eliminates the three separate truncation sites.
 
 2. **Replace truncation with hash-based suffix**: Instead of `slug[:20]`, use a scheme that takes a prefix of the cleaned name (e.g., 12 characters) and appends a short hash (e.g., 8 hex characters from a deterministic hash of the full cleaned name). This guarantees uniqueness for distinct inputs while keeping SIDs readable.
-   - Example: `v3-aplos-nca-saas-alpha-app-database` → `v3aplosncasa` + `a1b2c3d4` → `v3aplosncasaa1b2c3d4`
-   - Example: `v3-aplos-nca-saas-alpha-audit-logger-database` → `v3aplosncasa` + `e5f6a7b8` → `v3aplosncasae5f6a7b8`
+   - Example: `v3-acme-saas-alpha-app-database` → `v3acmesa` + `a1b2c3d4` → `v3acmesaa1b2c3d4`
+   - Example: `v3-acme-saas-alpha-audit-logger-database` → `v3acmesa` + `e5f6a7b8` → `v3acmesae5f6a7b8`
 
 3. **Ensure alphanumeric output**: The hash must use only alphanumeric characters (hex digits `[0-9a-f]` satisfy this). The total slug length should remain ≤ 20 characters to avoid excessively long SIDs.
 
@@ -170,8 +170,8 @@ The testing strategy follows a two-phase approach: first, surface counterexample
 **Test Plan**: Write tests that call `_get_structured_permission()` with pairs of resource names known to collide under the current 20-character truncation. Run these tests on the UNFIXED code to observe the duplicate SIDs.
 
 **Test Cases**:
-1. **DynamoDB Read Collision**: Call with `{"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-app-database"}` and `{"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-audit-logger-database"}` — verify SIDs are identical (will fail uniqueness on unfixed code)
-2. **DynamoDB Mixed Action Collision**: Call with `{"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-app-database"}` and `{"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-transient-database"}` — verify SIDs collide (will fail on unfixed code)
+1. **DynamoDB Read Collision**: Call with `{"dynamodb": "read", "table": "v3-acme-saas-alpha-app-database"}` and `{"dynamodb": "read", "table": "v3-acme-saas-alpha-audit-logger-database"}` — verify SIDs are identical (will fail uniqueness on unfixed code)
+2. **DynamoDB Mixed Action Collision**: Call with `{"dynamodb": "read", "table": "v3-acme-saas-alpha-app-database"}` and `{"dynamodb": "read", "table": "v3-acme-saas-alpha-transient-database"}` — verify SIDs collide (will fail on unfixed code)
 3. **S3 Bucket Collision**: Call with two buckets sharing a long prefix — verify SIDs collide (will fail on unfixed code)
 4. **SSM Path Collision**: Call with two SSM paths sharing a long prefix — verify SIDs collide (will fail on unfixed code)
 

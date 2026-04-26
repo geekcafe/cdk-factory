@@ -53,7 +53,7 @@ class TestApiGatewaySSMImports:
             "enabled": True,
             "ssm": {
                 "imports": {
-                    "namespace": "my-ns",
+                    "lambda_namespace": "my-ns",
                 },
             },
             "api_gateway": {
@@ -128,7 +128,7 @@ class TestApiGatewaySSMImports:
             id="test-apigw-legacy-import",
             env=Environment(account="123456789012", region="us-east-1"),
         )
-        with pytest.raises(ValueError, match="ssm.imports.namespace"):
+        with pytest.raises(ValueError, match="ssm.imports.lambda_namespace"):
             stack.build(
                 stack_config=stack_config,
                 deployment=deployment_config,

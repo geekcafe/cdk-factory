@@ -67,7 +67,7 @@ class TestApiGatewaySSMLambdaImport:
             "enabled": True,
             "ssm": {
                 "imports": {
-                    "namespace": "test-workload/test",
+                    "lambda_namespace": "test-workload/test",
                 },
             },
             "api_gateway": {
@@ -267,7 +267,7 @@ class TestApiGatewaySSMLambdaImport:
             "enabled": True,
             "ssm": {
                 "imports": {
-                    "namespace": "test-workload/test",
+                    "lambda_namespace": "test-workload/test",
                 },
             },
             "api_gateway": {

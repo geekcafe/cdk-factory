@@ -27,6 +27,7 @@
             {
               "name": "amplify-web-app",
               "generate_secret": false,
+              "ssm_namespace": "my-app/prod/web-auth",
               "auth_flows": {
                 "user_srp": true,
                 "custom": false
@@ -132,6 +133,7 @@
             {
               "name": "backend-service",
               "generate_secret": true,
+              "ssm_namespace": "my-app/prod/backend-svc",
               "auth_flows": {
                 "user_password": false,
                 "user_srp": false,

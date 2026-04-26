@@ -18,9 +18,78 @@ Provides comprehensive testing for SSM parameter handling including:
 import boto3
 from typing import Dict, Any, List, Optional
 from unittest.mock import patch, Mock
+from dataclasses import dataclass, field
 
 from .factory_test_base import FactoryTestBase
 from cdk_factory.configurations.config_validator import ConfigValidator
+
+
+@dataclass
+class _ValidationResult:
+    """Simple validation result container for test framework."""
+
+    valid: bool = True
+    errors: List[str] = field(default_factory=list)
+
+
+class _TestConfigValidator:
+    """Wrapper around ConfigValidator that provides the methods expected by the test framework."""
+
+    @staticmethod
+    def validate_module_config(module_name: str, config: dict) -> _ValidationResult:
+        """Validate a module config using the production ConfigValidator.validate()."""
+        try:
+            ConfigValidator.validate(config)
+            return _ValidationResult(valid=True, errors=[])
+        except ValueError as e:
+            return _ValidationResult(valid=False, errors=[str(e)])
+
+    @staticmethod
+    def validate_ssm_configuration(config: dict) -> _ValidationResult:
+        """Validate SSM-specific configuration paths and structure."""
+        errors = []
+        # Walk through nested dicts looking for ssm blocks
+        ssm_configs = []
+        _TestConfigValidator._find_ssm_blocks(config, ssm_configs)
+
+        for ssm_block in ssm_configs:
+            for section in ("imports", "exports"):
+                items = ssm_block.get(section, {})
+                if isinstance(items, dict):
+                    for key, value in items.items():
+                        paths = value if isinstance(value, list) else [value]
+                        for path in paths:
+                            if (
+                                isinstance(path, str)
+                                and not path.startswith("/")
+                                and "{{" not in path
+                            ):
+                                errors.append(
+                                    f"SSM {section} path for '{key}' must start with '/' or contain template variables: {path}"
+                                )
+
+        return _ValidationResult(valid=len(errors) == 0, errors=errors)
+
+    @staticmethod
+    def validate_complete_configuration(config: dict) -> _ValidationResult:
+        """Run both module and SSM validation."""
+        result = _TestConfigValidator.validate_module_config("", config)
+        if result.valid:
+            ssm_result = _TestConfigValidator.validate_ssm_configuration(config)
+            if not ssm_result.valid:
+                return ssm_result
+        return result
+
+    @staticmethod
+    def _find_ssm_blocks(d: dict, results: list) -> None:
+        """Recursively find all 'ssm' blocks in a nested dict."""
+        if not isinstance(d, dict):
+            return
+        if "ssm" in d and isinstance(d["ssm"], dict):
+            results.append(d["ssm"])
+        for v in d.values():
+            if isinstance(v, dict):
+                _TestConfigValidator._find_ssm_blocks(v, results)
 
 
 class SSMIntegrationTester(FactoryTestBase):
@@ -36,7 +105,10 @@ class SSMIntegrationTester(FactoryTestBase):
     6. Token resolution
     """
 
-    def test_complete_ssm_integration(
+    # Prevent pytest from collecting helper methods in this base class
+    __test__ = False
+
+    def run_complete_ssm_integration(
         self, module_class, test_config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
@@ -70,7 +142,7 @@ class SSMIntegrationTester(FactoryTestBase):
 
         try:
             # 1. Test configuration validation
-            validator = ConfigValidator()
+            validator = _TestConfigValidator()
             validation_result = validator.validate_module_config(
                 module_class.__name__, test_config
             )
@@ -160,7 +232,7 @@ class SSMIntegrationTester(FactoryTestBase):
             test_result["errors"].append(f"Test execution failed: {str(e)}")
             return test_result
 
-    def test_ssm_import_resolution(
+    def run_ssm_import_resolution(
         self, module_class, test_config: Dict[str, Any], mock_ssm_values: Dict[str, str]
     ) -> Dict[str, Any]:
         """
@@ -184,7 +256,7 @@ class SSMIntegrationTester(FactoryTestBase):
         }
 
         with patch("boto3.client", return_value=mock_ssm):
-            test_result = self.test_complete_ssm_integration(module_class, test_config)
+            test_result = self.run_complete_ssm_integration(module_class, test_config)
 
             # Additional validation for import resolution
             if test_result["passed"]:
@@ -217,7 +289,7 @@ class SSMIntegrationTester(FactoryTestBase):
 
             return test_result
 
-    def test_token_resolution_with_context(
+    def run_token_resolution_with_context(
         self, module_class, test_config: Dict[str, Any], context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
@@ -283,7 +355,7 @@ class SSMIntegrationTester(FactoryTestBase):
         except Exception as e:
             return {"passed": False, "error": str(e), "context": context}
 
-    def test_ssm_path_validation(self, test_config: Dict[str, Any]) -> Dict[str, Any]:
+    def run_ssm_path_validation(self, test_config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Test SSM path validation in configuration.
 
@@ -293,14 +365,10 @@ class SSMIntegrationTester(FactoryTestBase):
         Returns:
             Validation result for SSM paths
         """
-        validator = ConfigValidator()
+        validator = _TestConfigValidator()
         ssm_validation = validator.validate_ssm_configuration(test_config)
 
-        # Extract SSM paths for detailed analysis
-        ssm_config = test_config.get("ssm", {})
-        imports = ssm_config.get("imports", {})
-        exports = ssm_config.get("exports", {})
-
+        # Extract SSM paths for detailed analysis - search all nested SSM blocks
         path_analysis = {
             "import_paths": [],
             "export_paths": [],
@@ -308,19 +376,34 @@ class SSMIntegrationTester(FactoryTestBase):
             "valid_paths": [],
         }
 
-        # Analyze import paths
-        for key, value in imports.items():
-            if isinstance(value, list):
-                for path in value:
-                    path_analysis["import_paths"].append(
-                        {"key": f"{key}[]", "path": path}
-                    )
-            else:
-                path_analysis["import_paths"].append({"key": key, "path": value})
+        # Collect all SSM blocks from the config (including nested ones)
+        ssm_blocks = []
+        self._find_ssm_blocks(test_config, ssm_blocks)
 
-        # Analyze export paths
-        for key, value in exports.items():
-            path_analysis["export_paths"].append({"key": key, "path": value})
+        for ssm_config in ssm_blocks:
+            imports = ssm_config.get("imports", {})
+            exports = ssm_config.get("exports", {})
+
+            # Analyze import paths
+            if isinstance(imports, dict):
+                for key, value in imports.items():
+                    if isinstance(value, list):
+                        for path in value:
+                            path_analysis["import_paths"].append(
+                                {"key": f"{key}[]", "path": path}
+                            )
+                    elif isinstance(value, str):
+                        path_analysis["import_paths"].append(
+                            {"key": key, "path": value}
+                        )
+
+            # Analyze export paths
+            if isinstance(exports, dict):
+                for key, value in exports.items():
+                    if isinstance(value, str):
+                        path_analysis["export_paths"].append(
+                            {"key": key, "path": value}
+                        )
 
         # Validate each path
         all_paths = path_analysis["import_paths"] + path_analysis["export_paths"]
@@ -342,7 +425,18 @@ class SSMIntegrationTester(FactoryTestBase):
             "invalid_count": len(path_analysis["invalid_paths"]),
         }
 
-    def test_cross_stack_ssm_integration(
+    @staticmethod
+    def _find_ssm_blocks(d: dict, results: list) -> None:
+        """Recursively find all 'ssm' blocks in a nested dict."""
+        if not isinstance(d, dict):
+            return
+        if "ssm" in d and isinstance(d["ssm"], dict):
+            results.append(d["ssm"])
+        for v in d.values():
+            if isinstance(v, dict):
+                SSMIntegrationTester._find_ssm_blocks(v, results)
+
+    def run_cross_stack_ssm_integration(
         self,
         producer_configs: List[Dict[str, Any]],
         consumer_configs: List[Dict[str, Any]],
@@ -375,7 +469,7 @@ class SSMIntegrationTester(FactoryTestBase):
             module_name = config.get("module", f"producer-{i}")
             # This would need the actual module class
             # For now, just validate configuration
-            validation = self.test_ssm_path_validation(config)
+            validation = self.run_ssm_path_validation(config)
             result["producer_results"][f"producer-{i}"] = validation
 
             if not validation["validation"]["valid"]:
@@ -390,7 +484,7 @@ class SSMIntegrationTester(FactoryTestBase):
         # Test consumer stacks
         for i, config in enumerate(consumer_configs):
             module_name = config.get("module", f"consumer-{i}")
-            validation = self.test_ssm_path_validation(config)
+            validation = self.run_ssm_path_validation(config)
             result["consumer_results"][f"consumer-{i}"] = validation
 
             if not validation["validation"]["valid"]:
@@ -407,26 +501,37 @@ class SSMIntegrationTester(FactoryTestBase):
         all_imports = []
 
         for config in producer_configs:
-            ssm_config = config.get("ssm", {})
-            exports = ssm_config.get("exports", {})
-            for key, path in exports.items():
-                all_exports.append(
-                    {"stack": config.get("name"), "key": key, "path": path}
-                )
+            ssm_blocks = []
+            self._find_ssm_blocks(config, ssm_blocks)
+            for ssm_config in ssm_blocks:
+                exports = ssm_config.get("exports", {})
+                if isinstance(exports, dict):
+                    for key, path in exports.items():
+                        if isinstance(path, str):
+                            all_exports.append(
+                                {"stack": config.get("name"), "key": key, "path": path}
+                            )
 
         for config in consumer_configs:
-            ssm_config = config.get("ssm", {})
-            imports = ssm_config.get("imports", {})
-            for key, path in imports.items():
-                if isinstance(path, list):
-                    for p in path:
-                        all_imports.append(
-                            {"stack": config.get("name"), "key": f"{key}[]", "path": p}
-                        )
-                else:
-                    all_imports.append(
-                        {"stack": config.get("name"), "key": key, "path": path}
-                    )
+            ssm_blocks = []
+            self._find_ssm_blocks(config, ssm_blocks)
+            for ssm_config in ssm_blocks:
+                imports = ssm_config.get("imports", {})
+                if isinstance(imports, dict):
+                    for key, path in imports.items():
+                        if isinstance(path, list):
+                            for p in path:
+                                all_imports.append(
+                                    {
+                                        "stack": config.get("name"),
+                                        "key": f"{key}[]",
+                                        "path": p,
+                                    }
+                                )
+                        elif isinstance(path, str):
+                            all_imports.append(
+                                {"stack": config.get("name"), "key": key, "path": path}
+                            )
 
         result["cross_validation"]["exports_found"] = all_exports
         result["cross_validation"]["imports_found"] = all_imports

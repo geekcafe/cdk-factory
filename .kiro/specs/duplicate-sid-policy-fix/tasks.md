@@ -10,13 +10,13 @@
   - Create `cdk-factory/tests/unit/test_duplicate_sid_bug_condition.py`
   - Instantiate `PolicyDocuments` with a mock `Construct`, `iam.Role`, `LambdaFunctionConfig`, and `DeploymentConfig` (follow pattern from `test_policy_documents_flexible_resolution.py`)
   - Set `AWS_REGION=us-east-1` and `AWS_ACCOUNT=123456789012` env vars for resource resolver
-  - **DynamoDB collision**: Call `_get_structured_permission({"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-app-database"})` and `_get_structured_permission({"dynamodb": "read", "table": "v3-aplos-nca-saas-alpha-audit-logger-database"})` — assert the two returned SIDs are DIFFERENT (from Bug Condition `isBugCondition` in design)
-  - **S3 collision**: Call with `{"s3": "read", "bucket": "v3-aplos-nca-saas-alpha-user-files"}` and `{"s3": "read", "bucket": "v3-aplos-nca-saas-alpha-analysis-upload-files"}` — assert SIDs are DIFFERENT
-  - **SSM collision**: Call with `{"parameter_store": "read", "path": "/v3-aplos-nca-saas-alpha/dev/cognito/pool-id"}` and `{"parameter_store": "read", "path": "/v3-aplos-nca-saas-alpha/dev/cognito/client-id"}` — assert SIDs are DIFFERENT
+  - **DynamoDB collision**: Call `_get_structured_permission({"dynamodb": "read", "table": "v3-acme-saas-alpha-app-database"})` and `_get_structured_permission({"dynamodb": "read", "table": "v3-acme-saas-alpha-audit-logger-database"})` — assert the two returned SIDs are DIFFERENT (from Bug Condition `isBugCondition` in design)
+  - **S3 collision**: Call with `{"s3": "read", "bucket": "v3-acme-saas-alpha-user-files"}` and `{"s3": "read", "bucket": "v3-acme-saas-alpha-analysis-upload-files"}` — assert SIDs are DIFFERENT
+  - **SSM collision**: Call with `{"parameter_store": "read", "path": "/v3-acme-saas-alpha/dev/cognito/pool-id"}` and `{"parameter_store": "read", "path": "/v3-acme-saas-alpha/dev/cognito/client-id"}` — assert SIDs are DIFFERENT
   - Use `hypothesis` with `@given` to generate pairs of distinct resource names that share a common prefix longer than 20 chars (after stripping), and assert `_get_structured_permission()` produces distinct SIDs for each pair
   - Run test on UNFIXED code — expect FAILURE (this confirms the bug exists)
   - **EXPECTED OUTCOME**: Test FAILS — proves duplicate SIDs are generated for colliding resource names
-  - Document counterexamples found (e.g., both tables produce SID `DynamoDbReadv3aplosncasaasalphaa`)
+  - Document counterexamples found (e.g., both tables produce SID `DynamoDbReadv3acmesaasalphaa`)
   - Mark task complete when test is written, run, and failure is documented
   - _Requirements: 1.1, 1.2, 1.3_
 

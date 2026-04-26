@@ -183,7 +183,7 @@
                     "enabled": true,
                     "ssm": {
                       "imports": {
-                        "namespace": "factory-lambda/{{ENVIRONMENT}}"
+                        "lambda_namespace": "factory-lambda/{{ENVIRONMENT}}"
                       }
                     },
                     "api_gateway": {

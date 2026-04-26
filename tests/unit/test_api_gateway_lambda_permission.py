@@ -67,7 +67,7 @@ class TestApiGatewayLambdaPermission:
             "enabled": True,
             "ssm": {
                 "imports": {
-                    "namespace": "test-workload/test",
+                    "lambda_namespace": "test-workload/test",
                 },
             },
             "api_gateway": {
@@ -80,7 +80,7 @@ class TestApiGatewayLambdaPermission:
                     "organization": "test-workload",
                     "environment": "/test-workload/test/environment",
                     "imports": {
-                        "namespace": "test-workload/test",
+                        "lambda_namespace": "test-workload/test",
                         "organization": "/test-workload/test/organization",
                         "environment": "/test-workload/test/environment",
                     },
@@ -243,7 +243,7 @@ class TestApiGatewayLambdaPermission:
             "enabled": True,
             "ssm": {
                 "imports": {
-                    "namespace": "test-workload/test",
+                    "lambda_namespace": "test-workload/test",
                 },
             },
             "api_gateway": {
@@ -254,7 +254,7 @@ class TestApiGatewayLambdaPermission:
                 "ssm": {
                     "enabled": True,
                     "imports": {
-                        "namespace": "test-workload/test",
+                        "lambda_namespace": "test-workload/test",
                         "organization": "/test-workload/test/organization",
                         "environment": "/test-workload/test/environment",
                     },

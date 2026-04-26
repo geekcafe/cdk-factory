@@ -422,7 +422,7 @@ class TestCognitoAppClients:
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/my-app/prod/cognito/app_client_backend_service_secret_arn",
+                "Name": "/my-app/prod/cognito/app-client-backend-service-secret-arn",
                 "Type": "String",
                 "Description": "Secrets Manager ARN for backend-service credentials",
             },
@@ -720,11 +720,11 @@ class TestCognitoAppClients:
 
         template = Template.from_stack(stack)
 
-        # Verify SSM parameter name has sanitized client name (hyphens converted to underscores)
+        # Verify SSM parameter name has sanitized client name (spaces converted to hyphens)
         template.has_resource_properties(
             "AWS::SSM::Parameter",
             {
-                "Name": "/test-org/dev/cognito/app_client_my_backend_service_secret_arn",
+                "Name": "/test-org/dev/cognito/app-client-my-backend-service-secret-arn",
             },
         )
 
@@ -799,5 +799,5 @@ class TestCognitoAppClients:
         )
         template.has_resource_properties(
             "AWS::SSM::Parameter",
-            {"Name": "/prod-app/prod/cognito/app_client_backend_api_secret_arn"},
+            {"Name": "/prod-app/prod/cognito/app-client-backend-api-secret-arn"},
         )

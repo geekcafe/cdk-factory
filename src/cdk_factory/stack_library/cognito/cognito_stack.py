@@ -66,6 +66,9 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         if self.cognito_config.app_clients:
             self._create_app_clients()
 
+        # Export SSM parameters after both pool and clients are created
+        self._export_ssm_parameters(self.user_pool)
+
     def _setup_custom_attributes(self):
         attributes = {}
         if self.cognito_config.custom_attributes:
@@ -168,8 +171,6 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         )
         logger.info(f"Created Cognito User Pool: {self.user_pool.user_pool_id}")
 
-        self._export_ssm_parameters(self.user_pool)
-
     def _create_app_clients(self):
         """Create app clients for the user pool based on configuration"""
         if not self.user_pool:
@@ -230,10 +231,31 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             self.app_clients[client_name] = app_client
             logger.info(f"Created Cognito App Client: {client_name}")
 
+            # Validate ssm_namespace early — raise on empty/whitespace strings
+            client_ssm_ns = client_config.get("ssm_namespace")
+            if client_ssm_ns is not None and not client_ssm_ns.strip():
+                raise ValueError(
+                    f"App client '{client_name}': "
+                    f"'ssm_namespace' must be a non-empty string or omitted entirely."
+                )
+
+            # Warn if client has ssm_namespace but auto_export is disabled
+            # and no explicit exports are configured
+            if (
+                client_config.get("ssm_namespace")
+                and not self.stack_config.ssm_auto_export
+                and not self.stack_config.ssm_config.get("exports", {})
+            ):
+                logger.warning(
+                    f"App client '{client_name}' has 'ssm_namespace' configured but "
+                    f"ssm.auto_export is disabled and no explicit exports are configured. "
+                    f"The client-level namespace will be ignored."
+                )
+
             # Store client secret in Secrets Manager if generated
             if client_config.get("generate_secret", False):
                 self._store_client_secret_in_secrets_manager(
-                    client_name, app_client, self.user_pool
+                    client_name, app_client, self.user_pool, client_config
                 )
 
     def _build_auth_flows(self, auth_flows_config: dict) -> cognito.AuthFlow:
@@ -475,6 +497,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         client_name: str,
         app_client: cognito.UserPoolClient,
         user_pool: cognito.UserPool,
+        client_config: dict,
     ):
         """
         Store Cognito app client secret in AWS Secrets Manager.
@@ -547,17 +570,33 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # Export secret ARN to SSM for cross-stack reference
         ssm_config = self.stack_config.ssm_config
         if ssm_config.get("auto_export"):
-            namespace = self.stack_config.ssm_namespace
+            namespace = self._resolve_client_namespace(client_config)
             if namespace:
-                safe_client_name = client_name.replace("-", "_").replace(" ", "_")
+                safe_client_name = client_name.replace(" ", "-")
 
                 ssm.StringParameter(
                     self,
                     f"{client_name}-secret-arn-param",
-                    parameter_name=f"/{namespace}/app_client_{safe_client_name}_secret_arn",
+                    parameter_name=f"/{namespace}/app-client-{safe_client_name}-secret-arn",
                     string_value=secret_with_metadata.secret_arn,
                     description=f"Secrets Manager ARN for {client_name} credentials",
                 )
+
+    def _resolve_client_namespace(self, client_config: dict) -> str:
+        """
+        Resolve the effective SSM namespace for an app client.
+        Returns client-level namespace if specified, otherwise pool-level namespace.
+        Raises ValueError if client namespace is an empty string.
+        """
+        client_ns = client_config.get("ssm_namespace")
+        if client_ns is not None:
+            if not client_ns.strip():
+                raise ValueError(
+                    f"App client '{client_config.get('name')}': "
+                    f"'ssm_namespace' must be a non-empty string or omitted entirely."
+                )
+            return client_ns
+        return self.stack_config.ssm_namespace
 
     def _export_ssm_parameters(self, user_pool: cognito.UserPool):
         """Export Cognito resources to SSM using top-level ssm config"""
@@ -578,19 +617,12 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             resource_name="user-pool",
         )
 
-        # Prepare resource values for export
-        resource_values = {
+        # Prepare pool-level resource values for export
+        pool_resource_values = {
             "user_pool_id": user_pool.user_pool_id,
             "user_pool_name": self.cognito_config.user_pool_name,
             "user_pool_arn": user_pool.user_pool_arn,
         }
-
-        # Add app client IDs to export
-        for client_name, app_client in self.app_clients.items():
-            safe_client_name = client_name.replace("-", "_").replace(" ", "_")
-            resource_values[f"app_client_{safe_client_name}_id"] = (
-                app_client.user_pool_client_id
-            )
 
         if auto_export:
             # Path pattern: /{namespace}/{attribute}
@@ -604,12 +636,14 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                     f"Add 'ssm.namespace' to your stack config."
                 )
 
-            prefix = f"/{namespace}"
+            # Export pool-level parameters under the pool namespace
+            pool_prefix = f"/{namespace}"
+            exported_count = 0
 
-            for export_key, export_value in resource_values.items():
+            for export_key, export_value in pool_resource_values.items():
                 if export_value is None:
                     continue
-                parameter_path = f"{prefix}/{export_key}"
+                parameter_path = f"{pool_prefix}/{export_key}"
                 self.export_ssm_parameter(
                     scope=self,
                     id=f"{self.id}-{export_key}",
@@ -617,12 +651,39 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                     parameter_name=parameter_path,
                     description=f"Cognito {export_key}",
                 )
+                exported_count += 1
 
-            logger.info(
-                f"Auto-exported {len(resource_values)} Cognito parameters to SSM"
-            )
+            # Export app client parameters under per-client namespaces
+            for client_config in self.cognito_config.app_clients:
+                client_name = client_config.get("name")
+                if not client_name or client_name not in self.app_clients:
+                    continue
+
+                app_client = self.app_clients[client_name]
+                client_namespace = self._resolve_client_namespace(client_config)
+                client_prefix = f"/{client_namespace}"
+                safe_client_name = client_name.replace(" ", "-")
+                export_key = f"app-client-{safe_client_name}-id"
+
+                parameter_path = f"{client_prefix}/{export_key}"
+                self.export_ssm_parameter(
+                    scope=self,
+                    id=f"{self.id}-{export_key}",
+                    value=app_client.user_pool_client_id,
+                    parameter_name=parameter_path,
+                    description=f"Cognito {export_key}",
+                )
+                exported_count += 1
+
+            logger.info(f"Auto-exported {exported_count} Cognito parameters to SSM")
         else:
-            # Use explicit exports mapping
+            # Use explicit exports mapping — combine pool + client values
+            resource_values = dict(pool_resource_values)
+            for client_name, app_client in self.app_clients.items():
+                safe_client_name = client_name.replace(" ", "-")
+                resource_values[f"app-client-{safe_client_name}-id"] = (
+                    app_client.user_pool_client_id
+                )
             exported_params = self.export_ssm_parameters(resource_values)
             if exported_params:
                 logger.info(
