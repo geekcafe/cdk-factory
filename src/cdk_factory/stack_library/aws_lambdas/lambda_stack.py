@@ -549,7 +549,7 @@ class LambdaStack(IStack):
                 raw_ecr_name = function_config.raw_ecr_name
                 if raw_ecr_name:
                     # Derive ECR prefix from namespace: strip /lambda/... suffix
-                    # e.g. "aplos-nca-saas/beta/lambda/tenants" → "aplos-nca-saas/beta"
+                    # e.g. "acme-saas/beta/lambda/tenants" → "acme-saas/beta"
                     ecr_prefix = self._get_ecr_prefix(namespace)
 
                     # Sanitize repo name for SSM path (replace / with -)
@@ -589,8 +589,8 @@ class LambdaStack(IStack):
         Derive the ECR registration prefix from the lambda stack namespace.
 
         Strips the /lambda/... suffix to get the workload/deployment prefix.
-        e.g. "aplos-nca-saas/beta/lambda/tenants" → "aplos-nca-saas/beta"
-        e.g. "aplos-nca-saas/beta/lambda" → "aplos-nca-saas/beta"
+        e.g. "acme-saas/beta/lambda/tenants" → "acme-saas/beta"
+        e.g. "acme-saas/beta/lambda" → "acme-saas/beta"
         e.g. "my-app/prod" → "my-app/prod"
 
         Args:

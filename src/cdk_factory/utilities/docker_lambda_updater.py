@@ -32,8 +32,6 @@ Usage:
     python -m cdk_factory.utilities.docker_lambda_updater \
         --config /path/to/docker-images.json --dry-run
 
-Copyright 2024-2025 Acme Analytics
-All Rights Reserved. www.acmeanalytics.com LICENSED MATERIALS
 """
 
 import argparse
@@ -365,8 +363,8 @@ class DockerLambdaUpdater:
 
         Args:
             ssm_client: boto3 SSM client
-            ssm_prefix: Workload/deployment prefix (e.g. "aplos-nca-saas/dev")
-            repo_name: ECR repository name (e.g. "aplos-analytics/v3/aplos-saas-core-services")
+            ssm_prefix: Workload/deployment prefix (e.g. "acme-saas/dev")
+            repo_name: ECR repository name (e.g. "acme-analytics/v3/acme-saas-core-services")
             account: AWS account ID (for error messages)
             region: AWS region (for error messages)
 

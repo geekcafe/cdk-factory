@@ -25,14 +25,14 @@ Example namespaces:
 
 | Stack Type | Namespace Example | Resulting SSM Path |
 |-----------|-------------------|-------------------|
-| Cognito | `aplos-nca-saas/beta/cognito` | `/aplos-nca-saas/beta/cognito/user_pool_id` |
-| DynamoDB | `aplos-nca-saas/beta/dynamodb/app` | `/aplos-nca-saas/beta/dynamodb/app/table_name` |
-| S3 Bucket | `aplos-nca-saas/beta/s3/uploads` | `/aplos-nca-saas/beta/s3/uploads/bucket_name` |
-| Route53 | `aplos-nca-saas/beta/route53` | `/aplos-nca-saas/beta/route53/hosted-zone-id` |
-| Lambda | `aplos-nca-saas/beta/lambda/subscriptions` | `/aplos-nca-saas/beta/lambda/subscriptions/{lambda-name}/arn` |
-| SQS | `aplos-nca-saas/beta/sqs` | `/aplos-nca-saas/beta/sqs/{queue-name}/arn` |
-| API Gateway | `aplos-nca-saas/beta/api-gateway` | `/aplos-nca-saas/beta/api-gateway/api_id` |
-| VPC | `aplos-nca-saas/beta/vpc` | `/aplos-nca-saas/beta/vpc/vpc_id` |
+| Cognito | `acme-saas/beta/cognito` | `/acme-saas/beta/cognito/user_pool_id` |
+| DynamoDB | `acme-saas/beta/dynamodb/app` | `/acme-saas/beta/dynamodb/app/table_name` |
+| S3 Bucket | `acme-saas/beta/s3/uploads` | `/acme-saas/beta/s3/uploads/bucket_name` |
+| Route53 | `acme-saas/beta/route53` | `/acme-saas/beta/route53/hosted-zone-id` |
+| Lambda | `acme-saas/beta/lambda/subscriptions` | `/acme-saas/beta/lambda/subscriptions/{lambda-name}/arn` |
+| SQS | `acme-saas/beta/sqs` | `/acme-saas/beta/sqs/{queue-name}/arn` |
+| API Gateway | `acme-saas/beta/api-gateway` | `/acme-saas/beta/api-gateway/api_id` |
+| VPC | `acme-saas/beta/vpc` | `/acme-saas/beta/vpc/vpc_id` |
 
 ## Stack Config
 
@@ -42,7 +42,7 @@ Enable SSM auto-export in any stack's JSON config:
 {
   "ssm": {
     "auto_export": true,
-    "namespace": "aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/cognito"
+    "namespace": "acme-saas/{{DEPLOYMENT_NAMESPACE}}/cognito"
   }
 }
 ```
@@ -91,10 +91,30 @@ Lambda stacks export per-function parameters under `/{namespace}/{lambda-name}/`
 | `{lambda-name}/arn` | Lambda function ARN |
 | `{lambda-name}/function-name` | Lambda function name |
 | `{lambda-name}/api-route` | API route metadata (JSON, if API configured) |
-| `{lambda-name}/ecr-repo` | ECR repo name (Docker lambdas only) |
-| `docker-lambdas/manifest` | JSON manifest mapping ECR repos to Docker Lambda paths |
 
-Each lambda stack should have its own unique namespace to avoid collisions (e.g., `lambda/subscriptions`, `lambda/tenants`, `lambda/workflow-sqs-handler`).
+Each lambda's config `name` must be unique across all lambda stacks sharing the same namespace.
+
+**Important: API Gateway Constraint**
+
+All lambda stacks that serve routes for the same API Gateway must share the same `ssm.namespace`. The API gateway's `ssm.imports.namespace` must match the lambda stacks' `ssm.namespace` exactly. This is because the API gateway constructs SSM lookup paths as `/{imports.namespace}/{lambda_name}/arn` at CDK synth time — it cannot search across multiple namespaces.
+
+Example — all lambda stacks use the same namespace:
+```json
+// lambda-tenants.json, lambda-users.json, lambda-subscriptions.json, etc.
+"ssm": {
+  "auto_export": true,
+  "namespace": "acme-saas/{{DEPLOYMENT_NAMESPACE}}/lambda"
+}
+
+// api-gateway-primary.json
+"ssm": {
+  "imports": {
+    "namespace": "acme-saas/{{DEPLOYMENT_NAMESPACE}}/lambda"
+  }
+}
+```
+
+Do NOT use per-stack namespace suffixes (e.g., `lambda/tenants`, `lambda/users`) for lambda stacks that serve API Gateway routes — the API gateway cannot resolve paths across different namespaces.
 
 ### SQS (`sqs_stack`)
 
@@ -163,15 +183,15 @@ When a Lambda stack deploys Docker Lambdas with `ssm.auto_export: true`, each Do
 /{workload}/{deployment}/ecr/{safe-repo-name}/{lambda-name}/function-name
 ```
 
-Where `safe-repo-name` is the ECR repo name with `/` replaced by `-` (e.g., `aplos-analytics-v3-aplos-saas-core-services`).
+Where `safe-repo-name` is the ECR repo name with `/` replaced by `-` (e.g., `acme-analytics-v3-acme-saas-core-services`).
 
 The `{workload}/{deployment}` prefix is derived from the lambda stack's `ssm.namespace` by stripping the `/lambda/...` suffix.
 
 Example SSM tree:
 
 ```
-/aplos-nca-saas/beta/ecr/
-├── aplos-analytics-v3-aplos-saas-core-services/
+/acme-saas/beta/ecr/
+├── acme-analytics-v3-acme-saas-core-services/
 │   ├── subscription-create/
 │   │   ├── arn
 │   │   └── function-name
@@ -181,7 +201,7 @@ Example SSM tree:
 │   └── user-create/
 │       ├── arn
 │       └── function-name
-├── aplos-analytics-v3-aplos-nca-orchestration-services/
+├── acme-analytics-v3-acme-orchestration-services/
 │   ├── workflow-step-processor/
 │   │   ├── arn
 │   │   └── function-name
@@ -208,12 +228,12 @@ The config only needs the workload/deployment prefix — the CLI constructs the 
 {
   "images": [
     {
-      "repo_name": "aplos-analytics/v3/aplos-saas-core-services",
+      "repo_name": "acme-analytics/v3/acme-saas-core-services",
       "lambda_deployments": [
         {
           "account": "959096737760",
           "region": "us-east-1",
-          "ssm_prefix": "aplos-nca-saas/dev",
+          "ssm_prefix": "acme-saas/dev",
           "tag": "dev"
         }
       ]
@@ -234,7 +254,7 @@ The API gateway discovers Lambda ARNs via `ssm.imports.namespace`:
 {
   "ssm": {
     "imports": {
-      "namespace": "aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/lambda/subscriptions"
+      "namespace": "acme-saas/{{DEPLOYMENT_NAMESPACE}}/lambda/subscriptions"
     }
   }
 }
@@ -251,7 +271,7 @@ Any config value starting with `/` is treated as an SSM parameter path and resol
   "environment_variables": [
     {
       "name": "COGNITO_USER_POOL_ID_SSM",
-      "value": "/aplos-nca-saas/{{DEPLOYMENT_NAMESPACE}}/cognito/user_pool_id"
+      "value": "/acme-saas/{{DEPLOYMENT_NAMESPACE}}/cognito/user_pool_id"
     }
   ]
 }
