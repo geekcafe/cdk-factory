@@ -1234,65 +1234,70 @@ class CdkDeploymentCommand:
     def _discover_retained_resources(
         self, session: boto3.Session, env_config: EnvironmentConfig
     ) -> List[RetainedResource]:
-        """Check for resources that survived stack deletion."""
+        """Check for resources that survived stack deletion.
+
+        Only matches exact resource names from the deployment config parameters.
+        Does NOT do broad prefix scanning to avoid catching resources from
+        other deployments that share a similar naming pattern.
+        """
         params = env_config.extra.get("parameters", {})
-        workload = params.get("WORKLOAD_NAME", "")
-        tenant = params.get("TENANT_NAME", "")
-        prefix = f"{workload}-{tenant}"
         retained: List[RetainedResource] = []
 
-        # 1. S3 Buckets — known names from config + prefix scan
-        known_buckets = [
+        # 1. S3 Buckets — only check known names from deployment config
+        known_buckets = set(
             v
             for k, v in params.items()
-            if k.startswith("S3_") and k.endswith("_BUCKET_NAME")
-        ]
-        try:
-            s3 = session.client("s3")
-            resp = s3.list_buckets()
-            for bucket in resp.get("Buckets", []):
-                name = bucket["Name"]
-                if name in known_buckets or name.startswith(prefix):
-                    retained.append(
-                        RetainedResource(resource_type="S3 Bucket", name=name)
-                    )
-        except Exception as e:
-            self._print(f"  Warning: could not check S3 buckets: {e}", "yellow")
+            if k.startswith("S3_") and k.endswith("_BUCKET_NAME") and v
+        )
+        if known_buckets:
+            try:
+                s3 = session.client("s3")
+                resp = s3.list_buckets()
+                for bucket in resp.get("Buckets", []):
+                    if bucket["Name"] in known_buckets:
+                        retained.append(
+                            RetainedResource(
+                                resource_type="S3 Bucket", name=bucket["Name"]
+                            )
+                        )
+            except Exception as e:
+                self._print(f"  Warning: could not check S3 buckets: {e}", "yellow")
 
-        # 2. DynamoDB Tables — known names from config + prefix scan
-        known_tables = [
+        # 2. DynamoDB Tables — only check known names from deployment config
+        known_tables = set(
             v
             for k, v in params.items()
-            if k.startswith("DYNAMODB_") and k.endswith("_TABLE_NAME")
-        ]
-        try:
-            dynamodb = session.client("dynamodb")
-            paginator = dynamodb.get_paginator("list_tables")
-            for page in paginator.paginate():
-                for table_name in page.get("TableNames", []):
-                    if table_name in known_tables or table_name.startswith(prefix):
-                        retained.append(
-                            RetainedResource(
-                                resource_type="DynamoDB Table", name=table_name
+            if k.startswith("DYNAMODB_") and k.endswith("_TABLE_NAME") and v
+        )
+        if known_tables:
+            try:
+                dynamodb = session.client("dynamodb")
+                paginator = dynamodb.get_paginator("list_tables")
+                for page in paginator.paginate():
+                    for table_name in page.get("TableNames", []):
+                        if table_name in known_tables:
+                            retained.append(
+                                RetainedResource(
+                                    resource_type="DynamoDB Table", name=table_name
+                                )
                             )
-                        )
-        except Exception as e:
-            self._print(f"  Warning: could not check DynamoDB tables: {e}", "yellow")
+            except Exception as e:
+                self._print(
+                    f"  Warning: could not check DynamoDB tables: {e}", "yellow"
+                )
 
-        # 3. Cognito User Pools — prefix scan on pool name
-        try:
-            cognito = session.client("cognito-idp")
-            paginator = cognito.get_paginator("list_user_pools")
-            for page in paginator.paginate(MaxResults=60):
-                for pool in page.get("UserPools", []):
-                    if pool["Name"].startswith(prefix):
-                        retained.append(
-                            RetainedResource(
-                                resource_type="Cognito User Pool", name=pool["Name"]
-                            )
-                        )
-        except Exception as e:
-            self._print(f"  Warning: could not check Cognito user pools: {e}", "yellow")
+        # 3. Cognito User Pools — check by known user pool ID from config
+        cognito_pool_id = params.get("COGNITO_PRIMARY_USER_POOL_ID", "")
+        if cognito_pool_id:
+            try:
+                cognito = session.client("cognito-idp")
+                resp = cognito.describe_user_pool(UserPoolId=cognito_pool_id)
+                pool_name = resp["UserPool"].get("Name", cognito_pool_id)
+                retained.append(
+                    RetainedResource(resource_type="Cognito User Pool", name=pool_name)
+                )
+            except Exception:
+                pass  # Pool doesn't exist or no access — skip silently
 
         # 4. Route53 Hosted Zones — check for tenant subdomain zone
         hosted_zone_name = params.get("HOSTED_ZONE_NAME", "")
@@ -1313,21 +1318,9 @@ class CdkDeploymentCommand:
             except Exception as e:
                 self._print(f"  Warning: could not check Route53: {e}", "yellow")
 
-        # 5. ECR Repositories — prefix scan
-        try:
-            ecr = session.client("ecr")
-            paginator = ecr.get_paginator("describe_repositories")
-            for page in paginator.paginate():
-                for repo in page.get("repositories", []):
-                    if repo["repositoryName"].startswith(prefix):
-                        retained.append(
-                            RetainedResource(
-                                resource_type="ECR Repository",
-                                name=repo["repositoryName"],
-                            )
-                        )
-        except Exception as e:
-            self._print(f"  Warning: could not check ECR repositories: {e}", "yellow")
+        # 5. ECR Repositories — skip prefix scan (too broad)
+        # ECR repos are not typically named in deployment configs,
+        # so we skip them to avoid false positives.
 
         return retained
 
