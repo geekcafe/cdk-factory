@@ -486,7 +486,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # Don't create it if all routes are public (authorization_type: NONE)
         routes = self.api_config.routes or []
         needs_authorizer = any(
-            route.get("authorization_type") != "NONE" for route in routes
+            route.get("authorization_type", "COGNITO") != "NONE" for route in routes
         )
 
         # If we're not creating an authorizer but Cognito is configured,
@@ -806,10 +806,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             and "authorization_type" not in route
         ):
             authorization_type = "NONE"
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.info(
+            logger.warning(
                 f"No Cognito authorizer available for route {route_path} ({route.get('method', 'unknown')}), "
                 f"defaulting to public access (NONE authorization)"
             )
@@ -875,10 +872,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             and "authorization_type" not in route
         ):
             authorization_type = "NONE"
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.info(
+            logger.warning(
                 f"No Cognito authorizer available for route {route_path} ({route.get('method', 'unknown')}), "
                 f"defaulting to public access (NONE authorization)"
             )

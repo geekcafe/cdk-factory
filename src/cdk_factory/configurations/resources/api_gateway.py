@@ -120,8 +120,12 @@ class ApiGatewayConfig(EnhancedBaseConfig):
 
     @property
     def cognito_authorizer(self) -> dict | None:
-        """Cognito authorizer config: expects dict with user_pool_arn, authorizer_name, identity_source"""
-        return self.__config.get("cognito_authorizer")
+        """Cognito authorizer config.
+
+        Supports both "cognito_authorizer" (preferred) and "cognito" (legacy/shorthand) keys.
+        If both are present, "cognito_authorizer" takes precedence.
+        """
+        return self.__config.get("cognito_authorizer") or self.__config.get("cognito")
 
     # Add more properties as needed for all RestApi/HttpApi options
     @property
