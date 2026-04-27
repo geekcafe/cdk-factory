@@ -6,7 +6,7 @@ This feature extends the NCA SaaS IaC deployment CLI to support destroying Cloud
 
 The implementation spans two files:
 - `cdk-factory/src/cdk_factory/commands/deployment_command.py` — base class gets new reusable methods
-- `Aplos-NCA-SaaS-IaC/cdk/deploy.py` — subclass overrides `select_operation` and `run` to wire in the target destroy flow
+- `Acme-SaaS-IaC/cdk/deploy.py` — subclass overrides `select_operation` and `run` to wire in the target destroy flow
 
 ## Architecture
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implement the cross-account target resource destruction feature for the NCA SaaS IaC deployment CLI. All new functionality is added to `Aplos-NCA-SaaS-IaC/cdk/deploy.py` (subclass methods) and `cdk-factory/src/cdk_factory/utilities/route53_delegation.py` (new `delete_ns_records` method). No base class changes are needed. Tasks follow the design document's method decomposition and build incrementally from data models through orchestration.
+Implement the cross-account target resource destruction feature for the NCA SaaS IaC deployment CLI. All new functionality is added to `Acme-SaaS-IaC/cdk/deploy.py` (subclass methods) and `cdk-factory/src/cdk_factory/utilities/route53_delegation.py` (new `delete_ns_records` method). No base class changes are needed. Tasks follow the design document's method decomposition and build incrementally from data models through orchestration.
 
 ## Tasks
 
