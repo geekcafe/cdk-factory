@@ -685,7 +685,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                 parameter_path = f"{client_prefix}/{export_key}"
                 self.export_ssm_parameter(
                     scope=self,
-                    id=f"{self.id}-{export_key}",
+                    id=f"{self.id}-{client_name}-{export_key}",
                     value=app_client.user_pool_client_id,
                     parameter_name=parameter_path,
                     description=f"Cognito {export_key}",
