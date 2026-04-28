@@ -779,6 +779,32 @@ class DockerLambdaUpdater:
         Returns:
             Deployment result dict with counts and details.
         """
+        # Skip disabled deployments
+        enabled = deployment.get("enabled", True)
+        if not enabled:
+            label = (
+                deployment.get("ssm_prefix")
+                or deployment.get("ssm_namespace")
+                or deployment.get("ssm_parameter")
+                or "unknown"
+            )
+            logger.warning(
+                "Skipping disabled deployment [%d] for image '%s': %s",
+                deployment_index,
+                repo_name,
+                label,
+            )
+            return {
+                "account": deployment.get("account", "unknown"),
+                "region": deployment.get("region", "unknown"),
+                "discovered": 0,
+                "updated": 0,
+                "failed": 0,
+                "skipped": 1,
+                "details": [],
+                "status": "disabled",
+            }
+
         # Validate the deployment entry
         validation_error = self._validate_deployment_entry(
             deployment, repo_name, deployment_index
