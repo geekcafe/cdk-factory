@@ -4,6 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import json
 import os
 import re
 from pathlib import Path
@@ -228,6 +229,13 @@ class CdkConfig:
         # Check for unresolved placeholders after resolution
         self._check_unresolved_placeholders(config, self._resolved_config_file_path)
 
+        # Inject locked Docker image versions into deployment lambdas arrays
+        # so that CDK synth produces pinned semver tags in CloudFormation.
+        # This must happen after placeholder resolution (so locked_versions
+        # paths are resolved) and the result is saved to .dynamic/config.json
+        # so it works identically in local synth and CodePipeline.
+        self._inject_locked_versions(config)
+
         # Resolve lambda_config_paths: walk the config and find SQS stacks that
         # reference lambda stacks for consumer queue discovery. Extract the consumer
         # queues from the already-resolved lambda stack configs and populate the
@@ -355,6 +363,97 @@ class CdkConfig:
                     f"Unresolved placeholder '{placeholder}' found at '{_path}' "
                     f"in config file '{file_path}'. "
                     f"Add this parameter to your deployment JSON or config.json."
+                )
+
+    def _inject_locked_versions(self, config: Dict[str, Any]) -> None:
+        """Inject locked Docker image versions into deployment lambdas arrays.
+
+        For each deployment in the config that has a ``locked_versions`` path,
+        reads the JSON file and populates the deployment's ``lambdas`` array
+        so that ``lambda_stack.__setup_lambda_docker_image`` picks up pinned
+        semver tags during CDK synth.
+
+        The path is resolved relative to the config file's directory first,
+        then tried as-is (for absolute paths or CWD-relative paths).
+
+        This runs during config resolution so the result is baked into
+        ``.dynamic/config.json`` — making it work identically in local
+        synth and CodePipeline.
+        """
+        workload = config.get("workload", config)
+        deployments = workload.get("deployments", [])
+        config_dir = ""
+        if self._resolved_config_file_path:
+            config_dir = str(Path(self._resolved_config_file_path).parent)
+
+        for deployment in deployments:
+            locked_path = deployment.get("locked_versions", "")
+            if not locked_path or not locked_path.strip():
+                continue
+
+            # Resolve the path: try relative to config dir first, then as-is
+            resolved_path = None
+            candidates = []
+            if config_dir:
+                candidates.append(os.path.join(config_dir, locked_path))
+                # Also try stripping leading ./ or cdk/ prefixes
+                stripped = locked_path.lstrip("./")
+                if stripped != locked_path:
+                    candidates.append(os.path.join(config_dir, stripped))
+            candidates.append(locked_path)  # as-is (absolute or CWD-relative)
+
+            for candidate in candidates:
+                if os.path.isfile(candidate):
+                    resolved_path = candidate
+                    break
+
+            if not resolved_path:
+                logger.warning(
+                    "Locked versions file not found for deployment '%s': "
+                    "tried %s (CWD: %s) — skipping version pinning",
+                    deployment.get("name", "unknown"),
+                    candidates,
+                    os.getcwd(),
+                )
+                continue
+
+            try:
+                with open(resolved_path, "r") as f:
+                    locked_entries = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(
+                    "Failed to load locked versions file %s: %s — skipping",
+                    resolved_path,
+                    e,
+                )
+                continue
+
+            if not isinstance(locked_entries, list):
+                logger.warning(
+                    "Locked versions file %s is not a JSON array — skipping",
+                    resolved_path,
+                )
+                continue
+
+            # Build set of already-configured lambda names
+            existing_lambdas = deployment.get("lambdas", [])
+            existing_names = {e.get("name") for e in existing_lambdas}
+
+            # Inject locked version entries
+            added = 0
+            for entry in locked_entries:
+                name = entry.get("name", "")
+                tag = entry.get("tag", "")
+                if name and tag and name not in existing_names:
+                    existing_lambdas.append({"name": name, "tag": tag})
+                    added += 1
+
+            if added > 0:
+                deployment["lambdas"] = existing_lambdas
+                print(
+                    f"🔒 Injected {added} pinned Docker image version(s) "
+                    f"into deployment '{deployment.get('name', 'unknown')}' "
+                    f"from {resolved_path}"
                 )
 
     def __get_cdk_parameter_value(self, parameter: Dict[str, Any]) -> str | None:

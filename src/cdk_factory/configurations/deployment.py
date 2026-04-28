@@ -4,9 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
-import json
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 # from cdk_factory.configurations.resources._resources import Resources
@@ -56,7 +54,6 @@ class DeploymentConfig:
 
         self.__load_pipeline()
         self.__load_stacks()
-        self.__load_locked_versions()
 
     def __load_stacks(self):
         """
@@ -80,101 +77,6 @@ class DeploymentConfig:
                 if stack_dict is None:
                     raise ValueError(f"Stack {stack} not found in workload")
                 self.__stacks.append(StackConfig(stack_dict, self.__workload))
-
-    def __load_locked_versions(self):
-        """
-        Load locked Docker image versions from a JSON file and populate
-        the deployment's ``lambdas`` array so that CDK synth uses pinned
-        semver tags instead of the default environment tag.
-
-        The locked versions file path is read from the deployment config's
-        ``locked_versions`` field.  If the field is absent or the file does
-        not exist, this is a no-op.
-
-        Existing entries in ``deployment.lambdas`` take precedence — locked
-        versions only fill in lambdas that are not already explicitly listed.
-        """
-        locked_path = self.__deployment.get("locked_versions")
-        if not locked_path or not locked_path.strip():
-            return
-
-        # Try the path as-is first, then try common relative bases
-        if not os.path.isfile(locked_path):
-            # The path might be relative to the repo root, but CWD could be
-            # a subdirectory (e.g., cdk/). Try stripping common prefixes.
-            alt_paths = []
-            if locked_path.startswith("./cdk/"):
-                alt_paths.append(locked_path.replace("./cdk/", "./", 1))
-            if locked_path.startswith("cdk/"):
-                alt_paths.append(locked_path.replace("cdk/", "", 1))
-
-            resolved = None
-            for alt in alt_paths:
-                if os.path.isfile(alt):
-                    resolved = alt
-                    break
-
-            if resolved:
-                _logger.info(
-                    "Resolved locked versions path: %s → %s (CWD: %s)",
-                    locked_path,
-                    resolved,
-                    os.getcwd(),
-                )
-                locked_path = resolved
-            else:
-                _logger.warning(
-                    "Locked versions file not found: %s (CWD: %s) — skipping version pinning",
-                    locked_path,
-                    os.getcwd(),
-                )
-                return
-
-        try:
-            with open(locked_path, "r") as f:
-                locked_entries = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            _logger.warning(
-                "Failed to load locked versions file %s: %s — skipping version pinning",
-                locked_path,
-                e,
-            )
-            return
-
-        if not isinstance(locked_entries, list):
-            _logger.warning(
-                "Locked versions file %s does not contain a JSON array — skipping",
-                locked_path,
-            )
-            return
-
-        # Build a set of lambda names already explicitly configured
-        existing_lambdas: List[dict] = self.__deployment.get("lambdas", [])
-        existing_names = {entry.get("name") for entry in existing_lambdas}
-
-        # Add locked version entries for lambdas not already listed
-        added = 0
-        for entry in locked_entries:
-            name = entry.get("name", "")
-            tag = entry.get("tag", "")
-            if name and tag and name not in existing_names:
-                existing_lambdas.append({"name": name, "tag": tag})
-                added += 1
-
-        if added > 0:
-            self.__deployment["lambdas"] = existing_lambdas
-            print(
-                f"🔒 Loaded {added} pinned Docker image version(s) from {locked_path}"
-            )
-            _logger.info(
-                "Loaded %d pinned Docker image version(s) from %s",
-                added,
-                locked_path,
-            )
-        else:
-            _logger.info(
-                "Locked versions file loaded but no new entries to add (all already configured)"
-            )
 
     def __load_pipeline(self):
         """
