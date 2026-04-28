@@ -798,3 +798,373 @@ class TestRunSeedMode:
         assert exit_code == 0
         result = json.loads(locked_path.read_text())
         assert result == []
+
+
+class TestBugConditionExploration:
+    """
+    Bug condition exploration: scanning from lambdas/resources/ misses
+    stack-level Docker lambdas defined in lambdas/lambda-app-settings.json.
+
+    This test is EXPECTED TO FAIL on unfixed code — failure confirms the bug exists.
+    Validates: Requirements 1.1, 1.3, 2.3
+    """
+
+    def _make_locker(self):
+        return DockerVersionLocker(
+            locked_versions_path="/tmp/test.json", profile="test"
+        )
+
+    @pytest.mark.xfail(
+        reason="Bug condition: scanning from lambdas/resources/ misses stack-level files. "
+        "This test confirms the bug exists — failure is expected.",
+        strict=True,
+    )
+    def test_scanning_from_resources_misses_stack_level_lambdas(self, tmp_path):
+        """
+        Bug condition: CONFIG_DIR points to lambdas/resources/ which never
+        reaches lambda-app-settings.json in the parent lambdas/ directory.
+        Scanning from the subdirectory should find app-configurations — but it won't
+        because the file lives one level up.
+
+        **Validates: Requirements 1.1, 1.3, 2.3**
+        """
+        # Build directory structure mimicking real layout
+        lambdas_dir = tmp_path / "lambdas"
+        lambdas_dir.mkdir()
+
+        # Stack-level file in lambdas/ with app-configurations Docker lambda
+        stack_level_config = {
+            "name": "lambda-app-settings",
+            "resources": [
+                {
+                    "name": "app-configurations",
+                    "docker": {"image": True},
+                    "ecr": {
+                        "name": "acme-systems/v3/acme-saas-core-services",
+                        "use_existing": True,
+                    },
+                }
+            ],
+        }
+        (lambdas_dir / "lambda-app-settings.json").write_text(
+            json.dumps(stack_level_config)
+        )
+
+        # Individual resource file in lambdas/resources/tenants/
+        resources_dir = lambdas_dir / "resources" / "tenants"
+        resources_dir.mkdir(parents=True)
+        individual_config = {
+            "name": "get-tenant",
+            "docker": {"image": True},
+            "ecr": {"name": "acme-systems/v3/acme-saas-core-services"},
+        }
+        (resources_dir / "get-tenant.json").write_text(json.dumps(individual_config))
+
+        locker = self._make_locker()
+
+        # Simulate the bug: scan from lambdas/resources/ (the current CONFIG_DIR)
+        result = locker.scan_config_directory(str(tmp_path / "lambdas" / "resources"))
+        discovered_names = {entry["name"] for entry in result}
+
+        # Assert app-configurations IS in the discovered names
+        # This WILL FAIL on unfixed code — confirming the bug
+        assert "app-configurations" in discovered_names, (
+            f"Bug confirmed: 'app-configurations' not found when scanning from "
+            f"lambdas/resources/. Discovered: {discovered_names}"
+        )
+
+    def test_scanning_from_parent_finds_stack_level_lambdas(self, tmp_path):
+        """
+        After fix: CONFIG_DIR points to lambdas/ (parent directory).
+        Scanning from the parent should discover app-configurations from
+        lambda-app-settings.json AND get-tenant from the subdirectory.
+
+        **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
+        """
+        # Build same directory structure
+        lambdas_dir = tmp_path / "lambdas"
+        lambdas_dir.mkdir()
+
+        stack_level_config = {
+            "name": "lambda-app-settings",
+            "resources": [
+                {
+                    "name": "app-configurations",
+                    "docker": {"image": True},
+                    "ecr": {
+                        "name": "acme-systems/v3/acme-saas-core-services",
+                        "use_existing": True,
+                    },
+                }
+            ],
+        }
+        (lambdas_dir / "lambda-app-settings.json").write_text(
+            json.dumps(stack_level_config)
+        )
+
+        resources_dir = lambdas_dir / "resources" / "tenants"
+        resources_dir.mkdir(parents=True)
+        individual_config = {
+            "name": "get-tenant",
+            "docker": {"image": True},
+            "ecr": {"name": "acme-systems/v3/acme-saas-core-services"},
+        }
+        (resources_dir / "get-tenant.json").write_text(json.dumps(individual_config))
+
+        locker = self._make_locker()
+
+        # Scan from parent lambdas/ directory (the FIXED CONFIG_DIR)
+        result = locker.scan_config_directory(str(tmp_path / "lambdas"))
+        discovered_names = {entry["name"] for entry in result}
+
+        # Both app-configurations AND get-tenant should be found
+        assert "app-configurations" in discovered_names, (
+            f"'app-configurations' not found when scanning from lambdas/. "
+            f"Discovered: {discovered_names}"
+        )
+        assert "get-tenant" in discovered_names, (
+            f"'get-tenant' not found when scanning from lambdas/. "
+            f"Discovered: {discovered_names}"
+        )
+
+        # Verify ECR name is correct for app-configurations
+        app_config_entry = next(e for e in result if e["name"] == "app-configurations")
+        assert app_config_entry["ecr"] == "acme-systems/v3/acme-saas-core-services"
+        assert app_config_entry["tag"] == ""
+
+
+from hypothesis import given, settings, HealthCheck
+from hypothesis import strategies as st
+
+
+def _docker_lambda_config(name: str, ecr_name: str) -> dict:
+    """Helper to create a valid Docker lambda config dict."""
+    return {
+        "name": name,
+        "docker": {"image": True},
+        "ecr": {"name": ecr_name},
+    }
+
+
+def _non_docker_config(name: str) -> dict:
+    """Helper to create a non-Docker lambda config dict."""
+    return {"name": name, "runtime": "python3.12"}
+
+
+class TestPreservationProperty:
+    """
+    Preservation property: scanning from a parent directory always produces
+    a superset of scanning from a subdirectory, because os.walk is recursive.
+
+    These tests should PASS on both unfixed and fixed code.
+    Validates: Requirements 3.1, 3.2, 3.3, 3.4
+    """
+
+    def _make_locker(self):
+        return DockerVersionLocker(
+            locked_versions_path="/tmp/test.json", profile="test"
+        )
+
+    # --- Deterministic tests ---
+
+    def test_parent_scan_is_superset_of_subdirectory_scan(self, tmp_path):
+        """
+        scan_config_directory(parent) results are a superset of
+        scan_config_directory(parent/resources/).
+
+        **Validates: Requirements 3.1, 3.2**
+        """
+        lambdas_dir = tmp_path / "lambdas"
+        lambdas_dir.mkdir()
+
+        # Stack-level file in parent
+        stack_config = {
+            "name": "lambda-app-settings",
+            "resources": [
+                _docker_lambda_config(
+                    "app-configurations",
+                    "acme-systems/v3/acme-saas-core-services",
+                ),
+            ],
+        }
+        (lambdas_dir / "lambda-app-settings.json").write_text(json.dumps(stack_config))
+
+        # Individual resource file in subdirectory
+        resources_dir = lambdas_dir / "resources" / "tenants"
+        resources_dir.mkdir(parents=True)
+        (resources_dir / "get-tenant.json").write_text(
+            json.dumps(
+                _docker_lambda_config(
+                    "get-tenant", "acme-systems/v3/acme-saas-core-services"
+                )
+            )
+        )
+
+        locker = self._make_locker()
+        parent_result = locker.scan_config_directory(str(lambdas_dir))
+        sub_result = locker.scan_config_directory(str(lambdas_dir / "resources"))
+
+        parent_names = {e["name"] for e in parent_result}
+        sub_names = {e["name"] for e in sub_result}
+
+        # Parent scan is a superset of subdirectory scan
+        assert sub_names.issubset(
+            parent_names
+        ), f"Subdirectory names {sub_names} not a subset of parent names {parent_names}"
+
+    def test_individual_resources_in_subdirs_still_discovered_from_parent(
+        self, tmp_path
+    ):
+        """
+        Individual resource files in subdirectories are still discovered
+        when scanning from the parent directory.
+
+        **Validates: Requirements 3.1**
+        """
+        lambdas_dir = tmp_path / "lambdas"
+        resources_dir = lambdas_dir / "resources" / "tenants"
+        resources_dir.mkdir(parents=True)
+
+        (resources_dir / "get-tenant.json").write_text(
+            json.dumps(
+                _docker_lambda_config(
+                    "get-tenant", "acme-systems/v3/acme-saas-core-services"
+                )
+            )
+        )
+
+        locker = self._make_locker()
+        parent_result = locker.scan_config_directory(str(lambdas_dir))
+        parent_names = {e["name"] for e in parent_result}
+
+        assert "get-tenant" in parent_names
+
+    def test_non_docker_files_skipped_at_both_levels(self, tmp_path):
+        """
+        Non-Docker files are skipped at both parent and subdirectory levels.
+
+        **Validates: Requirements 3.2**
+        """
+        lambdas_dir = tmp_path / "lambdas"
+        lambdas_dir.mkdir()
+
+        # Non-Docker file at parent level
+        (lambdas_dir / "non-docker-parent.json").write_text(
+            json.dumps(_non_docker_config("non-docker-parent"))
+        )
+
+        # Non-Docker file at subdirectory level
+        resources_dir = lambdas_dir / "resources"
+        resources_dir.mkdir()
+        (resources_dir / "non-docker-child.json").write_text(
+            json.dumps(_non_docker_config("non-docker-child"))
+        )
+
+        locker = self._make_locker()
+        parent_result = locker.scan_config_directory(str(lambdas_dir))
+        sub_result = locker.scan_config_directory(str(resources_dir))
+
+        assert parent_result == []
+        assert sub_result == []
+
+    def test_stack_level_mixed_docker_non_docker_extracts_only_docker(self, tmp_path):
+        """
+        Stack-level files with mixed Docker/non-Docker resources extract
+        only Docker entries.
+
+        **Validates: Requirements 3.3**
+        """
+        lambdas_dir = tmp_path / "lambdas"
+        lambdas_dir.mkdir()
+
+        stack_config = {
+            "name": "lambda-mixed",
+            "resources": [
+                _docker_lambda_config("docker-svc", "repo/core"),
+                _non_docker_config("plain-svc"),
+                _docker_lambda_config("docker-svc-2", "repo/files"),
+            ],
+        }
+        (lambdas_dir / "lambda-mixed.json").write_text(json.dumps(stack_config))
+
+        locker = self._make_locker()
+        result = locker.scan_config_directory(str(lambdas_dir))
+        names = {e["name"] for e in result}
+
+        assert names == {"docker-svc", "docker-svc-2"}
+        assert "plain-svc" not in names
+
+    # --- Property-based test using Hypothesis ---
+
+    @given(
+        num_individual=st.integers(min_value=0, max_value=5),
+        num_stack_docker=st.integers(min_value=0, max_value=3),
+        num_stack_non_docker=st.integers(min_value=0, max_value=3),
+        num_non_docker_files=st.integers(min_value=0, max_value=3),
+    )
+    @settings(
+        max_examples=50,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_parent_scan_superset_property(
+        self,
+        tmp_path,
+        num_individual,
+        num_stack_docker,
+        num_stack_non_docker,
+        num_non_docker_files,
+    ):
+        """
+        Property: For any generated directory tree,
+        set(names from scan(parent)) ⊇ set(names from scan(parent/resources/))
+
+        **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
+        """
+        import shutil
+
+        lambdas_dir = tmp_path / "lambdas"
+        # Clean up from previous hypothesis examples sharing the same tmp_path
+        if lambdas_dir.exists():
+            shutil.rmtree(lambdas_dir)
+        resources_dir = lambdas_dir / "resources" / "svc"
+        resources_dir.mkdir(parents=True)
+
+        # Generate individual Docker lambda files in resources/
+        for i in range(num_individual):
+            config = _docker_lambda_config(f"individual-{i}", f"repo/svc-{i}")
+            (resources_dir / f"individual-{i}.json").write_text(json.dumps(config))
+
+        # Generate stack-level file in parent with mixed Docker/non-Docker
+        if num_stack_docker > 0 or num_stack_non_docker > 0:
+            resources_array = []
+            for i in range(num_stack_docker):
+                resources_array.append(
+                    _docker_lambda_config(f"stack-docker-{i}", f"repo/stack-{i}")
+                )
+            for i in range(num_stack_non_docker):
+                resources_array.append(_non_docker_config(f"stack-plain-{i}"))
+
+            stack_config = {"name": "stack-file", "resources": resources_array}
+            (lambdas_dir / "stack-file.json").write_text(json.dumps(stack_config))
+
+        # Generate non-Docker files scattered at both levels
+        for i in range(num_non_docker_files):
+            (lambdas_dir / f"non-docker-parent-{i}.json").write_text(
+                json.dumps(_non_docker_config(f"nd-parent-{i}"))
+            )
+            (resources_dir / f"non-docker-child-{i}.json").write_text(
+                json.dumps(_non_docker_config(f"nd-child-{i}"))
+            )
+
+        locker = self._make_locker()
+        parent_result = locker.scan_config_directory(str(lambdas_dir))
+        sub_result = locker.scan_config_directory(str(lambdas_dir / "resources"))
+
+        parent_names = {e["name"] for e in parent_result}
+        sub_names = {e["name"] for e in sub_result}
+
+        # Core property: parent scan is always a superset of subdirectory scan
+        assert sub_names.issubset(parent_names), (
+            f"VIOLATION: subdirectory names {sub_names} not subset of "
+            f"parent names {parent_names}"
+        )

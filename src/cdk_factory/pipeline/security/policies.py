@@ -148,7 +148,7 @@ class CodeBuildPolicy:
         # TODO: allow users to add their own policies
 
         # Cross-account Lambda updater: allow CodeBuild to assume the
-        # devops-cross-account-lambda-updater role in any account.
+        # DevOpsCrossAccountAccessRole in any account.
         # The lambda_image_updater reads docker-images.json which may
         # target deployment accounts not listed in the pipeline config.
         # The target role's trust policy controls who can actually assume it.
@@ -156,7 +156,7 @@ class CodeBuildPolicy:
             sid="AssumeRoleLambdaUpdater",
             effect=iam.Effect.ALLOW,
             actions=["sts:AssumeRole"],
-            resources=["arn:aws:iam::*:role/devops-cross-account-lambda-updater"],
+            resources=["arn:aws:iam::*:role/DevOpsCrossAccountAccessRole"],
         )
         code_build_policy.append(cross_account_lambda_updater_policy)
 
