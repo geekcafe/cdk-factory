@@ -6,7 +6,7 @@ This design replaces the fragmented Docker Lambda image update tooling with a un
 
 1. **Discovery Manifest Export** — The `LambdaStack` in cdk-factory exports a JSON manifest SSM parameter during CDK deployment that maps ECR repo names to Docker Lambda SSM path prefixes. This enables consumers to discover all Docker Lambdas for a given ECR repo without hardcoded paths.
 
-2. **Unified CLI (`docker_lambda_updater`)** — A single Python CLI utility in `cdk_factory.utilities` that replaces both `LambdaImageUpdater` (Acme-SaaS-DevOps-CDK) and the `lambda_boto3_utilities.py` pattern (NCA-SaaS-Application). It supports repo-triggered updates, post-deployment refresh, locked version tags, multi-account targeting, and dry-run mode — all driven by SSM auto-discovery or legacy `ssm_parameter` paths.
+2. **Unified CLI (`docker_lambda_updater`)** — A single Python CLI utility in `cdk_factory.utilities` that replaces both `LambdaImageUpdater` (Acme-SaaS-DevOps-CDK) and the `lambda_boto3_utilities.py` pattern (Acme-SaaS-Application). It supports repo-triggered updates, post-deployment refresh, locked version tags, multi-account targeting, and dry-run mode — all driven by SSM auto-discovery or legacy `ssm_parameter` paths.
 
 ### Design Rationale
 

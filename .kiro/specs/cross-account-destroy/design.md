@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature extends the NCA SaaS IaC deployment CLI to support destroying CloudFormation stacks in target AWS accounts. The current `destroy` operation only removes the pipeline stack in the DevOps account. This design adds target account stack discovery via the CloudFormation API, reverse-dependency-order deletion, DNS delegation cleanup in the management account, safety confirmation prompts, interactive failure handling (wait/retry, continue, exit), and idempotent re-run support so partial failures can be resumed cleanly.
+This feature extends the Acme SaaS IaC deployment CLI to support destroying CloudFormation stacks in target AWS accounts. The current `destroy` operation only removes the pipeline stack in the DevOps account. This design adds target account stack discovery via the CloudFormation API, reverse-dependency-order deletion, DNS delegation cleanup in the management account, safety confirmation prompts, interactive failure handling (wait/retry, continue, exit), and idempotent re-run support so partial failures can be resumed cleanly.
 
 The implementation spans two files:
 - `cdk-factory/src/cdk_factory/commands/deployment_command.py` — base class gets new reusable methods

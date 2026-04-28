@@ -126,7 +126,7 @@ Absorb the duplicated JSON-based deployment logic from `NcaSaasDeployment` and `
     - Remove the entire `NcaSaasDeployment` class and all its methods
     - _Requirements: 10.1, 10.3_
 
-- [ ] 13. Rewrite `NCA-SaaS-UI/devops/cdk/deploy.py` as one-liner
+- [ ] 13. Rewrite `Acme-SaaS-UI/devops/cdk/deploy.py` as one-liner
   - [ ] 13.1 Replace the `NcaSaasUiDeployment` subclass with a one-liner
     - Replace the entire file contents with the same 4-line one-liner script
     - Remove the entire `NcaSaasUiDeployment` class and all its methods

@@ -110,7 +110,7 @@ _For any_ S3 bucket deployment where `cors_rules` is NOT specified in the JSON c
 
 ---
 
-**File**: `Aplos-NCA-SaaS-IaC/cdk/configs/stacks/storage/s3-analysis-uploads.json`
+**File**: `Acme-SaaS-IaC/cdk/configs/stacks/storage/s3-analysis-uploads.json`
 
 **Specific Changes**:
 5. **Add CORS configuration**: Add a `cors_rules` array to the `bucket` object matching the old deployment's configuration:

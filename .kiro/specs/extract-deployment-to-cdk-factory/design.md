@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature extracts the cross-account target resource destruction logic from `Acme-SaaS-IaC/cdk/deploy.py` into the `CdkDeploymentCommand` base class in `cdk-factory/src/cdk_factory/commands/deployment_command.py`. After extraction, any project subclassing `CdkDeploymentCommand` inherits cross-account destroy, interactive failure handling, DNS cleanup, retained resource scanning, and summary reporting. The NCA SaaS `deploy.py` shrinks from ~1,177 lines to ~150 lines — a thin wrapper providing only project-specific configuration.
+This feature extracts the cross-account target resource destruction logic from `Acme-SaaS-IaC/cdk/deploy.py` into the `CdkDeploymentCommand` base class in `cdk-factory/src/cdk_factory/commands/deployment_command.py`. After extraction, any project subclassing `CdkDeploymentCommand` inherits cross-account destroy, interactive failure handling, DNS cleanup, retained resource scanning, and summary reporting. The Acme SaaS `deploy.py` shrinks from ~1,177 lines to ~150 lines — a thin wrapper providing only project-specific configuration.
 
 ### Key Design Decisions
 
@@ -312,7 +312,7 @@ from botocore.exceptions import ClientError, ProfileNotFound
 from cdk_factory.utilities.route53_delegation import Route53Delegation
 ```
 
-**NCA SaaS `deploy.py`** — simplified imports:
+**Acme SaaS `deploy.py`** — simplified imports:
 ```python
 import json
 import os

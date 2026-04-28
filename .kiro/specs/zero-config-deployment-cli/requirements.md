@@ -11,7 +11,7 @@ if __name__ == "__main__":
     CdkDeploymentCommand.main()
 ```
 
-The two validation projects are Acme-SaaS-IaC (`cdk/deploy.py`) and NCA-SaaS-UI (`devops/cdk/deploy.py`), both of which currently have ~280-line subclasses with 95%+ identical code. This feature absorbs that duplicated logic into the base class while preserving backward compatibility for `.env`-based projects and allowing project-specific customization via subclassing or an optional `deploy.config.json`.
+The two validation projects are Acme-SaaS-IaC (`cdk/deploy.py`) and Acme-SaaS-UI (`devops/cdk/deploy.py`), both of which currently have ~280-line subclasses with 95%+ identical code. This feature absorbs that duplicated logic into the base class while preserving backward compatibility for `.env`-based projects and allowing project-specific customization via subclassing or an optional `deploy.config.json`.
 
 ## Glossary
 

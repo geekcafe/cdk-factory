@@ -2,7 +2,7 @@
 
 ## Introduction
 
-S3 presigned URL uploads fail with a 403 Forbidden error on the browser's OPTIONS preflight request when using buckets deployed through cdk-factory's `S3BucketConstruct`. The root cause is that cdk-factory has no CORS configuration support — neither `S3BucketConfig` nor `S3BucketConstruct` handle CORS rules. The old deployment (`NCA-SaaS-Application`) explicitly configured CORS on its S3 buckets (allowed methods: GET/POST/PUT, allowed origins: `*`, allowed headers: `*`, max age: 3600), but the new deployment (`Aplos-NCA-SaaS-IaC`) uses cdk-factory which lacks this capability entirely. This causes the browser to receive a 403 when it sends the mandatory CORS preflight OPTIONS request before the presigned URL POST, blocking all browser-based file uploads.
+S3 presigned URL uploads fail with a 403 Forbidden error on the browser's OPTIONS preflight request when using buckets deployed through cdk-factory's `S3BucketConstruct`. The root cause is that cdk-factory has no CORS configuration support — neither `S3BucketConfig` nor `S3BucketConstruct` handle CORS rules. The old deployment (`Acme-SaaS-Application`) explicitly configured CORS on its S3 buckets (allowed methods: GET/POST/PUT, allowed origins: `*`, allowed headers: `*`, max age: 3600), but the new deployment (`Acme-SaaS-IaC`) uses cdk-factory which lacks this capability entirely. This causes the browser to receive a 403 when it sends the mandatory CORS preflight OPTIONS request before the presigned URL POST, blocking all browser-based file uploads.
 
 ## Bug Analysis
 

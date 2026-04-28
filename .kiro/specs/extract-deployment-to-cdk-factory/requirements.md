@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This feature extracts the cross-account target resource destruction logic and supporting infrastructure from the NCA SaaS IaC project's `NcaSaasDeployment` subclass into the `CdkDeploymentCommand` base class in cdk-factory. The goal is to make cross-account destroy, deployment JSON auto-discovery, interactive failure handling, DNS cleanup, retained resource scanning, and the associated data models available to any project that subclasses `CdkDeploymentCommand`. After extraction, the NCA SaaS IaC `deploy.py` becomes a thin wrapper providing only project-specific configuration (custom env var loading, validation, display).
+This feature extracts the cross-account target resource destruction logic and supporting infrastructure from the Acme SaaS IaC project's `NcaSaasDeployment` subclass into the `CdkDeploymentCommand` base class in cdk-factory. The goal is to make cross-account destroy, deployment JSON auto-discovery, interactive failure handling, DNS cleanup, retained resource scanning, and the associated data models available to any project that subclasses `CdkDeploymentCommand`. After extraction, the Acme SaaS IaC `deploy.py` becomes a thin wrapper providing only project-specific configuration (custom env var loading, validation, display).
 
 ## Glossary
 
@@ -160,7 +160,7 @@ This feature extracts the cross-account target resource destruction logic and su
 
 ### Requirement 12: Thin Wrapper Subclass Pattern
 
-**User Story:** As a library consumer, I want the NCA SaaS IaC deploy.py to become a thin wrapper after extraction, so that it demonstrates the intended subclass pattern for other projects.
+**User Story:** As a library consumer, I want the Acme SaaS IaC deploy.py to become a thin wrapper after extraction, so that it demonstrates the intended subclass pattern for other projects.
 
 #### Acceptance Criteria
 

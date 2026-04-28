@@ -6,7 +6,7 @@ Replace the fragmented Docker Lambda image update tooling with a unified auto-di
 
 1. **Repo-triggered updates** — `LambdaImageUpdater` in Acme-SaaS-DevOps-CDK reads `docker-images.json` to update Docker Lambdas when a specific ECR repo is built/pushed. Each project must manually list every Docker Lambda's SSM parameter path per deployment. This doesn't scale — when SSM naming conventions change, every project breaks, and adding a new Docker Lambda requires manual config edits across repos.
 
-2. **Post-deployment refresh** — `lambda_boto3_utilities.py` in NCA-SaaS-Application (legacy IaC, reference only) runs as a CDK pipeline post-deployment step. It uses `get_parameters_by_path` on the SSM prefix to discover all Docker Lambda ARNs, then calls `update_function_code` with the same image URI to force a cold-start refresh after IaC deployments.
+2. **Post-deployment refresh** — `lambda_boto3_utilities.py` in Acme-SaaS-Application (legacy IaC, reference only) runs as a CDK pipeline post-deployment step. It uses `get_parameters_by_path` on the SSM prefix to discover all Docker Lambda ARNs, then calls `update_function_code` with the same image URI to force a cold-start refresh after IaC deployments.
 
 Additionally, production and higher environments use **locked version tags** (e.g., `"3.3.29"`) per lambda defined in `.docker-locked-versions.json`, while lower environments (dev, beta, integration) use floating tags like `"dev"` or `"latest"`. The current tooling has no unified support for this tag strategy — locked versions are handled by a separate `lock-versions.py` script and pipeline config inheritance (`__inherits__`), disconnected from the update tooling.
 
@@ -18,7 +18,7 @@ The solution adds a discovery manifest SSM parameter that the CDK lambda stack e
 - **Acme-SaaS-DevOps-CDK** — Consumer migration (replace `LambdaImageUpdater` with Unified CLI)
 
 **Reference only (not modified):**
-- **NCA-SaaS-Application** — Legacy IaC; `lambda_boto3_utilities.py` is the pattern being replaced, not updated
+- **Acme-SaaS-Application** — Legacy IaC; `lambda_boto3_utilities.py` is the pattern being replaced, not updated
 
 ## Glossary
 
@@ -34,7 +34,7 @@ The solution adds a discovery manifest SSM parameter that the CDK lambda stack e
 - **Pinned_Tag**: An immutable semver ECR image tag (e.g., `3.3.29`) assigned to a specific Docker Lambda in the Locked_Versions_Config for production environments
 - **Refresh_Mode**: An update mode where the Unified_CLI re-deploys each Docker Lambda with its current image URI (same image, forcing a container cold start) without changing the tag
 - **LambdaImageUpdater**: The existing Python tool in Acme-SaaS-DevOps-CDK that reads `docker-images.json` and updates Docker Lambda functions with new ECR image URIs (to be replaced by the Unified_CLI)
-- **lambda_boto3_utilities**: The existing Python utility in NCA-SaaS-Application (legacy IaC, reference only — not being modified) that discovers Docker Lambdas via SSM `get_parameters_by_path` and refreshes their images post-deployment. The pattern it implements is being replaced by the Unified_CLI in acme-SaaS-IaC.
+- **lambda_boto3_utilities**: The existing Python utility in Acme-SaaS-Application (legacy IaC, reference only — not being modified) that discovers Docker Lambdas via SSM `get_parameters_by_path` and refreshes their images post-deployment. The pattern it implements is being replaced by the Unified_CLI in acme-SaaS-IaC.
 
 ## Requirements
 
@@ -147,7 +147,7 @@ The solution adds a discovery manifest SSM parameter that the CDK lambda stack e
 
 ### Requirement 10: Unified CLI as a cdk-factory Utility
 
-**User Story:** As a DevOps engineer, I want the unified Docker Lambda update tool to live in cdk-factory as a reusable utility, so that all consuming projects (acme-Services, Acme-SaaS-DevOps-CDK, NCA-SaaS-Application, acme-SaaS-IaC) can use a single implementation.
+**User Story:** As a DevOps engineer, I want the unified Docker Lambda update tool to live in cdk-factory as a reusable utility, so that all consuming projects (acme-Services, Acme-SaaS-DevOps-CDK, Acme-SaaS-Application, acme-SaaS-IaC) can use a single implementation.
 
 #### Acceptance Criteria
 
@@ -172,7 +172,7 @@ The solution adds a discovery manifest SSM parameter that the CDK lambda stack e
 
 ### Requirement 12: Pipeline Post-Deployment Integration
 
-**User Story:** As a DevOps engineer, I want the Unified_CLI to be callable as a CDK pipeline post-deployment shell step, so that it can replace the existing `lambda_boto3_utilities.py` script in NCA-SaaS-Application pipeline stages.
+**User Story:** As a DevOps engineer, I want the Unified_CLI to be callable as a CDK pipeline post-deployment shell step, so that it can replace the existing `lambda_boto3_utilities.py` script in Acme-SaaS-Application pipeline stages.
 
 #### Acceptance Criteria
 
@@ -190,7 +190,7 @@ The solution adds a discovery manifest SSM parameter that the CDK lambda stack e
 
 1. WHEN the Unified_CLI implementation is complete, THE cdk-factory project SHALL include a migration guide document in the repository.
 2. THE migration guide SHALL describe the steps to replace `LambdaImageUpdater` usage in Acme-SaaS-DevOps-CDK with the Unified_CLI.
-3. THE migration guide SHALL describe how to wire the Unified_CLI into an acme-SaaS-IaC CDK pipeline as a post-deployment shell step, replacing the legacy `lambda_boto3_utilities.py` pattern from NCA-SaaS-Application.
+3. THE migration guide SHALL describe how to wire the Unified_CLI into an acme-SaaS-IaC CDK pipeline as a post-deployment shell step, replacing the legacy `lambda_boto3_utilities.py` pattern from Acme-SaaS-Application.
 4. THE migration guide SHALL describe how to update `docker-images.json` from the legacy `ssm_parameter` format to the `ssm_namespace` auto-discovery format.
 5. THE migration guide SHALL describe how to configure locked version tags for production environments using the `--locked-versions` flag.
 6. THE migration guide SHALL describe the pattern clearly enough that it can be applied to other workspaces outside this repo via a prompt-based find/replace approach.

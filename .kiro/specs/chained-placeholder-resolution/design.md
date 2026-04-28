@@ -202,4 +202,4 @@ END FOR
 
 - Test full `__resolved_config()` flow with a config.json containing `TARGET_ACCOUNT_ROLE_ARN` and `TARGET_HOSTED_ZONE_ID_SSM_PARAMETER_NAME` chained references
 - Test that `_check_unresolved_placeholders` passes after fix for configs with valid chained references
-- Test end-to-end with real-world config patterns from NCA-SaaS-UI/devops/cdk/config.json
+- Test end-to-end with real-world config patterns from Acme-SaaS-UI/devops/cdk/config.json

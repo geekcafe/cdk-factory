@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The cross-account-destroy feature extends the existing NCA SaaS IaC deployment CLI (`deploy.py`) to support destroying CloudFormation stacks deployed in target accounts by the CodePipeline. Currently, the "destroy" operation only removes the pipeline stack in the DevOps account. This feature adds the ability to discover and delete the actual workload stacks (DynamoDB, Lambda, S3, API Gateway, Cognito, Route53, SQS) in the target account, clean up DNS delegation records in the management account, and do so in the correct reverse-dependency order.
+The cross-account-destroy feature extends the existing Acme SaaS IaC deployment CLI (`deploy.py`) to support destroying CloudFormation stacks deployed in target accounts by the CodePipeline. Currently, the "destroy" operation only removes the pipeline stack in the DevOps account. This feature adds the ability to discover and delete the actual workload stacks (DynamoDB, Lambda, S3, API Gateway, Cognito, Route53, SQS) in the target account, clean up DNS delegation records in the management account, and do so in the correct reverse-dependency order.
 
 ## Glossary
 

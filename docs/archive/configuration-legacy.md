@@ -83,7 +83,7 @@ The `cdk.parameters` array in `config.json` maps `{{PLACEHOLDER}}` strings to en
 
 ## `workload.resources` Section
 
-The legacy NCA-SaaS-Application config defined resources at the workload level:
+The legacy Acme-SaaS-Application config defined resources at the workload level:
 
 ```json
 {

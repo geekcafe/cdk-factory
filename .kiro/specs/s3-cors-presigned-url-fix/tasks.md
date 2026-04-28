@@ -56,8 +56,8 @@
     - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3_
 
   - [ ] 3.3 Add CORS config to upload bucket JSON
-    - File: `Aplos-NCA-SaaS-IaC/cdk/configs/stacks/storage/s3-analysis-uploads.json`
-    - Add `cors_rules` array to the `bucket` object matching the old deployment's CORS config from `NCA-SaaS-Application/devops/cdk/resources/constructs/s3_construct.py`:
+    - File: `Acme-SaaS-IaC/cdk/configs/stacks/storage/s3-analysis-uploads.json`
+    - Add `cors_rules` array to the `bucket` object matching the old deployment's CORS config from `Acme-SaaS-Application/devops/cdk/resources/constructs/s3_construct.py`:
       ```json
       "cors_rules": [
         {
