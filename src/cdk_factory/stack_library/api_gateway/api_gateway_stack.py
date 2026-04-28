@@ -182,6 +182,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                             "method": api_config.get("method", "GET").upper(),
                             "lambda_name": lambda_name,
                             "skip_authorizer": api_config.get("skip_authorizer", False),
+                            "allow_public_override": api_config.get(
+                                "allow_public_override", False
+                            ),
                         }
                         if route["skip_authorizer"]:
                             route["authorization_type"] = "NONE"
@@ -200,6 +203,10 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                                 "skip_authorizer": sub_route.get(
                                     "skip_authorizer",
                                     api_config.get("skip_authorizer", False),
+                                ),
+                                "allow_public_override": sub_route.get(
+                                    "allow_public_override",
+                                    api_config.get("allow_public_override", False),
                                 ),
                             }
                             if sub["skip_authorizer"]:
@@ -275,7 +282,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         self._setup_api_resources_and_methods(api_gateway)
         api_keys = self._setup_api_keys()
         self._setup_usage_plans(api_gateway, api_keys)
-        authorizer = self._setup_cognito_authorizer(api_gateway, api_id)
+        authorizer = self._setup_cognito_authorizer(api_gateway, api_id, routes)
         self._setup_lambda_routes(api_gateway, api_id, routes, authorizer)
 
         # Finalize deployment and stage creation
@@ -477,16 +484,16 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             period=apigateway.Period[plan_config["quota"].get("period", "MONTH")],
         )
 
-    def _setup_cognito_authorizer(self, api_gateway, api_id):
+    def _setup_cognito_authorizer(self, api_gateway, api_id, routes=None):
         """Setup Cognito authorizer if configured AND if any routes need it"""
         if not self.api_config.cognito_authorizer:
             return None
 
-        # Check if any routes actually need the authorizer
-        # Don't create it if all routes are public (authorization_type: NONE)
-        routes = self.api_config.routes or []
+        # Use provided routes (discovered routes) or fall back to api_config routes
+        check_routes = routes or self.api_config.routes or []
         needs_authorizer = any(
-            route.get("authorization_type", "COGNITO") != "NONE" for route in routes
+            route.get("authorization_type", "COGNITO") != "NONE"
+            for route in check_routes
         )
 
         # If we're not creating an authorizer but Cognito is configured,

@@ -523,6 +523,10 @@ class ApiGatewayIntegrationUtility:
             cognito_config = stack_config.dictionary.get("api_gateway", {}).get(
                 "cognito_authorizer", {}
             )
+        if not cognito_config:
+            cognito_config = stack_config.dictionary.get("api_gateway", {}).get(
+                "cognito", {}
+            )
         if cognito_config:
             # Try to get user_pool_arn directly
             user_pool_arn = cognito_config.get("user_pool_arn")
@@ -597,6 +601,19 @@ class ApiGatewayIntegrationUtility:
                         user_pool_arn = ssm_mixin._resolve_single_ssm_import(
                             ssm_path, "user_pool_arn"
                         )
+
+            # Try user_pool_ssm_path for direct SSM parameter lookup
+            if not user_pool_arn and not user_pool_id:
+                ssm_path = cognito_config.get("user_pool_ssm_path")
+                if ssm_path:
+                    from aws_cdk import aws_ssm as ssm_module
+
+                    user_pool_id = (
+                        ssm_module.StringParameter.value_for_string_parameter(
+                            scope=self.scope,
+                            parameter_name=ssm_path,
+                        )
+                    )
 
             # Extract user pool ID from ARN if we have it
             if user_pool_arn and not user_pool_id:
