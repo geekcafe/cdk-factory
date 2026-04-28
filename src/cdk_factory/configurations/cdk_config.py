@@ -229,11 +229,10 @@ class CdkConfig:
         # Check for unresolved placeholders after resolution
         self._check_unresolved_placeholders(config, self._resolved_config_file_path)
 
-        # Inject locked Docker image versions into deployment lambdas arrays
-        # so that CDK synth produces pinned semver tags in CloudFormation.
-        # This must happen after placeholder resolution (so locked_versions
-        # paths are resolved) and the result is saved to .dynamic/config.json
-        # so it works identically in local synth and CodePipeline.
+        # Inject locked Docker image versions into deployment lambdas arrays.
+        # Runs after placeholder resolution so locked_versions paths are resolved.
+        # The result is saved to .dynamic/config.json AND committed config.json
+        # picks it up via the same path at pipeline synth time.
         self._inject_locked_versions(config)
 
         # Resolve lambda_config_paths: walk the config and find SQS stacks that
@@ -368,17 +367,13 @@ class CdkConfig:
     def _inject_locked_versions(self, config: Dict[str, Any]) -> None:
         """Inject locked Docker image versions into deployment lambdas arrays.
 
-        For each deployment in the config that has a ``locked_versions`` path,
-        reads the JSON file and populates the deployment's ``lambdas`` array
-        so that ``lambda_stack.__setup_lambda_docker_image`` picks up pinned
-        semver tags during CDK synth.
+        For each deployment that has a non-empty ``locked_versions`` path,
+        reads the JSON file and populates the deployment's ``lambdas`` array.
+        The path is resolved relative to the config file's directory.
 
-        The path is resolved relative to the config file's directory first,
-        then tried as-is (for absolute paths or CWD-relative paths).
-
-        This runs during config resolution so the result is baked into
-        ``.dynamic/config.json`` — making it work identically in local
-        synth and CodePipeline.
+        The locked versions files are checked into git (e.g.,
+        ``configs/pipelines/locked-versions-demo.json``) so the pipeline
+        synth picks them up from source.
         """
         workload = config.get("workload", config)
         deployments = workload.get("deployments", [])
@@ -391,17 +386,16 @@ class CdkConfig:
             if not locked_path or not locked_path.strip():
                 continue
 
-            # Resolve the path: try relative to config dir first, then as-is
-            resolved_path = None
+            # Resolve path relative to config file directory
             candidates = []
             if config_dir:
                 candidates.append(os.path.join(config_dir, locked_path))
-                # Also try stripping leading ./ or cdk/ prefixes
                 stripped = locked_path.lstrip("./")
                 if stripped != locked_path:
                     candidates.append(os.path.join(config_dir, stripped))
-            candidates.append(locked_path)  # as-is (absolute or CWD-relative)
+            candidates.append(locked_path)
 
+            resolved_path = None
             for candidate in candidates:
                 if os.path.isfile(candidate):
                     resolved_path = candidate
@@ -429,17 +423,11 @@ class CdkConfig:
                 continue
 
             if not isinstance(locked_entries, list):
-                logger.warning(
-                    "Locked versions file %s is not a JSON array — skipping",
-                    resolved_path,
-                )
                 continue
 
-            # Build set of already-configured lambda names
             existing_lambdas = deployment.get("lambdas", [])
             existing_names = {e.get("name") for e in existing_lambdas}
 
-            # Inject locked version entries
             added = 0
             for entry in locked_entries:
                 name = entry.get("name", "")
@@ -451,9 +439,8 @@ class CdkConfig:
             if added > 0:
                 deployment["lambdas"] = existing_lambdas
                 print(
-                    f"🔒 Injected {added} pinned Docker image version(s) "
-                    f"into deployment '{deployment.get('name', 'unknown')}' "
-                    f"from {resolved_path}"
+                    f"🔒 Injected {added} pinned version(s) into "
+                    f"'{deployment.get('name', 'unknown')}' from {resolved_path}"
                 )
 
     def __get_cdk_parameter_value(self, parameter: Dict[str, Any]) -> str | None:

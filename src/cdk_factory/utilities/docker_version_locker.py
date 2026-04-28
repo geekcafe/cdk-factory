@@ -340,6 +340,53 @@ class DockerVersionLocker:
                 print(line.rstrip(", "))
             print()
 
+    # --- Apply to deployment ---
+
+    def apply_to_deployment(
+        self, deployment_path: str, entries: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Create a deployment-specific locked versions file.
+
+        Copies the resolved locked versions to a file named after the
+        deployment (e.g., ``locked-versions-demo.json``) in the same
+        directory as the source locked versions file. This file is
+        checked into git so the pipeline synth can find it.
+
+        Args:
+            deployment_path: Deployment name or path (used to derive the filename).
+            entries: Locked version entries to write.
+
+        Returns:
+            0 on success, 1 on error.
+        """
+        # Derive the deployment name from the path
+        name = deployment_path
+        if "/" in name or "\\" in name:
+            name = os.path.basename(name)
+        name = name.replace("deployment.", "").replace(".json", "")
+
+        # Write to the same directory as the locked versions file
+        base_dir = os.path.dirname(self.locked_versions_path)
+        target_path = os.path.join(base_dir, f"locked-versions-{name}.json")
+
+        # Filter to only entries with tags
+        pinned = [e for e in entries if e.get("name") and e.get("tag")]
+
+        try:
+            self.write_locked_versions(target_path, pinned)
+        except OSError as e:
+            print(f"Error writing {target_path}: {e}", file=sys.stderr)
+            return 1
+
+        print(f"🔒 Created {target_path} with {len(pinned)} pinned version(s)")
+        print()
+        print(f"   Set LOCKED_VERSIONS_PATH in your deployment config:")
+        print(
+            f'   "LOCKED_VERSIONS_PATH": "configs/pipelines/locked-versions-{name}.json"'
+        )
+        return 0
+
     # --- Main entry point ---
 
     def run(self) -> int:
@@ -565,6 +612,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=None,
         help="Directory to scan for Lambda configs (required when --seed is set).",
     )
+    parser.add_argument(
+        "--apply",
+        default=None,
+        metavar="DEPLOYMENT_JSON",
+        help="Apply locked versions to a deployment JSON file by writing a 'lambdas' array into it.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -592,6 +645,21 @@ def main(argv: Optional[List[str]] = None) -> None:
                 sys.exit(1)
         locker.list_mappings(entries)
         sys.exit(0)
+
+    # --- Apply mode: write lambdas into deployment JSON ---
+    if args.apply:
+        locker = DockerVersionLocker(
+            locked_versions_path=args.locked_versions,
+            profile=args.profile,
+            region=args.region,
+        )
+        try:
+            entries = locker.load_locked_versions(args.locked_versions)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        exit_code = locker.apply_to_deployment(args.apply, entries)
+        sys.exit(exit_code)
 
     locker = DockerVersionLocker(
         locked_versions_path=args.locked_versions,
