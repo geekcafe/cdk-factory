@@ -98,12 +98,37 @@ class DeploymentConfig:
         if not locked_path or not locked_path.strip():
             return
 
+        # Try the path as-is first, then try common relative bases
         if not os.path.isfile(locked_path):
-            _logger.warning(
-                "Locked versions file not found: %s — skipping version pinning",
-                locked_path,
-            )
-            return
+            # The path might be relative to the repo root, but CWD could be
+            # a subdirectory (e.g., cdk/). Try stripping common prefixes.
+            alt_paths = []
+            if locked_path.startswith("./cdk/"):
+                alt_paths.append(locked_path.replace("./cdk/", "./", 1))
+            if locked_path.startswith("cdk/"):
+                alt_paths.append(locked_path.replace("cdk/", "", 1))
+
+            resolved = None
+            for alt in alt_paths:
+                if os.path.isfile(alt):
+                    resolved = alt
+                    break
+
+            if resolved:
+                _logger.info(
+                    "Resolved locked versions path: %s → %s (CWD: %s)",
+                    locked_path,
+                    resolved,
+                    os.getcwd(),
+                )
+                locked_path = resolved
+            else:
+                _logger.warning(
+                    "Locked versions file not found: %s (CWD: %s) — skipping version pinning",
+                    locked_path,
+                    os.getcwd(),
+                )
+                return
 
         try:
             with open(locked_path, "r") as f:
@@ -138,10 +163,17 @@ class DeploymentConfig:
 
         if added > 0:
             self.__deployment["lambdas"] = existing_lambdas
+            print(
+                f"🔒 Loaded {added} pinned Docker image version(s) from {locked_path}"
+            )
             _logger.info(
                 "Loaded %d pinned Docker image version(s) from %s",
                 added,
                 locked_path,
+            )
+        else:
+            _logger.info(
+                "Locked versions file loaded but no new entries to add (all already configured)"
             )
 
     def __load_pipeline(self):
