@@ -281,7 +281,7 @@ def test_create_dead_letter_queue():
 
 
 def test_dlq_cloudwatch_alarm_configuration():
-    """Test that DLQ CloudWatch alarm matches the NCA-SaaS-Application pattern"""
+    """Test that DLQ CloudWatch alarm matches the Acme-SaaS-Application pattern"""
     app = App()
     stack = SQSStack(app, "TestDLQAlarm")
 
@@ -320,7 +320,7 @@ def test_dlq_cloudwatch_alarm_configuration():
                 with patch("aws_cdk.aws_cloudwatch.Alarm") as mock_alarm_constructor:
                     stack._create_dead_letter_queue(queue_config, queue_name)
 
-                    # Verify alarm was created with exact NCA-SaaS-Application pattern
+                    # Verify alarm was created with exact Acme-SaaS-Application pattern
                     mock_alarm_constructor.assert_called_once()
                     _, alarm_kwargs = mock_alarm_constructor.call_args
 

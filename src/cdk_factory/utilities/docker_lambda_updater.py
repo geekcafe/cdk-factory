@@ -3,7 +3,7 @@
 Docker Lambda Updater — Unified Docker Lambda Update Tool with SSM Auto-Discovery
 
 Replaces both LambdaImageUpdater (Acme-SaaS-DevOps-CDK) and the
-lambda_boto3_utilities.py pattern (NCA-SaaS-Application) with a single
+lambda_boto3_utilities.py pattern (Acme-SaaS-Application) with a single
 CLI utility that supports:
 
 - Repo-triggered updates via docker-images.json (config-driven mode)
