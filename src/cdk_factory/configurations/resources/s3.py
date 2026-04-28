@@ -172,6 +172,61 @@ class S3BucketConfig(EnhancedBaseConfig):
 
         return s3.BucketAccessControl.PRIVATE
 
+    # HTTP method string-to-enum mapping for CORS configuration
+    _HTTP_METHOD_MAP: dict[str, s3.HttpMethods] = {
+        "GET": s3.HttpMethods.GET,
+        "PUT": s3.HttpMethods.PUT,
+        "POST": s3.HttpMethods.POST,
+        "DELETE": s3.HttpMethods.DELETE,
+        "HEAD": s3.HttpMethods.HEAD,
+    }
+
+    @property
+    def cors_rules(self) -> list[s3.CorsRule]:
+        """Returns the CORS rules parsed from the configuration.
+
+        Each rule dict may contain:
+        - allowed_methods: list[str] — e.g. ["GET", "PUT", "POST"]
+        - allowed_origins: list[str] — e.g. ["*"]
+        - allowed_headers: list[str] — e.g. ["*"]
+        - exposed_headers: list[str] — e.g. ["Date"]
+        - max_age: int — e.g. 3600
+        """
+        raw_rules: list[dict] = self.__config.get("cors_rules", [])
+        if not raw_rules or not isinstance(raw_rules, list):
+            return []
+
+        cors_rules: list[s3.CorsRule] = []
+        for rule in raw_rules:
+            if not isinstance(rule, dict):
+                continue
+
+            # Map method strings to s3.HttpMethods enums
+            allowed_methods: list[s3.HttpMethods] = []
+            for method_str in rule.get("allowed_methods", []):
+                mapped = self._HTTP_METHOD_MAP.get(method_str.upper())
+                if mapped is None:
+                    raise ValueError(
+                        f"Unknown HTTP method '{method_str}' in cors_rules. "
+                        f"Valid methods: {list(self._HTTP_METHOD_MAP.keys())}"
+                    )
+                allowed_methods.append(mapped)
+
+            max_age_val = rule.get("max_age")
+            max_age = int(max_age_val) if max_age_val is not None else None
+
+            cors_rules.append(
+                s3.CorsRule(
+                    allowed_methods=allowed_methods,
+                    allowed_origins=rule.get("allowed_origins", []),
+                    allowed_headers=rule.get("allowed_headers", None),
+                    exposed_headers=rule.get("exposed_headers", None),
+                    max_age=max_age,
+                )
+            )
+
+        return cors_rules
+
     @property
     def block_public_access(self) -> s3.BlockPublicAccess:
         """Returns the block public access"""

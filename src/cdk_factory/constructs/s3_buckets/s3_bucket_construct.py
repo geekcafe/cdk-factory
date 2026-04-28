@@ -67,6 +67,7 @@ class S3BucketConstruct(Construct):
                 versioned=self.bucket_config.versioned,
                 auto_delete_objects=self.bucket_config.auto_delete_objects,
                 removal_policy=self.bucket_config.removal_policy,
+                cors=self.bucket_config.cors_rules or None,
                 # TODO: add the other rules to the config
                 ######################################################
                 # don't do this if you plan to do a cloudfront distribution
