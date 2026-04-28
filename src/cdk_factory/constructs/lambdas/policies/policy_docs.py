@@ -491,7 +491,7 @@ class PolicyDocuments:
         policy = {
             "name": "S3",
             "description": "S3 Read",
-            "actions": ["s3:GetObject"],
+            "actions": ["s3:GetObject", "s3:ListBucket"],
             "resources": [
                 f"arn:aws:s3:::{bucket_name}",
                 f"arn:aws:s3:::{bucket_name}/*",
