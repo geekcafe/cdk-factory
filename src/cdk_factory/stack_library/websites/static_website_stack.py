@@ -58,8 +58,16 @@ class StaticWebSiteStack(IStack):
         # Use DNS aliases from environment settings if available; fallback to global config.
         dns: dict = stack_config.dictionary.get("dns", {})
         aliases: List[str] = dns.get("aliases", [])
+        if isinstance(aliases, str):
+            aliases = [a.strip() for a in aliases.split(",") if a.strip()]
 
         cert: dict = stack_config.dictionary.get("cert", {})
+        alternate_names = cert.get("alternate_names")
+        if isinstance(alternate_names, str):
+            alternate_names = [
+                a.strip() for a in alternate_names.split(",") if a.strip()
+            ]
+            cert["alternate_names"] = alternate_names
 
         certificate: Optional[acm.Certificate] = None
         hosted_zone: Optional[route53.IHostedZone] = None
