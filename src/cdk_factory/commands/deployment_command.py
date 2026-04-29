@@ -43,6 +43,7 @@ import boto3
 from botocore.exceptions import ClientError, ProfileNotFound
 
 from cdk_factory.utilities.route53_delegation import Route53Delegation
+from cdk_factory.utilities.docker_version_locker import DockerVersionLocker
 
 
 # ---------------------------------------------------------------------------
@@ -1775,6 +1776,7 @@ class CdkDeploymentCommand:
 
         # For non-destroy operations, validate and run
         if selected_op not in ("destroy", "destroy-target"):
+            self._prompt_version_locking(env_config)
             self.validate_required_variables()
             self.display_configuration_summary(selected_config)
 
@@ -1971,3 +1973,528 @@ class CdkDeploymentCommand:
         except FileNotFoundError:
             self._print(f"Command not found: {cmd[0]}", "red")
             sys.exit(1)
+
+    def _update_deployment_json(
+        self,
+        deployment_file: str,
+        key: str,
+        value: Optional[str],
+    ) -> None:
+        """Update or remove a key in the deployment JSON parameters block.
+
+        Args:
+            deployment_file: Absolute path to the deployment.*.json file.
+            key: The parameter key to set or remove (e.g., "LOCKED_VERSIONS_PATH").
+            value: The value to set. If None, the key is removed.
+        """
+        try:
+            with open(deployment_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            params = data.get("parameters", {})
+            if value is not None:
+                params[key] = value
+            else:
+                params.pop(key, None)
+            data["parameters"] = params
+
+            with open(deployment_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+                f.write("\n")
+
+            action = "Set" if value is not None else "Removed"
+            self._print(
+                f"{action} {key} in {os.path.basename(deployment_file)}",
+                "blue",
+            )
+        except (OSError, json.JSONDecodeError) as e:
+            self._print(
+                f"Warning: Could not update {deployment_file}: {e}",
+                "yellow",
+            )
+
+    def _prompt_version_locking(self, env_config: EnvironmentConfig) -> None:
+        """Prompt user to lock/unlock Docker image versions before CDK operations.
+
+        Presents a three-option interactive menu:
+        1. Lock Docker image versions (fresh seed + ECR resolve)
+        2. Unlock Docker image versions (remove locked versions)
+        3. Skip (leave as-is)
+
+        Only called for non-destroy operations when a config directory
+        containing Docker Lambda configurations exists.
+
+        Args:
+            env_config: The selected environment configuration, used to
+                read the deployment JSON file path from env_config.extra.get("_file").
+        """
+        # 1. Resolve paths relative to script_dir (CDK project root)
+        config_dir = self.script_dir / "configs" / "stacks" / "lambdas"
+        pipelines_dir = self.script_dir / "configs" / "pipelines"
+
+        # 2. Check if config directory exists
+        if not config_dir.exists():
+            return  # No config dir — skip silently
+
+        # 3. Quick check: does the directory contain any Docker Lambda configs?
+        locker = DockerVersionLocker(
+            locked_versions_path="",  # placeholder, set later
+            profile=os.environ.get("AWS_PROFILE", "default"),
+            region=os.environ.get("AWS_REGION", "us-east-1"),
+        )
+        discovered = locker.scan_config_directory(str(config_dir))
+        if not discovered:
+            return  # No Docker Lambdas found — skip silently
+
+        # 4. Present the interactive menu
+        options = [
+            "Lock Docker image versions",
+            "Unlock Docker image versions",
+            "Skip (leave as-is)",
+        ]
+        idx = self._interactive_select("Docker image version locking:", options)
+
+        # 5. Derive tenant name and build paths
+        tenant_name = os.environ.get("TENANT_NAME", "default")
+        locked_versions_filename = f"locked-versions-{tenant_name}.json"
+        locked_versions_path = pipelines_dir / locked_versions_filename
+        deployment_file = env_config.extra.get("_file", "")
+        relative_locked_path = f"./configs/pipelines/{locked_versions_filename}"
+
+        # 6. Dispatch based on selection
+        if idx == 0:
+            # --- Lock ---
+            self._lock_versions(
+                config_dir=config_dir,
+                locked_versions_path=locked_versions_path,
+                deployment_file=deployment_file,
+                relative_locked_path=relative_locked_path,
+                tenant_name=tenant_name,
+            )
+        elif idx == 1:
+            # --- Unlock ---
+            self._unlock_versions(
+                locked_versions_path=locked_versions_path,
+                deployment_file=deployment_file,
+            )
+        # idx == 2: Skip — do nothing
+
+    def _lock_versions(
+        self,
+        config_dir: Path,
+        locked_versions_path: Path,
+        deployment_file: str,
+        relative_locked_path: str,
+        tenant_name: str,
+    ) -> None:
+        """Execute the lock flow: fresh seed, ECR resolve, write files, update env.
+
+        When a locked versions file already exists, presents a sub-menu:
+        - Keep current: reuse the existing file as-is
+        - Refresh: fresh seed + ECR resolve (replaces the file)
+        - Copy from another deployment: copy an existing locked versions file
+        """
+        pipelines_dir = locked_versions_path.parent
+
+        # If a locked versions file already exists, ask what to do
+        if locked_versions_path.exists():
+            sub_options = ["Keep current versions", "Refresh (re-resolve from ECR)"]
+
+            # Discover other locked versions files to offer as copy sources
+            other_files = self._discover_other_locked_versions(
+                pipelines_dir, locked_versions_path.name
+            )
+            if other_files:
+                sub_options.append("Copy from another deployment")
+
+            sub_options.append("Cancel")
+
+            self._print("", "white")
+            self._print(
+                f"Existing locked versions found: {locked_versions_path.name}",
+                "blue",
+            )
+            sub_idx = self._interactive_select(
+                "How would you like to proceed?", sub_options
+            )
+
+            if sub_options[sub_idx] == "Keep current versions":
+                # Reconcile: check for new lambdas not in the existing file
+                self._reconcile_new_lambdas(config_dir, locked_versions_path)
+                # Ensure deployment JSON and env var point to the file
+                if deployment_file:
+                    self._update_deployment_json(
+                        deployment_file, "LOCKED_VERSIONS_PATH", relative_locked_path
+                    )
+                os.environ["LOCKED_VERSIONS_PATH"] = relative_locked_path
+                self._print(f"Keeping existing {locked_versions_path.name}", "green")
+                return
+
+            if sub_options[sub_idx] == "Copy from another deployment":
+                self._copy_locked_versions_from(
+                    pipelines_dir,
+                    locked_versions_path,
+                    other_files,
+                    deployment_file,
+                    relative_locked_path,
+                    config_dir,
+                )
+                return
+
+            if sub_options[sub_idx] == "Cancel":
+                self._print("Version locking cancelled.", "yellow")
+                return
+
+            # "Refresh" falls through to the fresh seed flow below
+            locked_versions_path.unlink()
+            self._print(f"Removed existing {locked_versions_path.name}", "blue")
+
+        # --- Fresh seed + ECR resolve ---
+
+        # Check if other deployments have locked versions we could copy
+        other_files = self._discover_other_locked_versions(
+            pipelines_dir, locked_versions_path.name
+        )
+        if other_files:
+            first_lock_options = [
+                "Resolve fresh from ECR",
+                "Copy from another deployment",
+                "Cancel",
+            ]
+            self._print("", "white")
+            first_idx = self._interactive_select(
+                "No existing locked versions for this deployment. "
+                "How would you like to lock?",
+                first_lock_options,
+            )
+
+            if first_lock_options[first_idx] == "Copy from another deployment":
+                self._copy_locked_versions_from(
+                    pipelines_dir,
+                    locked_versions_path,
+                    other_files,
+                    deployment_file,
+                    relative_locked_path,
+                    config_dir,
+                )
+                return
+
+            if first_lock_options[first_idx] == "Cancel":
+                self._print("Version locking cancelled.", "yellow")
+                return
+
+            # "Resolve fresh from ECR" falls through to the seed flow below
+
+        # Ensure the pipelines directory exists
+        pipelines_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create DockerVersionLocker in seed mode
+        profile = os.environ.get("AWS_PROFILE", "default")
+        region = os.environ.get("AWS_REGION", "us-east-1")
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_versions_path),
+            profile=profile,
+            region=region,
+            seed=True,
+            config_dir=str(config_dir),
+        )
+
+        # Run the locker (seed + resolve)
+        exit_code = locker.run()
+
+        if exit_code == 2:
+            # AWS credential failure — warn and allow continuing
+            self._print(
+                f"AWS credentials failed for profile '{profile}'. "
+                f"Skipping version locking.",
+                "yellow",
+            )
+            self._print(
+                f"Run: aws sso login --profile {profile}",
+                "yellow",
+            )
+            return
+
+        if exit_code != 0:
+            self._print(
+                "Version locking completed with errors. "
+                "Some repositories may not have been resolved.",
+                "yellow",
+            )
+
+        # Update deployment JSON: set LOCKED_VERSIONS_PATH
+        if deployment_file:
+            self._update_deployment_json(
+                deployment_file, "LOCKED_VERSIONS_PATH", relative_locked_path
+            )
+
+        # Set env var for current CDK operation
+        os.environ["LOCKED_VERSIONS_PATH"] = relative_locked_path
+        self._print(f"Locked versions written to {locked_versions_path.name}", "green")
+
+    def _discover_other_locked_versions(
+        self, pipelines_dir: Path, current_filename: str
+    ) -> List[str]:
+        """Find other locked-versions-*.json files in the pipelines directory.
+
+        Args:
+            pipelines_dir: The pipelines config directory to scan.
+            current_filename: The current deployment's locked versions filename
+                to exclude from results.
+
+        Returns:
+            Sorted list of filenames (not full paths) for other deployments.
+        """
+        if not pipelines_dir.exists():
+            return []
+        others = [
+            f.name
+            for f in pipelines_dir.glob("locked-versions-*.json")
+            if f.name != current_filename and not f.name.startswith(".")
+        ]
+        return sorted(others)
+
+    def _copy_locked_versions_from(
+        self,
+        pipelines_dir: Path,
+        locked_versions_path: Path,
+        other_files: List[str],
+        deployment_file: str,
+        relative_locked_path: str,
+        config_dir: Path,
+    ) -> None:
+        """Copy a locked versions file from another deployment.
+
+        Presents a menu of available locked versions files, copies the
+        selected one, reconciles new lambdas, and updates the deployment
+        JSON and env var.
+
+        Args:
+            pipelines_dir: The pipelines config directory.
+            locked_versions_path: Target path for this deployment's locked versions.
+            other_files: List of other locked versions filenames to choose from.
+            deployment_file: Path to the deployment JSON file.
+            relative_locked_path: Relative path for the LOCKED_VERSIONS_PATH parameter.
+            config_dir: Path to the Lambda config directory for reconciliation.
+        """
+        import shutil
+
+        idx = self._interactive_select(
+            "Select source locked versions file:", other_files
+        )
+        source_file = pipelines_dir / other_files[idx]
+
+        shutil.copy2(str(source_file), str(locked_versions_path))
+        self._print(f"Copied {source_file.name} → {locked_versions_path.name}", "green")
+
+        # Reconcile: check for new lambdas not in the copied file
+        self._reconcile_new_lambdas(config_dir, locked_versions_path)
+
+        # Update deployment JSON and env var
+        if deployment_file:
+            self._update_deployment_json(
+                deployment_file, "LOCKED_VERSIONS_PATH", relative_locked_path
+            )
+        os.environ["LOCKED_VERSIONS_PATH"] = relative_locked_path
+
+    def _reconcile_new_lambdas(
+        self,
+        config_dir: Path,
+        locked_versions_path: Path,
+    ) -> None:
+        """Reconcile locked versions file against the current config directory.
+
+        Detects two kinds of drift:
+        1. **New lambdas**: configs that exist in the directory but not in the
+           locked file. For known ECR repos, reuses the existing tag; for new
+           repos, resolves from ECR.
+        2. **Stale lambdas**: entries in the locked file whose names no longer
+           appear in the config directory. Offers to prune them.
+
+        Prompts the user before making changes.
+
+        Args:
+            config_dir: Path to the Lambda config directory.
+            locked_versions_path: Path to the locked versions JSON file.
+        """
+        # Scan config directory for all Docker lambdas
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_versions_path),
+            profile=os.environ.get("AWS_PROFILE", "default"),
+            region=os.environ.get("AWS_REGION", "us-east-1"),
+        )
+        discovered = locker.scan_config_directory(str(config_dir))
+
+        # Load existing locked entries
+        try:
+            existing = locker.load_locked_versions(str(locked_versions_path))
+        except (FileNotFoundError, ValueError):
+            return
+
+        discovered_names = {d["name"] for d in discovered}
+        existing_names = {e.get("name") for e in existing}
+
+        new_lambdas = [d for d in discovered if d["name"] not in existing_names]
+        stale_names = existing_names - discovered_names
+
+        if not new_lambdas and not stale_names:
+            return  # Everything is in sync
+
+        changed = False
+
+        # --- Handle stale entries ---
+        if stale_names:
+            self._print("", "white")
+            self._print(
+                f"Found {len(stale_names)} stale entry(ies) no longer in config:",
+                "blue",
+            )
+            for name in sorted(stale_names):
+                self._print(f"  • {name}", "white")
+
+            prune_options = [
+                "Remove stale entries",
+                "Keep them",
+            ]
+            prune_idx = self._interactive_select(
+                "Remove stale lambdas from locked versions?", prune_options
+            )
+            if prune_idx == 0:
+                existing = [e for e in existing if e.get("name") not in stale_names]
+                changed = True
+                self._print(f"Removed {len(stale_names)} stale entry(ies)", "green")
+
+        # --- Handle new lambdas ---
+        if new_lambdas:
+            # Build a map of ECR repo → tag from existing entries
+            repo_tag_map: Dict[str, str] = {}
+            for entry in existing:
+                ecr = entry.get("ecr", "")
+                tag = entry.get("tag", "")
+                if ecr and tag and ecr not in repo_tag_map:
+                    repo_tag_map[ecr] = tag
+
+            # Classify new lambdas: known repo (can reuse tag) vs unknown repo
+            reusable: List[Dict[str, Any]] = []
+            needs_resolve: List[Dict[str, Any]] = []
+            for lamb in new_lambdas:
+                ecr = lamb.get("ecr", "")
+                if ecr in repo_tag_map:
+                    reusable.append(lamb)
+                else:
+                    needs_resolve.append(lamb)
+
+            # Report what was found
+            self._print("", "white")
+            self._print(
+                f"Found {len(new_lambdas)} new Lambda(s) not in locked versions:",
+                "blue",
+            )
+            for lamb in new_lambdas:
+                ecr = lamb.get("ecr", "")
+                tag_info = (
+                    f" (repo already pinned at {repo_tag_map[ecr]})"
+                    if ecr in repo_tag_map
+                    else " (new repo — needs ECR resolve)"
+                )
+                self._print(f"  • {lamb['name']}{tag_info}", "white")
+
+            # Ask the user what to do
+            add_options = [
+                "Add new lambdas to locked versions",
+                "Skip — leave locked versions as-is",
+            ]
+            add_idx = self._interactive_select(
+                "How would you like to handle new lambdas?", add_options
+            )
+
+            if add_idx == 0:
+                # Add reusable entries (same ECR repo, reuse existing tag)
+                added = 0
+                for lamb in reusable:
+                    ecr = lamb.get("ecr", "")
+                    existing.append(
+                        {
+                            "name": lamb["name"],
+                            "tag": repo_tag_map[ecr],
+                            "ecr": ecr,
+                        }
+                    )
+                    added += 1
+
+                # Resolve new repos from ECR
+                if needs_resolve:
+                    profile = os.environ.get("AWS_PROFILE", "default")
+                    region = os.environ.get("AWS_REGION", "us-east-1")
+
+                    try:
+                        import boto3 as _boto3
+
+                        session = _boto3.Session(
+                            profile_name=profile, region_name=region
+                        )
+                        ecr_client = session.client("ecr")
+                    except Exception as e:
+                        self._print(
+                            f"Could not create ECR client: {e}. "
+                            f"New repos will be added without version tags.",
+                            "yellow",
+                        )
+                        ecr_client = None
+
+                    new_repos = {lamb.get("ecr", "") for lamb in needs_resolve}
+                    resolved_tags: Dict[str, str] = {}
+
+                    if ecr_client:
+                        for repo in sorted(new_repos):
+                            if not repo:
+                                continue
+                            self._print(f"  Resolving {repo}...", "blue")
+                            tag = locker.resolve_latest_version(ecr_client, repo)
+                            if tag:
+                                resolved_tags[repo] = tag
+                                self._print(f"    → {tag}", "white")
+                            else:
+                                self._print(f"    → SKIPPED", "yellow")
+
+                    for lamb in needs_resolve:
+                        ecr = lamb.get("ecr", "")
+                        tag = resolved_tags.get(ecr, "")
+                        existing.append(
+                            {
+                                "name": lamb["name"],
+                                "tag": tag,
+                                "ecr": ecr,
+                            }
+                        )
+                        added += 1
+
+                changed = True
+                self._print(
+                    f"Added {added} new lambda(s) to {locked_versions_path.name}",
+                    "green",
+                )
+
+        # Write if anything changed
+        if changed:
+            locker.write_locked_versions(str(locked_versions_path), existing)
+
+    def _unlock_versions(
+        self,
+        locked_versions_path: Path,
+        deployment_file: str,
+    ) -> None:
+        """Execute the unlock flow: remove files, update deployment JSON, clear env."""
+        # 1. Remove LOCKED_VERSIONS_PATH from deployment JSON
+        if deployment_file:
+            self._update_deployment_json(deployment_file, "LOCKED_VERSIONS_PATH", None)
+
+        # 2. Delete locked versions file
+        if locked_versions_path.exists():
+            locked_versions_path.unlink()
+            self._print(f"Removed {locked_versions_path.name}", "blue")
+
+        # 3. Clear env var
+        os.environ.pop("LOCKED_VERSIONS_PATH", None)
+        self._print("Docker image versions unlocked", "green")
