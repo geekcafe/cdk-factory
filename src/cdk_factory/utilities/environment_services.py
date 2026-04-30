@@ -56,7 +56,7 @@ class EnvironmentVariables:
     @staticmethod
     def get_app_domain():
         """
-        gets the app domian name from an environment var
+        gets the app domain name from an environment var
         """
         value = os.getenv("APP_DOMAIN")
         return value
@@ -173,9 +173,13 @@ class EnvironmentServices:
             environment = {}
         # more verbose
         environment["WORKLOAD_NAME"] = deployment.workload.get("name", "NA")
-        environment["ENVIRONMENT_NAME"] = deployment.workload.get("environment", deployment.environment)
+        environment["ENVIRONMENT_NAME"] = deployment.workload.get(
+            "environment", deployment.environment
+        )
         environment["DEPLOYMENT_NAME"] = deployment.name
-        environment["ENVIRONMENT"] = deployment.workload.get("environment", deployment.environment)
+        environment["ENVIRONMENT"] = deployment.workload.get(
+            "environment", deployment.environment
+        )
         environment["PIPELINE"] = deployment.pipeline.get("name", "NA")
         environment["ACCOUNT"] = deployment.account
         environment["DEPLOYMENT"] = deployment.name
@@ -193,57 +197,77 @@ class EnvironmentServices:
 
         if lambda_config.environment_variables is None:
             return environment
-        
+
         # Initialize live SSM resolver if configuration supports it
         live_resolver = None
-        if hasattr(lambda_config, 'ssm') and lambda_config.ssm:
+        if hasattr(lambda_config, "ssm") and lambda_config.ssm:
             try:
                 # Convert lambda config to dict format for LiveSsmResolver
-                ssm_config = lambda_config.ssm if isinstance(lambda_config.ssm, dict) else lambda_config.ssm.__dict__
+                ssm_config = (
+                    lambda_config.ssm
+                    if isinstance(lambda_config.ssm, dict)
+                    else lambda_config.ssm.__dict__
+                )
                 live_resolver = LiveSsmResolver({"ssm": ssm_config})
                 if live_resolver.enabled:
-                    logger.info("Live SSM resolution enabled for Lambda environment variables")
+                    logger.info(
+                        "Live SSM resolution enabled for Lambda environment variables"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to initialize live SSM resolver: {e}")
-        
+
         # load the other environment vars
         for item in lambda_config.environment_variables:
             name = item["name"]
             value = item.get("value")
-            if not value:
+            if value is None:
                 if "ssm_parameter" in item:
                     ssm_parameter_path = item["ssm_parameter"]
-                    
+
                     # Get CDK token value first
                     cdk_token_value = ssm.StringParameter.value_for_string_parameter(
                         scope=scope,
                         parameter_name=ssm_parameter_path,
                     )
-                    
+
                     # Try live resolution if available and appropriate
-                    if live_resolver and live_resolver.should_use_live_resolution(cdk_token_value):
+                    if live_resolver and live_resolver.should_use_live_resolution(
+                        cdk_token_value
+                    ):
                         live_value = live_resolver.resolve_parameter(
-                            ssm_parameter_path, 
-                            fallback_value=None
+                            ssm_parameter_path, fallback_value=None
                         )
                         if live_value:
-                            logger.info(f"Live resolved environment variable {name} from {ssm_parameter_path}")
+                            logger.info(
+                                f"Live resolved environment variable {name} from {ssm_parameter_path}"
+                            )
                             value = live_value
                         else:
-                            logger.warning(f"Live resolution failed for {name}, using CDK token")
+                            logger.warning(
+                                f"Live resolution failed for {name}, using CDK token"
+                            )
                             value = cdk_token_value
                     else:
                         value = cdk_token_value
-                        
+
                 elif "fallback_value" in item:
                     value = item["fallback_value"]
-                    
-                if not value:
+
+                if value is None:
                     logger.warning(
                         f"Environment variable {name} is not set. A future version will throw an error."
                     )
                     continue
-            # set the value
+            # Lambda environment variables must be strings.
+            # Coerce non-string values (e.g. JSON booleans/numbers) so they
+            # aren't silently dropped by CDK.
+            if not isinstance(value, str):
+                logger.warning(
+                    f"Environment variable '{name}' has a non-string value "
+                    f"({type(value).__name__}: {value!r}). Coercing to string."
+                )
+                value = str(value).lower() if isinstance(value, bool) else str(value)
+
             environment[name] = value
 
         return environment
