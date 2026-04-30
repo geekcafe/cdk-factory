@@ -108,6 +108,9 @@ class DockerLambdaUpdater:
         # Locked versions (populated by _load_locked_versions if path provided)
         self.locked_versions: Optional[List[Dict[str, Any]]] = None
 
+        # Track Lambda ARNs already processed in this run to avoid duplicates
+        self._processed_arns: set = set()
+
     # ------------------------------------------------------------------
     # Cross-account session management
     # ------------------------------------------------------------------
@@ -726,6 +729,9 @@ class DockerLambdaUpdater:
                 "deployments": [],
             }
 
+            # Reset processed ARNs per image to avoid cross-deployment duplicates
+            self._processed_arns = set()
+
             for idx, deployment in enumerate(deployments):
                 # Task 4.5: Wrap each deployment entry in try/except
                 try:
@@ -898,6 +904,24 @@ class DockerLambdaUpdater:
         for lambda_info in lambda_arns:
             function_arn = lambda_info["arn"]
             lambda_name = lambda_info["name"]
+
+            # Skip if this Lambda ARN was already processed in this run
+            if function_arn in self._processed_arns:
+                logger.info(
+                    "Skipping %s (ARN already processed in this run)", lambda_name
+                )
+                dep_result["skipped"] += 1
+                dep_result["details"].append(
+                    {
+                        "lambda_name": lambda_name,
+                        "function_arn": function_arn,
+                        "tag": "",
+                        "tag_source": "duplicate",
+                        "status": "skipped",
+                    }
+                )
+                continue
+            self._processed_arns.add(function_arn)
 
             # Resolve tag (with optional locked versions)
             resolved_tag, tag_source = self._resolve_tag(
@@ -1079,6 +1103,24 @@ class DockerLambdaUpdater:
             # Extract lambda name: /ns/.../lambda-name/arn → lambda-name
             parts = param_name.rstrip("/").rsplit("/", 2)
             lambda_name = parts[-2] if len(parts) >= 2 else param_name
+
+            # Skip if this Lambda ARN was already processed in this run
+            if function_arn in self._processed_arns:
+                logger.info(
+                    "Skipping %s (ARN already processed in this run)", lambda_name
+                )
+                result["skipped"] += 1
+                result["details"].append(
+                    {
+                        "lambda_name": lambda_name,
+                        "function_arn": function_arn,
+                        "tag": "",
+                        "tag_source": "duplicate",
+                        "status": "skipped",
+                    }
+                )
+                continue
+            self._processed_arns.add(function_arn)
 
             # Dry-run mode (Task 4.4)
             if self.dry_run:
