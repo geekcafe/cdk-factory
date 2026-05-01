@@ -537,21 +537,25 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         Uses a custom resource to retrieve the secret from Cognito API.
         """
         # Create a custom resource to retrieve the client secret
-        # This is necessary because CDK doesn't expose the client secret
+        # This is necessary because CDK doesn't expose the client secret.
+        # Both on_create and on_update are needed so the secret is retrieved
+        # on initial deployment AND on subsequent stack updates.
+        sdk_call = cr.AwsSdkCall(
+            service="CognitoIdentityServiceProvider",
+            action="describeUserPoolClient",
+            parameters={
+                "UserPoolId": user_pool.user_pool_id,
+                "ClientId": app_client.user_pool_client_id,
+            },
+            physical_resource_id=cr.PhysicalResourceId.of(
+                f"{client_name}-secret-{app_client.user_pool_client_id}"
+            ),
+        )
         get_client_secret = cr.AwsCustomResource(
             self,
             f"{client_name}-secret-retriever",
-            on_create=cr.AwsSdkCall(
-                service="CognitoIdentityServiceProvider",
-                action="describeUserPoolClient",
-                parameters={
-                    "UserPoolId": user_pool.user_pool_id,
-                    "ClientId": app_client.user_pool_client_id,
-                },
-                physical_resource_id=cr.PhysicalResourceId.of(
-                    f"{client_name}-secret-{app_client.user_pool_client_id}"
-                ),
-            ),
+            on_create=sdk_call,
+            on_update=sdk_call,
             policy=cr.AwsCustomResourcePolicy.from_statements(
                 [
                     iam.PolicyStatement(
@@ -561,6 +565,12 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                 ]
             ),
         )
+
+        # Ensure the app client is fully created before the custom resource
+        # tries to describe it. Without this, CloudFormation may execute the
+        # describeUserPoolClient call before the client exists, resulting in
+        # a missing ClientSecret attribute error.
+        get_client_secret.node.add_dependency(app_client)
 
         # Get the client secret from the custom resource response
         client_secret = get_client_secret.get_response_field(
