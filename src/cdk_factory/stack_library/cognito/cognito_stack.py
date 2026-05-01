@@ -534,22 +534,20 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             "UserPoolClient.ClientSecret"
         )
 
-        # Create secret in Secrets Manager
-        secret = secretsmanager.Secret(
-            self,
-            f"{client_name}-client-secret",
-            secret_name=self._build_resource_name(
-                f"cognito/{client_name}/client-secret"
-            ),
-            description=f"Cognito app client secret for {client_name}",
-            secret_string_value=cdk.SecretValue.unsafe_plain_text(client_secret),
-        )
+        # Resolve the secret name using the client's namespace if available
+        namespace = self._resolve_client_namespace(client_config)
+        if namespace:
+            secret_name = f"{namespace}/credentials"
+        else:
+            secret_name = self._build_resource_name(
+                f"cognito/{client_name}/credentials"
+            )
 
-        # Also store client ID in the same secret for convenience
+        # Store all client credentials in a single secret
         secret_with_metadata = secretsmanager.Secret(
             self,
             f"{client_name}-client-credentials",
-            secret_name=self._build_resource_name(f"cognito/{client_name}/credentials"),
+            secret_name=secret_name,
             description=f"Cognito app client credentials for {client_name}",
             secret_object_value={
                 "client_id": cdk.SecretValue.unsafe_plain_text(
