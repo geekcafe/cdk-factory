@@ -237,8 +237,8 @@ class TestCognitoAppClients:
         # The Custom::AWS resource is created to fetch the client secret
         template.resource_count_is("Custom::AWS", 1)
 
-        # Verify Secrets Manager secrets created
-        template.resource_count_is("AWS::SecretsManager::Secret", 2)
+        # Verify Secrets Manager secrets created (single credentials secret per client)
+        template.resource_count_is("AWS::SecretsManager::Secret", 1)
 
         # Verify credentials secret
         template.has_resource_properties(
@@ -787,10 +787,10 @@ class TestCognitoAppClients:
         template.resource_count_is("AWS::Cognito::UserPool", 1)
         template.resource_count_is("AWS::Cognito::UserPoolClient", 3)
 
-        # Verify Secrets Manager for backend service
+        # Verify Secrets Manager for backend service (single credentials secret)
         template.resource_count_is(
-            "AWS::SecretsManager::Secret", 2
-        )  # 2 secrets for backend-api
+            "AWS::SecretsManager::Secret", 1
+        )  # 1 credentials secret for backend-api
 
         # Verify SSM parameters
         template.has_resource_properties(
