@@ -801,3 +801,299 @@ class TestCognitoAppClients:
             "AWS::SSM::Parameter",
             {"Name": "/prod-app/prod/cognito/app-client-backend-api-secret-arn"},
         )
+
+
+class TestCognitoUseExistingPool:
+    """Test suite for importing an existing Cognito user pool"""
+
+    def _create_stack_config(self, config_dict, workload_config):
+        """Helper to create StackConfig with workload"""
+        return StackConfig(config_dict, workload=workload_config.dictionary)
+
+    def test_import_existing_pool_with_use_existing_true(
+        self, app, deployment_config, workload_config
+    ):
+        """When use_existing is true and user_pool_id is set, import the pool"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_id": "us-east-1_ABCDEF123",
+                    "use_existing": "true",
+                    "user_pool_name": "existing-pool",
+                    "app_clients": [
+                        {
+                            "name": "web-client",
+                            "generate_secret": False,
+                            "auth_flows": {"user_srp": True},
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # Should NOT create a new user pool
+        template.resource_count_is("AWS::Cognito::UserPool", 0)
+
+        # Should still create app clients against the imported pool
+        template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
+        template.has_resource_properties(
+            "AWS::Cognito::UserPoolClient",
+            {
+                "ClientName": "web-client",
+                "UserPoolId": "us-east-1_ABCDEF123",
+            },
+        )
+
+    def test_import_existing_pool_inferred_from_id(
+        self, app, deployment_config, workload_config
+    ):
+        """When user_pool_id is set but use_existing is not, infer import"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_id": "us-east-1_ABCDEF123",
+                    "user_pool_name": "existing-pool",
+                    "app_clients": [
+                        {
+                            "name": "web-client",
+                            "generate_secret": False,
+                            "auth_flows": {"user_srp": True},
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # Should NOT create a new user pool — inferred from user_pool_id
+        template.resource_count_is("AWS::Cognito::UserPool", 0)
+
+        # App client should reference the imported pool
+        template.has_resource_properties(
+            "AWS::Cognito::UserPoolClient",
+            {
+                "ClientName": "web-client",
+                "UserPoolId": "us-east-1_ABCDEF123",
+            },
+        )
+
+    def test_create_new_pool_when_use_existing_false(
+        self, app, deployment_config, workload_config
+    ):
+        """When use_existing is explicitly false, create a new pool even if user_pool_id is set"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_id": "us-east-1_ABCDEF123",
+                    "use_existing": "false",
+                    "user_pool_name": "new-pool",
+                    "app_clients": [
+                        {
+                            "name": "web-client",
+                            "generate_secret": False,
+                            "auth_flows": {"user_srp": True},
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # Should create a new user pool despite user_pool_id being set
+        template.resource_count_is("AWS::Cognito::UserPool", 1)
+        template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
+
+    def test_create_new_pool_when_no_id_provided(
+        self, app, deployment_config, workload_config
+    ):
+        """When no user_pool_id is provided, create a new pool"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_name": "brand-new-pool",
+                    "app_clients": [
+                        {
+                            "name": "web-client",
+                            "generate_secret": False,
+                            "auth_flows": {"user_srp": True},
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # Should create a new user pool
+        template.resource_count_is("AWS::Cognito::UserPool", 1)
+        template.resource_count_is("AWS::Cognito::UserPoolClient", 1)
+
+    def test_import_pool_with_empty_id_raises(
+        self, app, deployment_config, workload_config
+    ):
+        """When use_existing is true but user_pool_id is empty, raise an error"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_id": "",
+                    "use_existing": "true",
+                    "user_pool_name": "pool",
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        with pytest.raises(
+            ValueError, match="use_existing is true but no user_pool_id"
+        ):
+            stack.build(stack_config, deployment_config, workload_config)
+
+    def test_import_pool_with_multiple_app_clients(
+        self, app, deployment_config, workload_config
+    ):
+        """Import an existing pool and create multiple app clients against it"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "namespace": "my-app/dev/cognito",
+                },
+                "cognito": {
+                    "user_pool_id": "us-east-1_EXISTING",
+                    "user_pool_name": "existing-pool",
+                    "app_clients": [
+                        {
+                            "name": "web-client",
+                            "ssm_namespace": "my-app/dev/cognito/web-client",
+                            "generate_secret": False,
+                            "auth_flows": {"user_srp": True, "user_password": True},
+                        },
+                        {
+                            "name": "automation",
+                            "generate_secret": True,
+                            "ssm_namespace": "my-app/dev/cognito/automation",
+                            "auth_flows": {"user_srp": True},
+                        },
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # No new pool created
+        template.resource_count_is("AWS::Cognito::UserPool", 0)
+
+        # Both app clients created
+        template.resource_count_is("AWS::Cognito::UserPoolClient", 2)
+
+        template.has_resource_properties(
+            "AWS::Cognito::UserPoolClient",
+            {
+                "ClientName": "web-client",
+                "UserPoolId": "us-east-1_EXISTING",
+                "GenerateSecret": False,
+            },
+        )
+        template.has_resource_properties(
+            "AWS::Cognito::UserPoolClient",
+            {
+                "ClientName": "automation",
+                "UserPoolId": "us-east-1_EXISTING",
+                "GenerateSecret": True,
+            },
+        )
+
+    def test_import_pool_ssm_exports(self, app, deployment_config, workload_config):
+        """SSM exports should work with an imported pool"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "ssm": {
+                    "auto_export": True,
+                    "namespace": "my-app/dev/cognito",
+                },
+                "cognito": {
+                    "user_pool_id": "us-east-1_EXISTING",
+                    "user_pool_name": "existing-pool",
+                    "app_clients": [
+                        {
+                            "name": "web-client",
+                            "ssm_namespace": "my-app/dev/cognito/web-client",
+                            "generate_secret": False,
+                            "auth_flows": {"user_srp": True},
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # Pool-level SSM exports should still work
+        template.has_resource_properties(
+            "AWS::SSM::Parameter",
+            {
+                "Name": "/my-app/dev/cognito/user-pool-id",
+                "Type": "String",
+                "Value": "us-east-1_EXISTING",
+            },
+        )
+
+    def test_empty_user_pool_id_creates_new_pool(
+        self, app, deployment_config, workload_config
+    ):
+        """An empty string user_pool_id should create a new pool (not import)"""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_id": "",
+                    "user_pool_name": "new-pool",
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # Empty ID should create a new pool
+        template.resource_count_is("AWS::Cognito::UserPool", 1)

@@ -37,7 +37,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         self.stack_config: StackConfig | None = None
         self.deployment: DeploymentConfig | None = None
         self.cognito_config: CognitoConfig | None = None
-        self.user_pool: cognito.UserPool | None = None
+        self.user_pool: cognito.IUserPool | None = None
         self.app_clients: dict = {}  # Store created app clients by name
 
     def _build_resource_name(self, name: str) -> str:
@@ -89,7 +89,40 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                 )
         return attributes
 
+    def _should_import_existing_pool(self) -> bool:
+        """Determine whether to import an existing user pool or create a new one.
+
+        Resolution order:
+        1. Explicit ``use_existing`` flag (True/False) takes precedence.
+        2. If not set, infer from ``user_pool_id``: non-empty → import, empty/missing → create.
+        """
+        use_existing = self.cognito_config.use_existing
+        if use_existing is True:
+            return True
+        if use_existing is False:
+            return False
+        # Infer: if a pool ID is supplied, import it
+        pool_id = self.cognito_config.user_pool_id
+        return bool(pool_id and str(pool_id).strip())
+
     def _create_user_pool_with_config(self):
+        if self._should_import_existing_pool():
+            pool_id = self.cognito_config.user_pool_id
+            if not pool_id or not str(pool_id).strip():
+                raise ValueError(
+                    "use_existing is true but no user_pool_id was provided. "
+                    "Supply a valid user_pool_id to import an existing pool."
+                )
+            self.user_pool = cognito.UserPool.from_user_pool_id(
+                self,
+                id=self._build_resource_name(
+                    self.cognito_config.user_pool_name or pool_id or "imported-pool"
+                ),
+                user_pool_id=pool_id,
+            )
+            logger.info(f"Imported existing Cognito User Pool: {pool_id}")
+            return
+
         # Build kwargs for all supported Cognito UserPool parameters
         kwargs = {
             "user_pool_name": self.cognito_config.user_pool_name,
@@ -496,7 +529,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         self,
         client_name: str,
         app_client: cognito.UserPoolClient,
-        user_pool: cognito.UserPool,
+        user_pool: cognito.IUserPool,
         client_config: dict,
     ):
         """
@@ -604,7 +637,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             return client_ns
         return self.stack_config.ssm_namespace
 
-    def _export_ssm_parameters(self, user_pool: cognito.UserPool):
+    def _export_ssm_parameters(self, user_pool: cognito.IUserPool):
         """Export Cognito resources to SSM using top-level ssm config"""
 
         ssm_config = self.stack_config.ssm_config

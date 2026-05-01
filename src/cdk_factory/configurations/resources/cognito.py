@@ -33,6 +33,23 @@ class CognitoConfig(EnhancedBaseConfig):
         return self.__config.get("user_pool_id")
 
     @property
+    def use_existing(self) -> bool | None:
+        """Whether to import an existing user pool instead of creating a new one.
+
+        Resolution logic (handled by the stack, not here):
+        - ``True``  → import (requires ``user_pool_id``)
+        - ``False`` → create new (ignores ``user_pool_id``)
+        - ``None``  → infer from ``user_pool_id`` (has value = import, empty/missing = create)
+
+        Returns:
+            ``True``, ``False``, or ``None`` if not explicitly set.
+        """
+        raw = self.__config.get("use_existing")
+        if raw is None:
+            return None
+        return str(raw).lower() == "true"
+
+    @property
     def self_sign_up_enabled(self) -> bool:
         """Whether self sign-up is enabled (default: False)"""
         return bool(self.__config.get("self_sign_up_enabled", False))
