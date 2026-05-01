@@ -159,6 +159,14 @@ class LambdaStack(IStack):
                     lambda_config=function_config
                 )
 
+            # Allow recursive invocations for self-requeue patterns
+            # (e.g., aggregator polling via SQS → Lambda → SQS → Lambda)
+            if function_config.recursive_loop:
+                cfn_function = lambda_function.node.default_child
+                cfn_function.add_property_override(
+                    "RecursiveLoop", function_config.recursive_loop
+                )
+
             # newer more flexible, where a function can be a consumer
             # and a producer
             if function_config.sqs.queues:

@@ -452,6 +452,21 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
         self.__execution_role_name = value
 
     @property
+    def recursive_loop(self) -> str | None:
+        """
+        Recursive loop detection setting.
+
+        Set to "Allow" for Lambdas that intentionally self-requeue via SQS
+        (e.g., aggregator polling patterns). AWS Lambda's recursive invocation
+        detection will otherwise kill the function after ~16 cycles.
+
+        Values: "Allow" or "Terminate" (default if not set)
+        """
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("recursive_loop")
+        return None
+
+    @property
     def raw_ecr_name(self) -> str:
         """Raw ECR repository name from config, without build_resource_name transformation."""
         return self.__config.get("ecr", {}).get("name", "")
