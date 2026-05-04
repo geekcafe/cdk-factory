@@ -339,6 +339,9 @@ class PolicyDocuments:
             {"s3":       "read",  "bucket": "my-bucket-name"}
             {"s3":       "write", "bucket": "{{S3_WORKLOAD_BUCKET_NAME}}"}
             {"s3":       "delete","bucket": "my-bucket-name"}
+            {"lambda":   "invoke","function": "*"}
+            {"events":   "read"}
+            {"events":   "manage"}
 
         Returns None if the dict doesn't match a structured format.
         """
@@ -455,6 +458,97 @@ class PolicyDocuments:
                 raise ValueError(
                     f"Unknown parameter_store action '{action}'. Valid: read"
                 )
+
+        # Lambda structured permissions
+        if "lambda" in permission:
+            action = permission["lambda"]
+            function = permission.get("function", "*")
+
+            resolver = self._get_resource_resolver()
+            region = resolver.get_aws_region()
+            account = resolver.get_aws_account()
+
+            action_map = {
+                "invoke": {
+                    "actions": ["lambda:InvokeFunction"],
+                    "sid": "LambdaInvoke",
+                    "description": "Lambda Invoke",
+                },
+            }
+
+            if action not in action_map:
+                raise ValueError(
+                    f"Unknown lambda action '{action}'. Valid: {list(action_map.keys())}"
+                )
+
+            details = action_map[action]
+
+            if function == "*":
+                resources = ["*"]
+                fn_slug = "All"
+            else:
+                fn_arn = f"arn:aws:lambda:{region}:{account}:function:{function}"
+                resources = [fn_arn]
+                fn_slug = self._make_sid_slug(function)
+
+            return {
+                "name": "Lambda",
+                "description": f"{details['description']}: {function}",
+                "sid": f"{details['sid']}{fn_slug}",
+                "actions": details["actions"],
+                "resources": resources,
+                "nag": {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": f"Lambda {action} permission for function: {function}",
+                    "resources": [f"Resource::{r}" for r in resources],
+                },
+            }
+
+        # EventBridge structured permissions
+        if "events" in permission:
+            action = permission["events"]
+
+            action_map = {
+                "read": {
+                    "actions": [
+                        "events:DescribeRule",
+                        "events:ListRules",
+                        "events:ListTargetsByRule",
+                    ],
+                    "sid": "EventBridgeRead",
+                    "description": "EventBridge Read",
+                },
+                "manage": {
+                    "actions": [
+                        "events:DescribeRule",
+                        "events:EnableRule",
+                        "events:DisableRule",
+                        "events:ListRules",
+                        "events:ListTargetsByRule",
+                    ],
+                    "sid": "EventBridgeManage",
+                    "description": "EventBridge Manage",
+                },
+            }
+
+            if action not in action_map:
+                raise ValueError(
+                    f"Unknown events action '{action}'. Valid: {list(action_map.keys())}"
+                )
+
+            details = action_map[action]
+            return {
+                "name": "EventBridge",
+                "description": details["description"],
+                "sid": details["sid"],
+                "actions": details["actions"],
+                "resources": ["*"],
+                "nag": {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": f"EventBridge {action} permission for schedule rules.",
+                    "resources": ["Resource::*"],
+                },
+            }
 
         return None
 
