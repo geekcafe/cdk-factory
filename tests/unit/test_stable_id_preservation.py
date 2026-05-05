@@ -1,13 +1,11 @@
 """
-Preservation Property Tests — Unchanged Stages Produce Same Stable ID
+Preservation Property Tests — Stage Stable ID Behavior
 
-These tests verify baseline behavior that MUST be preserved after the fix:
-1. Stack-less stages return sanitized name (fallback path)
+These tests verify the stable_id behavior:
+1. Stages use sanitized name as stable_id (immune to stack changes)
 2. Explicit construct_id overrides everything
 3. name property still returns the display name
 4. Other properties (wave_name, enabled, description) are unaffected
-
-All tests are EXPECTED TO PASS on UNFIXED code — they capture behavior to preserve.
 
 Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5
 """
@@ -57,19 +55,28 @@ stage_name_st = st.from_regex(r"[a-zA-Z][a-zA-Z0-9\-]{1,19}", fullmatch=True)
 # Construct IDs: alphanumeric with hyphens, 2-20 chars
 construct_id_st = st.from_regex(r"[a-zA-Z][a-zA-Z0-9\-]{1,19}", fullmatch=True)
 
+# Stack configs
+stack_config_st = st.fixed_dictionaries(
+    {
+        "name": st.from_regex(r"[a-z][a-z0-9\-]{2,15}", fullmatch=True),
+        "module": st.just("lambda_stack"),
+        "enabled": st.just(True),
+    }
+)
+
 
 # ---------------------------------------------------------------------------
-# Property Test: Stack-less stages use sanitized name
+# Property Test: stable_id equals sanitized stage name
 # ---------------------------------------------------------------------------
 
 
-class TestPreservationStacklessStages:
+class TestStableIdIsSanitizedName:
     """
     **Validates: Requirements 3.1, 3.2**
 
-    Property 2a: For stages with NO stacks (build-only), stable_id must
-    equal re.sub(r"[^a-zA-Z0-9-]", "", name) — the sanitized name fallback.
-    This must pass on both unfixed and fixed code.
+    Property: stable_id must equal the sanitized stage name, regardless of
+    whether the stage has stacks or not. This ensures adding/removing stacks
+    never changes the construct ID.
     """
 
     @given(name=stage_name_st)
@@ -83,9 +90,23 @@ class TestPreservationStacklessStages:
             f"name='{name}', expected='{expected}', got='{stage.stable_id}'"
         )
 
+    @given(
+        name=stage_name_st,
+        stacks=st.lists(stack_config_st, min_size=1, max_size=5),
+    )
+    @settings(max_examples=100)
+    def test_stage_with_stacks_stable_id_is_sanitized_name(self, name, stacks):
+        """Stages with stacks: stable_id == sanitized name (not hash of stacks)."""
+        stage = _make_stage(name, stacks=stacks)
+        expected = re.sub(r"[^a-zA-Z0-9-]", "", name)
+        assert stage.stable_id == expected, (
+            f"Stage with stacks stable_id mismatch: "
+            f"name='{name}', expected='{expected}', got='{stage.stable_id}'"
+        )
+
 
 # ---------------------------------------------------------------------------
-# Property Test: Explicit construct_id overrides everything (post-fix)
+# Property Test: Explicit construct_id overrides everything
 # ---------------------------------------------------------------------------
 
 
@@ -93,9 +114,8 @@ class TestPreservationExplicitConstructId:
     """
     **Validates: Requirements 3.2, 3.3**
 
-    Property 2b: When construct_id is set in config, stable_id must return
+    Property: When construct_id is set in config, stable_id must return
     the sanitized construct_id regardless of name or stacks.
-
     """
 
     @given(name=stage_name_st, cid=construct_id_st)
@@ -106,6 +126,21 @@ class TestPreservationExplicitConstructId:
         expected = re.sub(r"[^a-zA-Z0-9-]", "", cid)
         assert stage.stable_id == expected, (
             f"Explicit construct_id not used: "
+            f"construct_id='{cid}', expected='{expected}', got='{stage.stable_id}'"
+        )
+
+    @given(
+        name=stage_name_st,
+        cid=construct_id_st,
+        stacks=st.lists(stack_config_st, min_size=1, max_size=5),
+    )
+    @settings(max_examples=100)
+    def test_explicit_construct_id_overrides_with_stacks(self, name, cid, stacks):
+        """Explicit construct_id takes precedence even with stacks present."""
+        stage = _make_stage(name, stacks=stacks, construct_id=cid)
+        expected = re.sub(r"[^a-zA-Z0-9-]", "", cid)
+        assert stage.stable_id == expected, (
+            f"Explicit construct_id not used with stacks: "
             f"construct_id='{cid}', expected='{expected}', got='{stage.stable_id}'"
         )
 

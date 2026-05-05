@@ -63,26 +63,26 @@ class PipelineStageConfig:
         """
         Returns a stable construct ID for the stage.
 
-        Three-tier logic:
-        1. Explicit ``construct_id`` in config — highest priority (migration path)
-        2. Hash-based ID from sorted stack names — immune to stage renames
-        3. Fallback to sanitized stage name — for stack-less / build-only stages
+        The stage construct ID is part of every CloudFormation logical ID for
+        resources within the stage. It MUST remain stable when stacks are
+        added to or removed from the stage, otherwise all existing resources
+        get new logical IDs and CloudFormation tries to recreate them.
+
+        Two-tier logic:
+        1. Explicit ``construct_id`` in config — highest priority, allows
+           renaming stages or migrating from legacy hash-based IDs.
+        2. Sanitized stage name — simple, predictable, stable as long as
+           the stage name doesn't change. Stage renames are rare and should
+           be handled via an explicit ``construct_id`` override.
         """
         import re
-        import hashlib
 
-        # 1. Explicit override — highest priority (migration path)
+        # 1. Explicit override — highest priority (migration / rename path)
         explicit_id = self.dictionary.get("construct_id")
         if explicit_id:
             return re.sub(r"[^a-zA-Z0-9-]", "", explicit_id)
 
-        # 2. Hash-based ID from sorted stack names
-        stack_names = sorted(s.name for s in self.stacks)
-        if stack_names:
-            digest = hashlib.sha256("|".join(stack_names).encode()).hexdigest()[:8]
-            return f"stage-{digest}"
-
-        # 3. Fallback for stack-less stages (build-only)
+        # 2. Use the stage name directly — stable across stack additions/removals
         return re.sub(r"[^a-zA-Z0-9-]", "", self.name)
 
     @property
