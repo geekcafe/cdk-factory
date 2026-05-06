@@ -74,6 +74,7 @@ class LambdaStack(IStack):
         self.deployment: DeploymentConfig | None = None
         self.workload: WorkloadConfig | None = None
         self.exported_lambda_arns: dict = {}  # Store exported Lambda ARNs
+        self.exported_eventbridge_rules: dict = {}  # Store exported EventBridge rules
 
         self.__nag_rule_suppressions()
 
@@ -128,6 +129,9 @@ class LambdaStack(IStack):
 
         # Export route metadata to SSM for API Gateway route discovery
         self.__export_route_metadata_to_ssm()
+
+        # Export EventBridge rule names/ARNs to SSM for runtime discovery
+        self.__export_eventbridge_rules_to_ssm()
 
     def __nag_rule_suppressions(self):
         pass
@@ -352,6 +356,18 @@ class LambdaStack(IStack):
             )
 
             rule.add_target(aws_events_targets.LambdaFunction(lambda_function))
+
+            # Register EventBridge rule for SSM export
+            if trigger.name:
+                trigger_name = trigger.name.replace("_", "-")
+                self.exported_eventbridge_rules[trigger_name] = {
+                    "rule": rule,
+                    "trigger_name": trigger_name,
+                }
+            else:
+                logger.warning(
+                    f"EventBridge trigger on '{name}' has no name field — skipping SSM registration"
+                )
 
     def __setup_s3_trigger(
         self,
@@ -668,6 +684,70 @@ class LambdaStack(IStack):
 
         if exported_count > 0:
             print(f"📤 Exported {exported_count} route metadata parameter(s) to SSM")
+
+    def __export_eventbridge_rules_to_ssm(self) -> None:
+        """
+        Export EventBridge rule names and ARNs to SSM Parameter Store.
+        This enables consuming Lambdas to discover rule names at runtime
+        without relying on hardcoded naming conventions.
+        """
+        if not self.exported_eventbridge_rules:
+            logger.info("No EventBridge rules to export to SSM")
+            return
+
+        # Get SSM export configuration
+        ssm_config = self.stack_config.dictionary.get("ssm", {})
+        if not ssm_config.get("auto_export", False):
+            logger.info("SSM export is not enabled for this stack")
+            return
+
+        # Build SSM parameter prefix — requires ssm.namespace
+        namespace = ssm_config.get("namespace")
+        if not namespace:
+            raise ValueError(
+                f"Stack '{self.stack_config.name}': "
+                f"'ssm.namespace' is required when 'ssm.auto_export' is true. "
+                f"Add 'ssm.namespace' to your stack config."
+            )
+
+        prefix = f"/{namespace}"
+
+        logger.info(
+            f"Exporting {len(self.exported_eventbridge_rules)} EventBridge rule(s) to SSM under {prefix}"
+        )
+
+        for trigger_name, rule_info in self.exported_eventbridge_rules.items():
+            # Create SSM parameter for rule name
+            rule_name_path = f"{prefix}/event-bridge/{trigger_name}/rule-name"
+            ssm.StringParameter(
+                self,
+                f"ssm-eb-{trigger_name}-rule-name",
+                parameter_name=rule_name_path,
+                string_value=rule_info["rule"].rule_name,
+                description=f"EventBridge rule name for {trigger_name}",
+                tier=ssm.ParameterTier.STANDARD,
+            )
+            logger.info(
+                f"✅ Exported EventBridge rule '{trigger_name}' to SSM: {rule_name_path}"
+            )
+
+            # Create SSM parameter for rule ARN
+            rule_arn_path = f"{prefix}/event-bridge/{trigger_name}/rule-arn"
+            ssm.StringParameter(
+                self,
+                f"ssm-eb-{trigger_name}-rule-arn",
+                parameter_name=rule_arn_path,
+                string_value=rule_info["rule"].rule_arn,
+                description=f"EventBridge rule ARN for {trigger_name}",
+                tier=ssm.ParameterTier.STANDARD,
+            )
+            logger.info(
+                f"✅ Exported EventBridge rule '{trigger_name}' to SSM: {rule_arn_path}"
+            )
+
+        print(
+            f"📤 Exported {len(self.exported_eventbridge_rules)} EventBridge rule(s) to SSM Parameter Store"
+        )
 
     def __setup_lambda_docker_file(
         self, lambda_config: LambdaFunctionConfig
