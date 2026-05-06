@@ -26,7 +26,7 @@ from cdk_factory.introspection.service_graph import ServiceGraph, build_service_
 # Helpers
 # ---------------------------------------------------------------------------
 
-PREFIX = "aplos-nca-saas-development-dev"
+PREFIX = "acme-saas-development-dev"
 
 
 def _make_lambda(

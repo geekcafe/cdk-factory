@@ -215,7 +215,7 @@ def parse_lambda_configs(
     Args:
         config_dir: Path to CDK config root (e.g. ``"cdk/configs"``).
         env_vars: Template variable values for placeholder resolution
-            (e.g. ``{"WORKLOAD_NAME": "aplos-nca-saas",
+            (e.g. ``{"WORKLOAD_NAME": "acme-saas",
             "DEPLOYMENT_NAMESPACE": "development-dev"}``).
         resource_subdirs: Subdirectories to scan under
             ``stacks/lambdas/resources/``.  Defaults to all subdirectories.

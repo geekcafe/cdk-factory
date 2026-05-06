@@ -167,7 +167,7 @@ class AwsIntrospector:
 
         Args:
             ssm_namespace: The SSM namespace prefix
-                (e.g. ``"aplos-nca-saas/development/lambda"``).
+                (e.g. ``"acme-saas/development/lambda"``).
 
         Returns:
             Mapping from config Lambda name to actual function name.
@@ -197,7 +197,7 @@ class AwsIntrospector:
                     # We want the /function-name parameters
                     if param_name.endswith("/function-name"):
                         # Extract the lambda config name from the path
-                        # e.g. /aplos-nca-saas/development/lambda/file-system-archive/function-name
+                        # e.g. /acme-saas/development/lambda/file-system-archive/function-name
                         #   → file-system-archive
                         parts = param_name.split("/")
                         if len(parts) >= 2:
@@ -244,7 +244,7 @@ class AwsIntrospector:
         Args:
             graph: The service graph containing Lambda nodes.
             ssm_namespace: Optional SSM namespace prefix
-                (e.g. ``"aplos-nca-saas/development/lambda"``).
+                (e.g. ``"acme-saas/development/lambda"``).
 
         Returns:
             Mapping from Lambda name to :class:`ResolvedLambda`.

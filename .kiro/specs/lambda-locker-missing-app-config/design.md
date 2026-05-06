@@ -95,7 +95,7 @@ _For any_ invocation where `CONFIG_DIR` is changed from `lambdas/resources/` to 
 
 Assuming our root cause analysis is correct:
 
-**File**: `Aplos-NCA-SaaS-IaC/cdk/commands/run-lock-versions.sh`
+**File**: `Acme-SaaS-IaC/cdk/commands/run-lock-versions.sh`
 
 **Variable**: `CONFIG_DIR`
 

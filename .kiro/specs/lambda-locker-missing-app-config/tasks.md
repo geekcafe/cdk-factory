@@ -40,7 +40,7 @@
 - [ ] 3. Fix CONFIG_DIR in run-lock-versions.sh
 
   - [ ] 3.1 Change CONFIG_DIR from resources/ to lambdas/
-    - In `Aplos-NCA-SaaS-IaC/cdk/commands/run-lock-versions.sh`, change line:
+    - In `Acme-SaaS-IaC/cdk/commands/run-lock-versions.sh`, change line:
     - FROM: `CONFIG_DIR="${CDK_DIR}/configs/stacks/lambdas/resources"`
     - TO: `CONFIG_DIR="${CDK_DIR}/configs/stacks/lambdas"`
     - This is the only change required — no Python code modifications needed

@@ -80,13 +80,13 @@ To rename a stage without breaking deployed resources:
 Even though each stack has an explicit `stack_name` (making the CloudFormation stack itself portable), CDK generates **resource logical IDs** from the full construct tree path:
 
 ```
-Pipeline / lambdas / aplos-nca-saas-dev-lambda-workflow-app / workflow-custom-report / Resource
+Pipeline / lambdas / acme-saas-dev-lambda-workflow-app / workflow-custom-report / Resource
 ```
 
 If you move `lambda-workflow-app` from the `lambdas` stage to a new `workflow` stage, the path changes:
 
 ```
-Pipeline / workflow / aplos-nca-saas-dev-lambda-workflow-app / workflow-custom-report / Resource
+Pipeline / workflow / acme-saas-dev-lambda-workflow-app / workflow-custom-report / Resource
 ```
 
 Every resource gets a new logical ID. CloudFormation interprets this as "delete old resource, create new one" — which fails for resources that already exist physically (event source mappings, etc.) or causes data loss for stateful resources.

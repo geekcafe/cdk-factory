@@ -25,7 +25,7 @@ from cdk_factory.introspection.config_parser import (
 # ---------------------------------------------------------------------------
 
 ENV_VARS = {
-    "WORKLOAD_NAME": "aplos-nca-saas",
+    "WORKLOAD_NAME": "acme-saas",
     "DEPLOYMENT_NAMESPACE": "development-dev",
 }
 
@@ -194,14 +194,14 @@ class TestResolveTemplateVariables:
             "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-queue",
             ENV_VARS,
         )
-        assert result == "aplos-nca-saas-development-dev-queue"
+        assert result == "acme-saas-development-dev-queue"
 
     def test_leaves_unknown_placeholders(self):
         result = resolve_template_variables(
             "{{WORKLOAD_NAME}}-{{UNKNOWN}}-queue",
             ENV_VARS,
         )
-        assert result == "aplos-nca-saas-{{UNKNOWN}}-queue"
+        assert result == "acme-saas-{{UNKNOWN}}-queue"
 
     def test_empty_env_vars(self):
         result = resolve_template_variables("{{WORKLOAD_NAME}}-test", {})
@@ -219,7 +219,7 @@ class TestResolveTemplateVariables:
         result = resolve_template_variables(
             "{{WORKLOAD_NAME}}-{{WORKLOAD_NAME}}", ENV_VARS
         )
-        assert result == "aplos-nca-saas-aplos-nca-saas"
+        assert result == "acme-saas-acme-saas"
 
 
 # ---------------------------------------------------------------------------
@@ -257,10 +257,7 @@ class TestParseAdmissionHandler:
     def test_consumer_queues(self, parsed_configs):
         consumers = parsed_configs[0].consumer_queues
         assert len(consumers) == 1
-        assert (
-            consumers[0].queue_name
-            == "aplos-nca-saas-development-dev-analysis-admission"
-        )
+        assert consumers[0].queue_name == "acme-saas-development-dev-analysis-admission"
         assert consumers[0].queue_type == "consumer"
         assert consumers[0].has_dlq is True
         assert consumers[0].visibility_timeout == 180
@@ -269,14 +266,14 @@ class TestParseAdmissionHandler:
         producers = parsed_configs[0].producer_queues
         assert len(producers) == 1
         assert producers[0].queue_name == (
-            "aplos-nca-saas-development-dev-build-analysis-workflow-steps"
+            "acme-saas-development-dev-build-analysis-workflow-steps"
         )
 
     def test_sqs_url_references(self, parsed_configs):
         refs = parsed_configs[0].sqs_url_references
         assert "SQS_URL_ADMISSION_QUEUE" in refs
         assert refs["SQS_URL_ADMISSION_QUEUE"] == (
-            "aplos-nca-saas-development-dev-analysis-admission"
+            "acme-saas-development-dev-analysis-admission"
         )
         assert "SQS_URL_BUILD_ANALYSIS_WORKFLOW_STEPS" in refs
         # Non-SQS env vars should NOT be in sqs_url_references
@@ -305,9 +302,9 @@ class TestParseStepProcessor:
         producers = parsed_configs[0].producer_queues
         assert len(producers) == 3
         queue_names = [q.queue_name for q in producers]
-        assert "aplos-nca-saas-development-dev-workflow-step-processor" in queue_names
-        assert "aplos-nca-saas-development-dev-workflow-complete" in queue_names
-        assert "aplos-nca-saas-development-dev-analysis-data-cleaning" in queue_names
+        assert "acme-saas-development-dev-workflow-step-processor" in queue_names
+        assert "acme-saas-development-dev-workflow-complete" in queue_names
+        assert "acme-saas-development-dev-analysis-data-cleaning" in queue_names
 
     def test_consumer_queue_with_dlq(self, parsed_configs):
         consumers = parsed_configs[0].consumer_queues
@@ -339,8 +336,8 @@ class TestParseDlqHandler:
         dlq_consumers = parsed_configs[0].dlq_consumer_queues
         assert len(dlq_consumers) == 2
         names = [q.queue_name for q in dlq_consumers]
-        assert "aplos-nca-saas-development-dev-analysis-data-cleaning-dlq" in names
-        assert "aplos-nca-saas-development-dev-analysis-admission-dlq" in names
+        assert "acme-saas-development-dev-analysis-data-cleaning-dlq" in names
+        assert "acme-saas-development-dev-analysis-admission-dlq" in names
 
     def test_dlq_consumer_type(self, parsed_configs):
         for q in parsed_configs[0].dlq_consumer_queues:
