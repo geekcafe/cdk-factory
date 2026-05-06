@@ -312,7 +312,7 @@ class CognitoConfig(EnhancedBaseConfig):
             [
                 {
                     "name": "web-app",
-                    "ssm_namespace": "nca-web/beta/auth",
+                    "ssm_namespace": "acme-web/beta/auth",
                     "generate_secret": False,
                     "auth_flows": {
                         "user_password": True,

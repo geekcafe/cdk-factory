@@ -20,7 +20,7 @@ Usage:
 
     # Direct namespace mode (post-deployment refresh)
     python -m cdk_factory.utilities.docker_lambda_updater \
-        --ssm-namespace acme-nca-saas/dev/lambda/core-services \
+        --ssm-namespace acme-saas/dev/lambda/core-services \
         --account 959096737760 --region us-east-1 --refresh
 
     # With locked versions

@@ -9,10 +9,10 @@ The Cognito CDK stack currently exports SSM parameters for all app clients under
 - **Cognito_Stack**: The CDK stack class (`CognitoStack`) that provisions a Cognito User Pool, app clients, and exports SSM parameters.
 - **CognitoConfig**: The Pydantic-style configuration model (`CognitoConfig`) that parses the `cognito` block from stack JSON configuration.
 - **App_Client**: A Cognito User Pool Client entry defined in the `app_clients` array of the cognito configuration.
-- **SSM_Namespace**: A slash-delimited path prefix used to organize SSM Parameter Store exports (e.g., `nca-web/beta/auth`).
+- **SSM_Namespace**: A slash-delimited path prefix used to organize SSM Parameter Store exports (e.g., `acme-web/beta/auth`).
 - **Pool_Level_Namespace**: The existing `ssm.namespace` value defined at the top level of the stack configuration, used as the default export path for all Cognito resources.
 - **Client_Level_Namespace**: An optional `ssm_namespace` value defined on an individual app client entry, overriding the Pool_Level_Namespace for that client's SSM exports.
-- **Safe_Client_Name**: A sanitized version of the app client name where hyphens and spaces are replaced with underscores (e.g., `nca-web-app` becomes `nca_web_app`).
+- **Safe_Client_Name**: A sanitized version of the app client name where hyphens and spaces are replaced with underscores (e.g., `acme-web-app` becomes `nca_web_app`).
 - **Stack_Config**: The top-level stack configuration object (`StackConfig`) that holds the `ssm` block including `namespace` and `auto_export`.
 
 ## Requirements

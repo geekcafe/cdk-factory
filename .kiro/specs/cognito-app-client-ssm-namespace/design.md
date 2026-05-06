@@ -101,8 +101,8 @@ logger.warning(
 {
   "app_clients": [
     {
-      "name": "nca-web-app",
-      "ssm_namespace": "nca-web/beta/auth",
+      "name": "acme-web-app",
+      "ssm_namespace": "acme-web/beta/auth",
       "generate_secret": false,
       "auth_flows": { "user_srp": true }
     },
@@ -125,7 +125,7 @@ The `ssm_namespace` field:
 
 | Client Config | Exported Path |
 |---|---|
-| `ssm_namespace: "nca-web/beta/auth"`, name: `nca-web-app` | `/nca-web/beta/auth/app_client_nca_web_app_id` |
+| `ssm_namespace: "acme-web/beta/auth"`, name: `acme-web-app` | `/acme-web/beta/auth/app_client_nca_web_app_id` |
 | No `ssm_namespace`, name: `admin-portal`, pool ns: `acme/beta/cognito` | `/acme/beta/cognito/app_client_admin_portal_id` |
 
 ## Correctness Properties

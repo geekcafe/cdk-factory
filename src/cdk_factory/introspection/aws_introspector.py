@@ -58,7 +58,7 @@ class AwsIntrospector:
         """Initialize with AWS profile and region.
 
         Args:
-            profile_name: AWS CLI profile name (e.g. ``"nca-development"``).
+            profile_name: AWS CLI profile name (e.g. ``"acme-development"``).
                 If ``None``, uses the default credential chain.
             region: AWS region (default ``"us-east-1"``).
 
