@@ -220,7 +220,7 @@ class EnvironmentServices:
         for item in lambda_config.environment_variables:
             name = item["name"]
             value = item.get("value")
-            if value is None:
+            if not value:
                 if "ssm_parameter" in item:
                     ssm_parameter_path = item["ssm_parameter"]
 
@@ -253,9 +253,9 @@ class EnvironmentServices:
                 elif "fallback_value" in item:
                     value = item["fallback_value"]
 
-                if value is None:
+                if not value:
                     logger.warning(
-                        f"Environment variable {name} is not set. A future version will throw an error."
+                        f"🚨 Environment variable {name} is not set. 🔮 A future version will throw an error."
                     )
                     continue
             # Lambda environment variables must be strings.
@@ -263,8 +263,8 @@ class EnvironmentServices:
             # aren't silently dropped by CDK.
             if not isinstance(value, str):
                 logger.warning(
-                    f"Environment variable '{name}' has a non-string value "
-                    f"({type(value).__name__}: {value!r}). Coercing to string."
+                    f"🚨 Environment variable '{name}' has a non-string value "
+                    f"({type(value).__name__}: {value!r}). 🔀 Coercing to string."
                 )
                 value = str(value).lower() if isinstance(value, bool) else str(value)
 
