@@ -142,6 +142,41 @@ class PipelineStageConfig:
                 self.__stacks.append(StackConfig(stack_dict, self.__workload))
 
     @property
+    def gate(self) -> dict | None:
+        """
+        Returns the gate configuration dictionary, or None if not defined.
+
+        Expected shape when present:
+            {"enabled": "true", "message": "Optional approval message"}
+        """
+        return self.dictionary.get("gate")
+
+    @property
+    def gate_enabled(self) -> bool:
+        """
+        Returns True if the gate is configured and enabled.
+
+        Follows the existing boolean parsing pattern:
+        str(value).lower() == "true"
+        """
+        gate = self.gate
+        if not gate:
+            return False
+        return str(gate.get("enabled", "false")).lower() == "true"
+
+    @property
+    def gate_message(self) -> str:
+        """
+        Returns the gate approval message.
+
+        Falls back to a default message if not specified in config.
+        """
+        gate = self.gate
+        if gate and gate.get("message"):
+            return gate["message"]
+        return f"Manual approval required before stage: {self.name}"
+
+    @property
     def builds(self) -> List[Dict[str, Any]]:
         """
         Returns the builds configured for this stage.

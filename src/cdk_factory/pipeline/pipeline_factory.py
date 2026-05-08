@@ -262,6 +262,16 @@ class PipelineFactoryStack(IStack):
             # add the stacks to a wave or a regular
             pre_steps = self._get_pre_steps(stage, deployment)
             post_steps = self._get_post_steps(stage, deployment)
+
+            # Insert manual approval gate if enabled for this stage
+            if stage.gate_enabled:
+                print(f"\t 🚪 Gate enabled for stage: {stage.name}")
+                gate_step = pipelines.ManualApprovalStep(
+                    id=f"gate-{stage.name}",
+                    comment=stage.gate_message,
+                )
+                pre_steps.insert(0, gate_step)
+
             wave_name = stage.wave_name
 
             # if we don't have any stacks we'll need to use the wave
