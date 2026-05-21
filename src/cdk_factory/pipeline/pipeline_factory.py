@@ -263,14 +263,20 @@ class PipelineFactoryStack(IStack):
             pre_steps = self._get_pre_steps(stage, deployment)
             post_steps = self._get_post_steps(stage, deployment)
 
-            # Insert manual approval gate if enabled for this stage
+            # Insert manual approval gate if enabled for this stage.
+            # When a gate is enabled, ALL steps (both pre and post) must run
+            # after the approval. We consolidate post_steps into pre_steps so
+            # everything is sequenced behind the gate. Without this, wave-based
+            # stages would run post_steps independently of the gate.
             if stage.gate_enabled:
                 print(f"\t 🚪 Gate enabled for stage: {stage.name}")
                 gate_step = pipelines.ManualApprovalStep(
                     id=f"gate-{stage.name}",
                     comment=stage.gate_message,
                 )
-                pre_steps.insert(0, gate_step)
+                # Move post_steps behind the gate by appending them to pre_steps
+                pre_steps = [gate_step] + pre_steps + post_steps
+                post_steps = []
 
             wave_name = stage.wave_name
 
