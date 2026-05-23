@@ -207,6 +207,9 @@ class PolicyDocuments:
                         f"Permission set for {permission} not found when attempting "
                         "to generate permissions."
                     )
+                if not permission_details or "actions" not in permission_details:
+                    # Empty permission (e.g., optional feature not configured) — skip
+                    continue
                 statement = iam.PolicyStatement(
                     sid=permission_details.get("sid"),
                     actions=permission_details["actions"],
