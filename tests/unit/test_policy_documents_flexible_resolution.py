@@ -258,7 +258,12 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
         self.assertTrue(any("test-table-delete" in resource for resource in resources))
 
     def test_policy_documents_no_table_name_raises_error(self):
-        """Test that empty table name in structured format raises helpful error message"""
+        """Test that empty table name in structured format is gracefully skipped.
+
+        When a DynamoDB permission has an empty table field (e.g., optional
+        legacy features not configured in this environment), the permission
+        should be skipped rather than failing synthesis.
+        """
 
         policy_docs = PolicyDocuments(
             scope=self.stack,
@@ -267,12 +272,9 @@ class TestPolicyDocumentsFlexibleResolution(unittest.TestCase):
             deployment=self.deployment,
         )
 
-        # Test that structured format with empty table raises ValueError
-        with self.assertRaises(ValueError) as context:
-            policy_docs.get_permission_details({"dynamodb": "read", "table": ""})
-
-        error_message = str(context.exception)
-        self.assertIn("requires 'table' field", error_message)
+        # Empty table should return empty dict (skipped), not raise
+        result = policy_docs.get_permission_details({"dynamodb": "read", "table": ""})
+        self.assertEqual(result, {})
 
     @patch(
         "cdk_factory.constructs.lambdas.policies.policy_docs.ResourceResolver._get_ssm_mixin"

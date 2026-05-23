@@ -323,6 +323,17 @@ class PolicyDocuments:
             structured = self._get_structured_permission(permission)
             if structured:
                 return structured
+            # If it's a known structured format (has dynamodb/s3/lambda/events key)
+            # but returned None (e.g., empty table), skip it entirely
+            known_structured_keys = {
+                "dynamodb",
+                "s3",
+                "lambda",
+                "events",
+                "parameter_store",
+            }
+            if known_structured_keys & permission.keys():
+                return {}
             # Inline IAM format: {"actions": [...], "resources": [...]}
             return self.get_permission_details_from_dict(permission)
 
@@ -350,9 +361,12 @@ class PolicyDocuments:
             action = permission["dynamodb"]
             table = permission.get("table", "")
             if not table:
-                raise ValueError(
-                    f"Structured DynamoDB permission requires 'table' field: {permission}"
+                print(
+                    f"WARNING: Skipping DynamoDB permission with empty 'table' field: {permission}. "
+                    f"This is expected for optional features (e.g., legacy systems) "
+                    f"not configured in this environment."
                 )
+                return None
 
             action_map = {
                 "read": {
