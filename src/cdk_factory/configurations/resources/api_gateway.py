@@ -181,3 +181,32 @@ class ApiGatewayConfig(EnhancedBaseConfig):
     def stage_name(self) -> str:
         """API Gateway deployment stage name (default: 'prod')"""
         return self.__config.get("stage_name", "prod")
+
+    @property
+    def nested_stacks_config(self) -> dict | None:
+        """Return the nested_stacks configuration section, or None if absent."""
+        return self.__config.get("nested_stacks")
+
+    @property
+    def nested_stacks_enabled(self) -> bool:
+        """Whether nested stacks mode is enabled. Defaults to False if absent or omitted."""
+        config = self.nested_stacks_config
+        if config is None:
+            return False
+        return config.get("enabled", False)
+
+    @property
+    def nested_stacks_grouping(self) -> dict:
+        """Return the grouping map from nested_stacks config, or empty dict if absent."""
+        config = self.nested_stacks_config
+        if config is None:
+            return {}
+        return config.get("grouping", {})
+
+    @property
+    def max_resources_per_stack(self) -> int:
+        """Return the max_resources_per_stack value, or default 200 if absent."""
+        config = self.nested_stacks_config
+        if config is None:
+            return 200
+        return config.get("max_resources_per_stack", 200)

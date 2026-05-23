@@ -5,6 +5,7 @@ MIT License.  See Project Root for the license information.
 """
 
 from pathlib import Path
+import hashlib
 import os
 import json
 from typing import List, Dict, Any
@@ -37,6 +38,9 @@ from cdk_factory.configurations.resources.apigateway_route_config import (
 )
 from cdk_factory.utilities.route_metadata_validator import RouteMetadataValidator
 from cdk_factory.utilities.synth_messages import synth_messages
+from cdk_factory.stack_library.api_gateway.api_gateway_route_group_nested_stack import (
+    ApiGatewayRouteGroupNestedStack,
+)
 
 logger = Logger(service="ApiGatewayStack")
 
@@ -113,10 +117,341 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             # TODO: Add custom domain support for HTTP API
             # self.__setup_custom_domain(api)
         elif api_type == "REST":
-            api = self._create_rest_api(stable_api_id, routes)
-            self.__setup_custom_domain(api)
+            if self.api_config.nested_stacks_enabled:
+                self._build_with_nested_stacks(routes)
+            else:
+                api = self._create_rest_api(stable_api_id, routes)
+                self.__setup_custom_domain(api)
         else:
             raise ValueError(f"Unsupported api_type: {api_type}")
+
+    def _build_with_nested_stacks(self, routes: List[Dict[str, Any]]) -> None:
+        """Orchestrate nested stack creation for route groups.
+
+        Creates shared resources (REST API, authorizer, deployment, stage) in the
+        parent stack and distributes route-specific resources across domain-aligned
+        nested stacks.
+
+        Steps:
+        1. Group routes by domain using _group_routes()
+        2. Validate resource limits per group and total nested stack count
+        3. Create REST API (shared resource in parent)
+        4. Create Cognito Authorizer (shared resource in parent)
+        5. Determine CORS ownership for shared paths (first group in sorted order)
+        6. Instantiate one ApiGatewayRouteGroupNestedStack per group
+        7. Compute deployment hash and create Deployment + Stage with dependencies
+        8. Setup custom domain
+        9. Export SSM parameters
+        """
+        # 1. Group routes by domain
+        route_groups = self._group_routes(routes)
+
+        # 2. Validate resource limits per group and total nested stack count (max 20)
+        self._validate_resource_limits(route_groups)
+
+        # 3. Create REST API (shared resource in parent) using the integration utility
+        # This uses the same pattern as _create_rest_api() for consistency
+        stable_api_id = (
+            f"{self.deployment.workload_name}-{self.deployment.environment}-api-gateway"
+        )
+        api = self.integration_utility.create_api_gateway_with_config(
+            stable_api_id, self.api_config, self.stack_config
+        )
+
+        # 4. Create Cognito Authorizer (shared resource in parent)
+        authorizer = self._setup_cognito_authorizer(api, stable_api_id, routes)
+
+        # 5. Determine CORS ownership for shared paths
+        # The first group in sorted order owns the OPTIONS method for any shared path.
+        # Build a set of paths per group and identify shared paths.
+        cors_ownership: Dict[str, str] = {}  # path -> owning group name
+        sorted_group_names = sorted(route_groups.keys())
+        for group_name in sorted_group_names:
+            for route in route_groups[group_name]:
+                route_path = route.get("path", "")
+                if route_path and route_path not in cors_ownership:
+                    # First group (in sorted order) to claim this path owns OPTIONS
+                    cors_ownership[route_path] = group_name
+
+        # 6. Get CORS config for nested stacks
+        cors_config = self.api_config.default_cors_preflight_options or {}
+
+        # 7. Instantiate one nested stack per group
+        nested_stacks: List[ApiGatewayRouteGroupNestedStack] = []
+        all_methods: List[apigateway.Method] = []
+
+        for group_name in sorted_group_names:
+            group_routes = route_groups[group_name]
+
+            # Filter routes for CORS ownership: only include routes whose paths
+            # are owned by this group for OPTIONS creation. Routes whose paths
+            # are owned by another group get a flag to skip OPTIONS.
+            routes_with_cors_flags = []
+            for route in group_routes:
+                route_copy = dict(route)
+                route_path = route_copy.get("path", "")
+                if cors_ownership.get(route_path) != group_name:
+                    # This group does NOT own OPTIONS for this path — signal to skip
+                    route_copy["_skip_cors"] = True
+                routes_with_cors_flags.append(route_copy)
+
+            nested_stack = ApiGatewayRouteGroupNestedStack(
+                self, f"RouteGroup-{group_name}"
+            )
+
+            methods = nested_stack.build(
+                api_gateway=api,
+                root_resource_id=api.rest_api_root_resource_id,
+                authorizer=authorizer,
+                routes=routes_with_cors_flags,
+                stack_config=self.stack_config,
+                cors_config=cors_config,
+                group_name=group_name,
+            )
+
+            nested_stacks.append(nested_stack)
+            all_methods.extend(methods)
+
+        # 8. Compute deployment hash and create Deployment with dependencies
+        deployment_hash = self._compute_deployment_hash(route_groups)
+        deployment = apigateway.Deployment(
+            self,
+            f"Deployment-{deployment_hash}",
+            api=api,
+            description=f"Deployment with {len(all_methods)} methods across {len(nested_stacks)} nested stacks",
+        )
+
+        # Add explicit dependency from Deployment to every nested stack
+        # This ensures CloudFormation does not create the Deployment until
+        # all nested stacks have been provisioned (Requirement 4.2)
+        for ns in nested_stacks:
+            deployment.node.add_dependency(ns)
+
+        # 9. Create Stage with dependency on Deployment (Requirement 4.4)
+        stage_name = self.api_config.stage_name
+        stage = apigateway.Stage(
+            self,
+            f"api-gateway-stage-{stage_name}",
+            deployment=deployment,
+            stage_name=stage_name,
+            description=f"Stage {stage_name} with {len(all_methods)} methods across {len(nested_stacks)} nested stacks",
+        )
+
+        # Store stage reference for custom domain base path mapping
+        self._store_deployment_stage_reference(api, stage)
+
+        # 10. Setup custom domain (Requirement 2.5)
+        self.__setup_custom_domain(api)
+
+        # 11. Export SSM parameters (Requirement 9.1-9.4)
+        self._export_ssm_parameters(api, authorizer)
+
+    def _validate_resource_limits(
+        self, route_groups: Dict[str, List[Dict[str, Any]]]
+    ) -> None:
+        """Check each route group against resource limit thresholds.
+
+        Estimates the CloudFormation resource count per group using the formula:
+        ~3 resources per route (Method + Permission + integration) plus unique
+        path segments shared across routes in the group.
+
+        Validations performed:
+        1. Total nested stack count must not exceed 20
+        2. No group may exceed 500 resources (hard CloudFormation limit)
+        3. Groups exceeding max_resources_per_stack emit a warning
+
+        Args:
+            route_groups: Dict mapping group names to lists of route dicts.
+
+        Raises:
+            ValueError: If nested stack count exceeds 20 or any group exceeds
+                500 resources.
+        """
+        max_per_stack = self.api_config.max_resources_per_stack
+
+        # Validate total nested stack count (Requirement 7.7)
+        if len(route_groups) > 20:
+            raise ValueError(
+                f"Nested stack count ({len(route_groups)}) exceeds maximum of 20. "
+                f"Consolidate route groups in nested_stacks.grouping config."
+            )
+
+        for group_name, routes in route_groups.items():
+            # Estimate: ~3 resources per route (Method + Permission + shared path segments)
+            # Plus unique path segments
+            unique_paths = set()
+            for route in routes:
+                path_parts = route.get("path", "").strip("/").split("/")
+                for i in range(len(path_parts)):
+                    unique_paths.add("/".join(path_parts[: i + 1]))
+
+            estimated_resources = (len(routes) * 3) + len(unique_paths)
+
+            # Hard limit: 500 resources (CloudFormation limit)
+            if estimated_resources > 500:
+                raise ValueError(
+                    f"Route group '{group_name}' would produce ~{estimated_resources} "
+                    f"resources, exceeding the CloudFormation limit of 500. "
+                    f"Split this group in the nested_stacks.grouping config."
+                )
+
+            # Configurable threshold warning
+            if estimated_resources > max_per_stack:
+                print(
+                    f"WARNING: Route group '{group_name}' would produce "
+                    f"~{estimated_resources} resources, exceeding the configured "
+                    f"limit of {max_per_stack}. Consider splitting this group."
+                )
+
+    def _group_routes(
+        self, routes: List[Dict[str, Any]]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Assign routes to groups based on Domain_Grouping_Config.
+
+        Algorithm:
+        1. Build reverse lookup from folder paths to group names
+        2. For each route, resolve its Lambda resource folder path
+        3. Match folder path to group using longest prefix match
+        4. Assign unmatched routes to "default" group
+        5. Skip empty groups (no nested stack created for zero-route groups)
+
+        Returns:
+            Dict mapping group names to lists of route dicts. Empty groups
+            are not included in the result.
+        """
+        grouping = self.api_config.nested_stacks_grouping
+        groups: Dict[str, List[Dict[str, Any]]] = {}
+
+        # Build reverse lookup: folder_path -> group_name
+        folder_to_group: Dict[str, str] = {}
+        for group_name, folders in grouping.items():
+            for folder in folders:
+                folder_to_group[folder] = group_name
+
+        for route in routes:
+            lambda_name = route.get("lambda_name")
+            folder_path = self._resolve_lambda_folder(lambda_name)
+
+            # Match folder path to group (longest prefix match)
+            group_name = folder_to_group.get(folder_path)
+            if not group_name:
+                # Try parent folder matching for nested paths
+                parts = folder_path.split("/")
+                while parts and not group_name:
+                    parts.pop()
+                    group_name = folder_to_group.get("/".join(parts))
+
+            group_name = group_name or "default"
+            groups.setdefault(group_name, []).append(route)
+
+        return groups
+
+    def _resolve_lambda_folder(self, lambda_name: str) -> str:
+        """Determine the Lambda resource folder path from the lambda_name.
+
+        Scans the workload config's Lambda resource folders on disk to find
+        which folder contains a Lambda config JSON with the matching name.
+        Results are cached after the first scan to avoid repeated file I/O.
+
+        Args:
+            lambda_name: The name of the Lambda function (e.g., "workflow-execution-output-file")
+
+        Returns:
+            The relative folder path (e.g., "workflow/api", "users", "file-system").
+            Returns empty string if the lambda cannot be found.
+        """
+        if not hasattr(self, "_lambda_folder_cache"):
+            self._lambda_folder_cache = self._build_lambda_folder_cache()
+
+        return self._lambda_folder_cache.get(lambda_name, "")
+
+    def _build_lambda_folder_cache(self) -> Dict[str, str]:
+        """Build a lookup cache mapping lambda_name to its resource folder path.
+
+        Scans the Lambda resource folders on disk, loading each JSON config
+        file and extracting the 'name' field. The relative folder path from
+        the resources root directory is used as the value.
+
+        Returns:
+            Dict mapping lambda names to their relative folder paths.
+        """
+        cache: Dict[str, str] = {}
+        resources_dir = self._find_lambda_resources_dir()
+        if not resources_dir:
+            logger.warning(
+                "Could not locate Lambda resources directory. "
+                "Lambda folder resolution will not work."
+            )
+            return cache
+
+        resources_path = Path(resources_dir)
+        for json_file in resources_path.rglob("*.json"):
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                name = config.get("name")
+                if name:
+                    # Compute relative folder path from resources root
+                    relative_folder = str(json_file.parent.relative_to(resources_path))
+                    # Normalize path separators and handle current dir
+                    if relative_folder == ".":
+                        relative_folder = ""
+                    cache[name] = relative_folder
+            except (json.JSONDecodeError, OSError):
+                # Skip files that can't be parsed
+                continue
+
+        return cache
+
+    def _find_lambda_resources_dir(self) -> str | None:
+        """Locate the Lambda resources directory on disk.
+
+        Searches workload paths for the standard Lambda resource folder
+        structure at 'configs/stacks/lambdas/resources'.
+
+        Returns:
+            Absolute path to the resources directory, or None if not found.
+        """
+        if not self.workload:
+            return None
+
+        # Standard relative path for Lambda resource configs
+        resource_rel_path = os.path.join("configs", "stacks", "lambdas", "resources")
+
+        for base_path in self.workload.paths:
+            candidate = os.path.join(base_path, resource_rel_path)
+            if os.path.isdir(candidate):
+                return candidate
+
+        return None
+
+    def _compute_deployment_hash(self, route_groups: Dict[str, List[Dict]]) -> str:
+        """Compute a deterministic hash from all route signatures.
+
+        Changes to any route in any group produce a new hash,
+        forcing a new Deployment resource. Routes and groups are sorted
+        internally to ensure deterministic output regardless of input order.
+
+        Args:
+            route_groups: Dict mapping group names to lists of route dicts.
+                Each route dict must have 'method' and 'path' keys,
+                and optionally 'lambda_name'.
+
+        Returns:
+            First 16 characters of the SHA-256 hex digest of all route
+            signatures, suitable for use in a Deployment logical ID.
+        """
+        signatures = []
+        for group_name in sorted(route_groups.keys()):
+            for route in sorted(
+                route_groups[group_name],
+                key=lambda r: (r["path"], r["method"]),
+            ):
+                sig = f"{group_name}:{route['method'].upper()}:{route['path']}:{route.get('lambda_name', '')}"
+                signatures.append(sig)
+
+        combined = "|".join(signatures)
+        return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
     def _discover_routes_from_dependencies(self) -> List[Dict[str, Any]]:
         """Discover routes from all Lambda stacks in the pipeline.
@@ -1018,7 +1353,7 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # Add URL by constructing it manually since we have a custom deployment pattern
         try:
             region = self.deployment.region
-            stage_name = "prod"
+            stage_name = self.api_config.stage_name
             api_url = f"https://{api_gateway.rest_api_id}.execute-api.{region}.amazonaws.com/{stage_name}"
             resource_values["api_url"] = api_url
             logger.info(f"Successfully constructed API URL: {api_url}")
