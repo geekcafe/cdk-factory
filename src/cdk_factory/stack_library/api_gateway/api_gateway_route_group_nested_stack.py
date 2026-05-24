@@ -48,19 +48,34 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         stack_config: Any,
         cors_config: Dict[str, Any],
         group_name: str,
+        shared_prefix: List[str] | None = None,
+        api_root_resource_id: str | None = None,
+        prefix_resource_ids: List[str] | None = None,
     ) -> List[apigateway.Method]:
         """
         Create all route resources for this group.
 
         Args:
             api_gateway: The REST API reference from the parent stack.
-            root_resource_id: The REST API root resource ID for path creation.
+            root_resource_id: The REST API root resource ID (or branch-point
+                resource ID when a shared prefix exists) for path creation.
             authorizer: The Cognito authorizer reference from the parent stack,
                 or None if no authorizer is configured.
             routes: List of route configuration dicts assigned to this group.
             stack_config: The stack configuration for SSM namespace resolution.
             cors_config: Default CORS configuration from the parent stack.
             group_name: Group identifier for construct IDs.
+            shared_prefix: Optional list of shared path segments that have been
+                created in the parent stack. When provided, these segments will
+                be stripped from route paths before creating path resources.
+            api_root_resource_id: The actual API root resource ID. When a shared
+                prefix exists, root_resource_id is the branch-point. Routes that
+                don't match the shared prefix need to create from the actual root.
+                If None, defaults to root_resource_id (backward compatible).
+            prefix_resource_ids: List of resource IDs for each level of the
+                shared prefix chain. Index 0 = API root, index 1 = after first
+                prefix segment, etc. Used for routes that partially match the
+                prefix (e.g., /v3/admin/... when prefix is /v3/tenants/{tenant-id}).
 
         Returns:
             List of created Method constructs for deployment dependency tracking.
@@ -69,7 +84,12 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
 
         # Step 1: Create path resources for all routes, deduplicating shared segments
         path_resources = self._create_path_resources(
-            api_gateway, root_resource_id, routes
+            api_gateway,
+            root_resource_id,
+            routes,
+            shared_prefix=shared_prefix,
+            api_root_resource_id=api_root_resource_id,
+            prefix_resource_ids=prefix_resource_ids,
         )
 
         # Step 2: Track which paths already have OPTIONS methods to prevent duplicates
@@ -140,6 +160,9 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         api_gateway: apigateway.IRestApi,
         root_resource_id: str,
         routes: List[Dict[str, Any]],
+        shared_prefix: List[str] | None = None,
+        api_root_resource_id: str | None = None,
+        prefix_resource_ids: List[str] | None = None,
     ) -> Dict[str, apigateway.Resource]:
         """
         Create API Gateway Resource entries for all path segments.
@@ -147,24 +170,27 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         Deduplicates shared path segments so multiple routes sharing
         a segment reuse a single resource entry.
 
-        Algorithm:
-        1. Import the root resource using from_resource_attributes
-        2. For each route, split the path into segments
-        3. Build resources incrementally — for each segment, check if a
-           resource already exists for that path prefix
-        4. If it exists, reuse it. If not, create via add_resource()
-        5. Use a dict to track created resources by their full path string
+        When a shared_prefix is provided, routes are handled based on how
+        they match the prefix:
+        - Full match: strip prefix, start from branch-point (root_resource_id)
+        - Partial match: strip matching portion, start from intermediate
+          prefix resource (using prefix_resource_ids)
+        - No match: start from actual API root (api_root_resource_id)
 
         Args:
             api_gateway: The REST API reference.
-            root_resource_id: The root resource ID for path creation.
+            root_resource_id: The branch-point resource ID (end of prefix chain)
+                or API root if no prefix.
             routes: List of route configuration dicts.
+            shared_prefix: Optional list of shared path segments created in parent.
+            api_root_resource_id: The actual API root resource ID for non-matching routes.
+            prefix_resource_ids: List of resource IDs at each prefix depth.
+                Index 0 = API root, index N = after N-th prefix segment.
 
         Returns:
-            Dict mapping full path strings (e.g. "/v3/tenants/{tenant-id}")
-            to apigateway.Resource objects.
+            Dict mapping full path strings to apigateway.Resource objects.
         """
-        # Import the root resource from the parent stack
+        # Import the branch-point resource (or root if no prefix) from the parent stack
         root_resource = apigateway.Resource.from_resource_attributes(
             self,
             "imported-root-resource",
@@ -173,8 +199,25 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
             path="/",
         )
 
+        # Import intermediate prefix resources for partial prefix matching
+        imported_prefix_resources: Dict[int, apigateway.Resource] = {}
+        if prefix_resource_ids and shared_prefix:
+            for depth, res_id in enumerate(prefix_resource_ids):
+                if res_id == root_resource_id:
+                    # This is the branch-point — already imported as root_resource
+                    imported_prefix_resources[depth] = root_resource
+                else:
+                    imported_prefix_resources[depth] = (
+                        apigateway.Resource.from_resource_attributes(
+                            self,
+                            f"imported-prefix-depth-{depth}",
+                            rest_api=api_gateway,
+                            resource_id=res_id,
+                            path="/",
+                        )
+                    )
+
         # Dict mapping full path strings to Resource objects
-        # The root is represented by "/"
         path_resources: Dict[str, apigateway.Resource] = {"/": root_resource}
 
         for route in routes:
@@ -182,32 +225,71 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
             if not route_path or route_path == "/":
                 continue
 
-            # Split path into segments:
-            # "/v3/tenants/{tenant-id}/users" → ["v3", "tenants", "{tenant-id}", "users"]
+            # Split path into segments
             segments = [s for s in route_path.strip("/").split("/") if s]
 
+            # Determine which resource to start from based on prefix matching
+            start_resource = root_resource
+            if shared_prefix:
+                prefix_len = len(shared_prefix)
+                if (
+                    len(segments) >= prefix_len
+                    and segments[:prefix_len] == shared_prefix
+                ):
+                    # Full prefix match — strip prefix, start from branch-point
+                    segments = segments[prefix_len:]
+                    start_resource = root_resource
+                else:
+                    # Check for partial prefix match
+                    match_depth = 0
+                    for i, prefix_seg in enumerate(shared_prefix):
+                        if i < len(segments) and segments[i] == prefix_seg:
+                            match_depth = i + 1
+                        else:
+                            break
+
+                    if match_depth > 0 and imported_prefix_resources:
+                        # Partial match — strip matching portion, start from
+                        # the intermediate prefix resource at that depth
+                        segments = segments[match_depth:]
+                        start_resource = imported_prefix_resources.get(
+                            match_depth, root_resource
+                        )
+                    elif api_root_resource_id and prefix_resource_ids:
+                        # No match at all — start from actual API root
+                        start_resource = imported_prefix_resources.get(0, root_resource)
+                    # else: no prefix_resource_ids available, fall through to root_resource
+
+            # If all segments were stripped, the route maps to the start resource
+            if not segments:
+                path_resources[route_path] = start_resource
+                continue
+
             # Build resources incrementally for each segment
+            # Use a context prefix in the dict key to differentiate paths that
+            # start from different parent resources (e.g., branch-point vs
+            # intermediate prefix resource). This prevents collisions when two
+            # routes produce the same stripped path but under different parents.
+            context_key = id(start_resource)
             current_path = ""
-            parent_resource = root_resource
+            parent_resource = start_resource
 
             for segment in segments:
                 current_path = f"{current_path}/{segment}"
+                lookup_key = f"{context_key}:{current_path}"
 
-                if current_path in path_resources:
-                    # Resource already exists for this path prefix — reuse it
-                    parent_resource = path_resources[current_path]
+                if lookup_key in path_resources:
+                    parent_resource = path_resources[lookup_key]
                 else:
-                    # Create a new resource for this segment
-                    # Use sanitized path as construct ID for determinism and uniqueness
-                    construct_id = self._sanitize_construct_id(current_path)
-
                     new_resource = parent_resource.add_resource(
                         segment,
                         default_cors_preflight_options=None,
                     )
-
-                    path_resources[current_path] = new_resource
+                    path_resources[lookup_key] = new_resource
                     parent_resource = new_resource
+
+            # Map the full original route path to the final resource
+            path_resources[route_path] = parent_resource
 
         return path_resources
 
