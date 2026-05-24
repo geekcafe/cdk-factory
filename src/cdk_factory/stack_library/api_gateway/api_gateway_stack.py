@@ -41,6 +41,9 @@ from cdk_factory.utilities.synth_messages import synth_messages
 from cdk_factory.stack_library.api_gateway.api_gateway_route_group_nested_stack import (
     ApiGatewayRouteGroupNestedStack,
 )
+from cdk_factory.stack_library.api_gateway.path_ownership_builder import (
+    PathOwnershipBuilder,
+)
 
 logger = Logger(service="ApiGatewayStack")
 
@@ -125,146 +128,6 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         else:
             raise ValueError(f"Unsupported api_type: {api_type}")
 
-    def _compute_shared_prefix(self, routes: List[Dict[str, Any]]) -> List[str]:
-        """Compute the longest common path prefix across routes.
-
-        Uses a two-pass approach:
-        1. First tries strict prefix (ALL routes share it)
-        2. If empty, uses majority prefix — the longest prefix shared by a
-           supermajority (≥60%) of routes. This handles real-world configs
-           where most routes share /v3/tenants/{tenant-id} but a few outliers
-           (e.g., /app/messages, /v3/app/configuration) break the strict prefix.
-
-        Routes that don't match the majority prefix will still work correctly:
-        _create_path_resources() only strips the prefix when a route's leading
-        segments actually match it, otherwise it creates all segments from root.
-
-        Args:
-            routes: List of route dicts, each containing a "path" key
-                (e.g., "/v3/tenants/{tenant-id}/users").
-
-        Returns:
-            List of shared path segments (e.g., ["v3", "tenants", "{tenant-id}"]).
-            Returns an empty list if:
-            - routes is empty
-            - routes have no common prefix (even with majority approach)
-
-        Examples:
-            >>> self._compute_shared_prefix([
-            ...     {"path": "/v3/tenants/{tenant-id}/users"},
-            ...     {"path": "/v3/tenants/{tenant-id}/metrics"},
-            ... ])
-            ["v3", "tenants", "{tenant-id}"]
-
-            >>> self._compute_shared_prefix([
-            ...     {"path": "/v3/tenants/{tenant-id}/users"},
-            ...     {"path": "/v3/tenants/{tenant-id}/metrics"},
-            ...     {"path": "/app/messages"},
-            ... ])
-            ["v3", "tenants", "{tenant-id}"]
-
-            >>> self._compute_shared_prefix([
-            ...     {"path": "/health"},
-            ...     {"path": "/v3/tenants/{tenant-id}/users"},
-            ... ])
-            []
-        """
-        if not routes:
-            return []
-
-        # Split each route path into segments, filtering out empty segments
-        all_segments: List[List[str]] = []
-        for route in routes:
-            path = route.get("path", "")
-            segments = [s for s in path.strip("/").split("/") if s]
-            all_segments.append(segments)
-
-        if not all_segments:
-            return []
-
-        # Pass 1: Try strict prefix (all routes share it)
-        prefix = self._longest_common_prefix(all_segments)
-        if prefix:
-            return prefix
-
-        # Pass 2: Majority prefix — find the longest prefix shared by ≥80% of routes
-        # This handles configs where most routes share a deep prefix but a few
-        # outliers (different version prefix, public endpoints, admin routes)
-        # break the strict match.
-        #
-        # Algorithm: At each depth level, find the most common segment. If it
-        # meets the threshold (≥80% of total routes), include it in the prefix
-        # and continue deeper with only the matching routes.
-        #
-        # Only activate majority approach when there are enough routes to make
-        # a meaningful determination (at least 4 routes, so 80% requires 4+ matches).
-        if len(all_segments) < 4:
-            return []
-
-        threshold = 0.6
-        min_count = max(3, int(len(all_segments) * threshold))
-
-        from collections import Counter
-
-        majority_prefix: List[str] = []
-        # Start with all routes that have at least one segment
-        candidate_segments = [segs for segs in all_segments if segs]
-        depth = 0
-
-        while candidate_segments:
-            # Count segments at current depth
-            segments_at_depth = [
-                segs[depth] for segs in candidate_segments if len(segs) > depth
-            ]
-
-            if not segments_at_depth:
-                break
-
-            segment_counts = Counter(segments_at_depth)
-            most_common_segment, count = segment_counts.most_common(1)[0]
-
-            # Check if the most common segment at this depth meets the threshold
-            # relative to the ORIGINAL total route count (not the filtered set)
-            if count < min_count:
-                break
-
-            majority_prefix.append(most_common_segment)
-
-            # Filter to only routes that match the prefix so far for next iteration
-            candidate_segments = [
-                segs
-                for segs in candidate_segments
-                if len(segs) > depth and segs[depth] == most_common_segment
-            ]
-
-            depth += 1
-
-        return majority_prefix
-
-    def _longest_common_prefix(self, all_segments: List[List[str]]) -> List[str]:
-        """Find the longest common prefix across all segment lists.
-
-        Args:
-            all_segments: List of segment lists to compare.
-
-        Returns:
-            List of common prefix segments, or empty list if none.
-        """
-        if not all_segments:
-            return []
-
-        prefix: List[str] = []
-        min_length = min(len(segs) for segs in all_segments)
-
-        for i in range(min_length):
-            candidate = all_segments[0][i]
-            if all(segs[i] == candidate for segs in all_segments):
-                prefix.append(candidate)
-            else:
-                break
-
-        return prefix
-
     def _build_with_nested_stacks(self, routes: List[Dict[str, Any]]) -> None:
         """Orchestrate nested stack creation for route groups.
 
@@ -272,17 +135,23 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         parent stack and distributes route-specific resources across domain-aligned
         nested stacks.
 
+        Uses the PathOwnershipBuilder (trie-based) to identify all path segments
+        shared across multiple route groups and creates those shared resources in
+        the parent stack. Each nested stack receives a resource_id_handoff_map
+        telling it exactly where to attach its unique segments.
+
         Steps:
         1. Group routes by domain using _group_routes()
         2. Validate resource limits per group and total nested stack count
         3. Create REST API (shared resource in parent)
         4. Create Cognito Authorizer (shared resource in parent)
-        4.5. Compute shared prefix and create shared path resources in parent
+        4.5. Build path ownership trie and create shared resources in parent
         5. Determine CORS ownership for shared paths (first group in sorted order)
-        6. Instantiate one ApiGatewayRouteGroupNestedStack per group
-        7. Compute deployment hash and create Deployment + Stage with dependencies
-        8. Setup custom domain
-        9. Export SSM parameters
+        6. Get CORS config for nested stacks
+        7. Instantiate one ApiGatewayRouteGroupNestedStack per group with handoff map
+        8. Compute deployment hash and create Deployment + Stage with dependencies
+        9. Setup custom domain
+        10. Export SSM parameters
         """
         # 1. Group routes by domain
         route_groups = self._group_routes(routes)
@@ -302,70 +171,54 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         # 4. Create Cognito Authorizer (shared resource in parent)
         authorizer = self._setup_cognito_authorizer(api, stable_api_id, routes)
 
-        # 4.5. Compute shared prefix and create shared path resources in parent
-        # Only compute shared prefix when there are multiple groups — a single
-        # group cannot cause cross-stack duplicate resources (the bug condition
-        # requires len(route_groups) > 1).
-        shared_prefix: List[str] = []
-        branch_point_resource_id = api.rest_api_root_resource_id
+        # 4.5. Build path ownership trie and create shared resources in parent
+        # Use the trie-based PathOwnershipBuilder to identify all shared path
+        # segments across route groups and compute handoff maps for each group.
+        # Single-group case: pass root resource ID directly without shared resources.
+        resource_id_map: Dict[str, str] = {"/": api.rest_api_root_resource_id}
 
         if len(route_groups) > 1:
-            shared_prefix = self._compute_shared_prefix(routes)
+            # Build trie from all route groups and validate ownership
+            builder = PathOwnershipBuilder(route_groups)
+            builder.build()
+            builder.validate()
 
-        if shared_prefix:
-            # Create AWS::ApiGateway::Resource entries in the parent stack for
-            # each segment of the shared prefix, chaining from the root resource.
-            logger.info(
-                f"Shared prefix computed: /{'/'.join(shared_prefix)} "
-                f"({len(shared_prefix)} segments) across {len(route_groups)} nested stacks"
-            )
-            print(
-                f"🔗 Shared path prefix: /{'/'.join(shared_prefix)} — "
-                f"creating {len(shared_prefix)} shared resource(s) in parent stack"
-            )
+            # Create CfnResource for each shared node in the parent stack
+            shared_nodes = builder.get_shared_nodes()
 
-            # Track intermediate resources at each depth for partial prefix matching
-            # prefix_resource_ids[0] = root, prefix_resource_ids[1] = after first segment, etc.
-            prefix_resource_ids: List[str] = [api.rest_api_root_resource_id]
+            if shared_nodes:
+                logger.info(
+                    f"Path ownership trie identified {len(shared_nodes)} shared node(s) "
+                    f"across {len(route_groups)} nested stacks"
+                )
+                print(
+                    f"🌳 Path ownership: {len(shared_nodes)} shared resource(s) "
+                    f"created in parent stack"
+                )
 
-            parent_resource_id = api.rest_api_root_resource_id
-            for i, segment in enumerate(shared_prefix):
-                construct_id = f"SharedPrefix-{'-'.join(shared_prefix[:i+1])}"
-                # Sanitize construct ID (remove braces from parameterized segments)
-                construct_id = construct_id.replace("{", "").replace("}", "")
+            for node in shared_nodes:
+                path_key = "/" + "/".join(node.full_path)
+                parent_path_key = (
+                    "/" + "/".join(node.parent.full_path)
+                    if node.parent and node.parent.segment
+                    else "/"
+                )
+                construct_id = PathOwnershipBuilder.compute_construct_id(node.full_path)
 
                 cfn_resource = apigateway.CfnResource(
                     self,
                     construct_id,
                     rest_api_id=api.rest_api_id,
-                    parent_id=parent_resource_id,
-                    path_part=segment,
+                    parent_id=resource_id_map[parent_path_key],
+                    path_part=node.segment,
                 )
-                parent_resource_id = cfn_resource.ref
-                prefix_resource_ids.append(parent_resource_id)
-
-            # The final resource in the chain is the branch-point
-            branch_point_resource_id = parent_resource_id
-            logger.info(
-                f"Branch-point resource created for prefix /{'/'.join(shared_prefix)}. "
-                f"Nested stacks will receive branch-point resource ID instead of root."
-            )
-            print(
-                f"🔗 Branch-point established at /{'/'.join(shared_prefix)} — "
-                f"nested stacks will create only domain-specific segments below this point"
-            )
+                resource_id_map[path_key] = cfn_resource.ref
         else:
+            builder = None
             logger.info(
-                "No shared prefix found across routes (or single group). "
-                "Passing root resource ID to nested stacks (preserving current behavior)."
+                "Single route group — passing root resource ID directly to nested stack "
+                "(no shared resources needed in parent)."
             )
-
-        # 4.6. Synthesis-time duplicate detection guard rail
-        # Validate that no two nested stacks would create the same first path
-        # segment under the branch-point resource. This catches cases where the
-        # shared prefix computation missed a conflict.
-        if len(route_groups) > 1:
-            self._validate_no_cross_stack_segment_conflicts(route_groups, shared_prefix)
 
         # 5. Determine CORS ownership for shared paths
         # The first group in sorted order owns the OPTIONS method for any shared path.
@@ -405,19 +258,24 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 self, f"RouteGroup-{group_name}"
             )
 
+            # Compute the resource_id_handoff_map for this group
+            if builder is not None:
+                # Multi-group case: resolve handoff map paths to actual resource IDs
+                handoff_map = builder.get_handoff_map(group_name)
+                resolved_handoff = {path: resource_id_map[path] for path in handoff_map}
+            else:
+                # Single-group case: handoff from API root only
+                resolved_handoff = {"/": api.rest_api_root_resource_id}
+
             methods = nested_stack.build(
                 api_gateway=api,
-                root_resource_id=branch_point_resource_id,
+                root_resource_id=api.rest_api_root_resource_id,
                 authorizer=authorizer,
                 routes=routes_with_cors_flags,
                 stack_config=self.stack_config,
                 cors_config=cors_config,
                 group_name=group_name,
-                shared_prefix=shared_prefix if shared_prefix else None,
-                api_root_resource_id=(
-                    api.rest_api_root_resource_id if shared_prefix else None
-                ),
-                prefix_resource_ids=(prefix_resource_ids if shared_prefix else None),
+                resource_id_handoff_map=resolved_handoff,
             )
 
             nested_stacks.append(nested_stack)
@@ -514,133 +372,22 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                     f"limit of {max_per_stack}. Consider splitting this group."
                 )
 
-    def _validate_no_cross_stack_segment_conflicts(
-        self,
-        route_groups: Dict[str, List[Dict[str, Any]]],
-        shared_prefix: List[str],
-    ) -> None:
-        """Validate no two nested stacks create the same path segment under the same parent.
-
-        After stripping the shared prefix from each route, computes the first
-        path segment each nested stack would create. If two stacks would create
-        the same first segment under the branch-point resource, synthesis fails
-        with a clear error message.
-
-        When a majority prefix is used (not all routes match), routes that don't
-        match the prefix create segments from root. The validation checks both:
-        1. Segments created under the branch-point (for prefix-matching routes)
-        2. Segments created under root (for non-prefix-matching routes)
-
-        This is a safety net — with the shared prefix computation working
-        correctly, this should never trigger for valid configurations.
-
-        Args:
-            route_groups: Dict mapping group names to lists of route dicts.
-            shared_prefix: The computed shared prefix segments (may be empty).
-
-        Raises:
-            ValueError: If duplicate path segments are detected across nested stacks.
-        """
-        prefix_len = len(shared_prefix)
-
-        # Map: (parent_context, first_segment) -> list of group names that create it
-        # parent_context is "branch-point" for prefix-matching routes or "root" for others
-        segment_to_groups: Dict[tuple, List[str]] = {}
-
-        for group_name, routes in route_groups.items():
-            # Collect unique first segments this group would create
-            for route in routes:
-                path = route.get("path", "")
-                segments = [s for s in path.strip("/").split("/") if s]
-                if not segments:
-                    continue
-
-                # Check if this route matches the shared prefix
-                if (
-                    shared_prefix
-                    and len(segments) >= prefix_len
-                    and segments[:prefix_len] == shared_prefix
-                ):
-                    # Route matches prefix — will create under branch-point
-                    remaining = segments[prefix_len:]
-                    if remaining:
-                        key = ("branch-point", remaining[0])
-                        segment_to_groups.setdefault(key, [])
-                        if group_name not in segment_to_groups[key]:
-                            segment_to_groups[key].append(group_name)
-                else:
-                    # Route doesn't fully match prefix — determine what it creates
-                    # Find how many prefix segments match (partial match)
-                    match_depth = 0
-                    for i, prefix_seg in enumerate(shared_prefix):
-                        if i < len(segments) and segments[i] == prefix_seg:
-                            match_depth = i + 1
-                        else:
-                            break
-
-                    if match_depth > 0:
-                        # Partial match — the matching segments are owned by the
-                        # parent (part of the prefix chain). The nested stack
-                        # creates the NEXT segment after the partial match under
-                        # the intermediate prefix resource at that depth.
-                        remaining = segments[match_depth:]
-                        if remaining:
-                            key = (f"prefix-depth-{match_depth}", remaining[0])
-                            segment_to_groups.setdefault(key, [])
-                            if group_name not in segment_to_groups[key]:
-                                segment_to_groups[key].append(group_name)
-                    else:
-                        # No match at all — creates first segment under root
-                        key = ("root", segments[0])
-                        segment_to_groups.setdefault(key, [])
-                        if group_name not in segment_to_groups[key]:
-                            segment_to_groups[key].append(group_name)
-
-        # Check for conflicts: any segment claimed by more than one group
-        # under the same parent context
-        conflicts = {
-            key: groups for key, groups in segment_to_groups.items() if len(groups) > 1
-        }
-
-        if conflicts:
-            conflict_details = []
-            for (context, segment), groups in conflicts.items():
-                if context == "branch-point":
-                    parent_label = f"/{'/'.join(shared_prefix)}"
-                elif context == "root":
-                    parent_label = "(root)"
-                else:
-                    parent_label = f"(intermediate prefix resource)"
-                conflict_details.append(
-                    f"  - Path segment '{segment}' under {parent_label} would be "
-                    f"created by nested stacks: {', '.join(sorted(groups))}"
-                )
-
-            warning_msg = (
-                f"⚠️  Potential cross-stack path conflict detected: multiple nested "
-                f"stacks may create the same path segment under the same parent "
-                f"resource.\n"
-                f"Conflicting segments:\n"
-                + "\n".join(conflict_details)
-                + "\n\nThis may cause a CloudFormation 409 AlreadyExists error at "
-                f"deploy time if these stacks deploy in parallel.\n"
-                f"To fix: ensure routes with the same path segment are assigned "
-                f"to the same route group in nested_stacks.grouping config."
-            )
-            logger.warning(warning_msg)
-            print(warning_msg)
-
     def _group_routes(
         self, routes: List[Dict[str, Any]]
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Assign routes to groups based on Domain_Grouping_Config.
 
         Algorithm:
-        1. Build reverse lookup from folder paths to group names
-        2. For each route, resolve its Lambda resource folder path
-        3. Match folder path to group using longest prefix match
-        4. Assign unmatched routes to "default" group
-        5. Skip empty groups (no nested stack created for zero-route groups)
+        1. If explicit grouping is configured:
+           a. Build reverse lookup from folder paths to group names
+           b. For each route, resolve its Lambda resource folder path
+           c. Match folder path to group using longest prefix match
+           d. Assign unmatched routes to "default" group
+        2. If no explicit grouping is configured (auto-grouping):
+           a. For each route, resolve its Lambda resource folder path
+           b. Use the top-level folder name as the group name
+           c. This mirrors the folder structure under resources/
+        3. Skip empty groups (no nested stack created for zero-route groups)
 
         Returns:
             Dict mapping group names to lists of route dicts. Empty groups
@@ -649,27 +396,42 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         grouping = self.api_config.nested_stacks_grouping
         groups: Dict[str, List[Dict[str, Any]]] = {}
 
-        # Build reverse lookup: folder_path -> group_name
-        folder_to_group: Dict[str, str] = {}
-        for group_name, folders in grouping.items():
-            for folder in folders:
-                folder_to_group[folder] = group_name
+        if grouping:
+            # Explicit grouping: build reverse lookup from folder paths to group names
+            folder_to_group: Dict[str, str] = {}
+            for group_name, folders in grouping.items():
+                for folder in folders:
+                    folder_to_group[folder] = group_name
 
-        for route in routes:
-            lambda_name = route.get("lambda_name")
-            folder_path = self._resolve_lambda_folder(lambda_name)
+            for route in routes:
+                lambda_name = route.get("lambda_name")
+                folder_path = self._resolve_lambda_folder(lambda_name)
 
-            # Match folder path to group (longest prefix match)
-            group_name = folder_to_group.get(folder_path)
-            if not group_name:
-                # Try parent folder matching for nested paths
-                parts = folder_path.split("/")
-                while parts and not group_name:
-                    parts.pop()
-                    group_name = folder_to_group.get("/".join(parts))
+                # Match folder path to group (longest prefix match)
+                group_name = folder_to_group.get(folder_path)
+                if not group_name:
+                    # Try parent folder matching for nested paths
+                    parts = folder_path.split("/")
+                    while parts and not group_name:
+                        parts.pop()
+                        group_name = folder_to_group.get("/".join(parts))
 
-            group_name = group_name or "default"
-            groups.setdefault(group_name, []).append(route)
+                group_name = group_name or "default"
+                groups.setdefault(group_name, []).append(route)
+        else:
+            # Auto-grouping: use the Lambda resource folder path as the group name.
+            # For nested paths like "workflow/api", uses the full path as the group name.
+            # For top-level paths like "users", uses "users" as the group name.
+            # Lambdas that can't be resolved to a folder go into "default".
+            logger.info(
+                "No explicit 'grouping' configured — auto-grouping routes by "
+                "Lambda resource folder structure."
+            )
+            for route in routes:
+                lambda_name = route.get("lambda_name")
+                folder_path = self._resolve_lambda_folder(lambda_name)
+                group_name = folder_path if folder_path else "default"
+                groups.setdefault(group_name, []).append(route)
 
         return groups
 

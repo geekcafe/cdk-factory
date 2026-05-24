@@ -51,31 +51,30 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         shared_prefix: List[str] | None = None,
         api_root_resource_id: str | None = None,
         prefix_resource_ids: List[str] | None = None,
+        resource_id_handoff_map: Dict[str, str] | None = None,
     ) -> List[apigateway.Method]:
         """
         Create all route resources for this group.
 
         Args:
             api_gateway: The REST API reference from the parent stack.
-            root_resource_id: The REST API root resource ID (or branch-point
-                resource ID when a shared prefix exists) for path creation.
+            root_resource_id: The REST API root resource ID for path creation.
             authorizer: The Cognito authorizer reference from the parent stack,
                 or None if no authorizer is configured.
             routes: List of route configuration dicts assigned to this group.
             stack_config: The stack configuration for SSM namespace resolution.
             cors_config: Default CORS configuration from the parent stack.
             group_name: Group identifier for construct IDs.
-            shared_prefix: Optional list of shared path segments that have been
-                created in the parent stack. When provided, these segments will
-                be stripped from route paths before creating path resources.
-            api_root_resource_id: The actual API root resource ID. When a shared
-                prefix exists, root_resource_id is the branch-point. Routes that
-                don't match the shared prefix need to create from the actual root.
-                If None, defaults to root_resource_id (backward compatible).
-            prefix_resource_ids: List of resource IDs for each level of the
-                shared prefix chain. Index 0 = API root, index 1 = after first
-                prefix segment, etc. Used for routes that partially match the
-                prefix (e.g., /v3/admin/... when prefix is /v3/tenants/{tenant-id}).
+            shared_prefix: (Deprecated) Optional list of shared path segments.
+                Use resource_id_handoff_map instead.
+            api_root_resource_id: (Deprecated) The actual API root resource ID.
+                Use resource_id_handoff_map instead.
+            prefix_resource_ids: (Deprecated) List of resource IDs for prefix chain.
+                Use resource_id_handoff_map instead.
+            resource_id_handoff_map: Dict mapping path prefixes (e.g., "/v3/tenants/{tenant-id}")
+                to the API Gateway Resource IDs created by the parent stack at those
+                divergence points. The nested stack uses this to determine where to
+                attach its exclusive path segments. Key "/" maps to the API root resource.
 
         Returns:
             List of created Method constructs for deployment dependency tracking.
@@ -83,14 +82,24 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         methods: List[apigateway.Method] = []
 
         # Step 1: Create path resources for all routes, deduplicating shared segments
-        path_resources = self._create_path_resources(
-            api_gateway,
-            root_resource_id,
-            routes,
-            shared_prefix=shared_prefix,
-            api_root_resource_id=api_root_resource_id,
-            prefix_resource_ids=prefix_resource_ids,
-        )
+        if resource_id_handoff_map is not None:
+            # New trie-based path ownership: use handoff map
+            path_resources = self._create_path_resources(
+                api_gateway,
+                root_resource_id,
+                routes,
+                resource_id_handoff_map=resource_id_handoff_map,
+            )
+        else:
+            # Legacy path: use shared_prefix/prefix_resource_ids (deprecated)
+            path_resources = self._create_path_resources(
+                api_gateway,
+                root_resource_id,
+                routes,
+                shared_prefix=shared_prefix,
+                api_root_resource_id=api_root_resource_id,
+                prefix_resource_ids=prefix_resource_ids,
+            )
 
         # Step 2: Track which paths already have OPTIONS methods to prevent duplicates
         options_created: Set[str] = set()
@@ -163,6 +172,7 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         shared_prefix: List[str] | None = None,
         api_root_resource_id: str | None = None,
         prefix_resource_ids: List[str] | None = None,
+        resource_id_handoff_map: Dict[str, str] | None = None,
     ) -> Dict[str, apigateway.Resource]:
         """
         Create API Gateway Resource entries for all path segments.
@@ -170,8 +180,13 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         Deduplicates shared path segments so multiple routes sharing
         a segment reuse a single resource entry.
 
-        When a shared_prefix is provided, routes are handled based on how
-        they match the prefix:
+        When resource_id_handoff_map is provided (new trie-based approach):
+        - For each route, find the longest matching handoff path in the map
+        - Import the resource at that handoff path from the parent stack
+        - Create only the remaining (exclusive) path segments below it
+        - If a route's entire path is shared, return the imported resource directly
+
+        When shared_prefix is provided (deprecated legacy approach):
         - Full match: strip prefix, start from branch-point (root_resource_id)
         - Partial match: strip matching portion, start from intermediate
           prefix resource (using prefix_resource_ids)
@@ -182,10 +197,227 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
             root_resource_id: The branch-point resource ID (end of prefix chain)
                 or API root if no prefix.
             routes: List of route configuration dicts.
+            shared_prefix: (Deprecated) Optional list of shared path segments created in parent.
+            api_root_resource_id: (Deprecated) The actual API root resource ID for non-matching routes.
+            prefix_resource_ids: (Deprecated) List of resource IDs at each prefix depth.
+            resource_id_handoff_map: Dict mapping path prefixes (e.g., "/v3/tenants/{tenant-id}")
+                to the API Gateway Resource IDs created by the parent stack. Key "/"
+                maps to the API root resource.
+
+        Returns:
+            Dict mapping full path strings to apigateway.Resource objects.
+        """
+        # NEW PATH: Use resource_id_handoff_map when provided
+        if resource_id_handoff_map is not None:
+            return self._create_path_resources_from_handoff_map(
+                api_gateway, routes, resource_id_handoff_map
+            )
+
+        # LEGACY PATH: Use shared_prefix/prefix_resource_ids (deprecated)
+        return self._create_path_resources_legacy(
+            api_gateway,
+            root_resource_id,
+            routes,
+            shared_prefix=shared_prefix,
+            api_root_resource_id=api_root_resource_id,
+            prefix_resource_ids=prefix_resource_ids,
+        )
+
+    def _create_path_resources_from_handoff_map(
+        self,
+        api_gateway: apigateway.IRestApi,
+        routes: List[Dict[str, Any]],
+        resource_id_handoff_map: Dict[str, str],
+    ) -> Dict[str, apigateway.Resource]:
+        """
+        Create path resources using the trie-based resource_id_handoff_map.
+
+        For each route:
+        1. Find the longest matching handoff path in the map
+        2. Import the resource at that handoff path from the parent stack
+        3. Create only the remaining (exclusive) path segments below it
+        4. If a route's entire path matches a handoff path, return the imported
+           resource directly (methods attach to it)
+
+        Args:
+            api_gateway: The REST API reference.
+            routes: List of route configuration dicts.
+            resource_id_handoff_map: Dict mapping path prefixes to resource IDs
+                from the parent stack.
+
+        Returns:
+            Dict mapping full path strings to apigateway.Resource objects.
+        """
+        # Cache of imported handoff resources to avoid duplicate construct IDs
+        imported_handoff_resources: Dict[str, apigateway.Resource] = {}
+
+        # Dict mapping full path strings to Resource objects
+        path_resources: Dict[str, apigateway.Resource] = {}
+
+        # Pre-sort handoff paths by length (longest first) for longest-match lookup
+        sorted_handoff_paths = sorted(
+            resource_id_handoff_map.keys(), key=len, reverse=True
+        )
+
+        for route in routes:
+            route_path = route.get("path", "").rstrip("/")
+            if not route_path or route_path == "/":
+                # Root path — import the "/" handoff resource
+                if "/" in resource_id_handoff_map:
+                    root_res = self._import_handoff_resource(
+                        api_gateway,
+                        "/",
+                        resource_id_handoff_map["/"],
+                        imported_handoff_resources,
+                    )
+                    path_resources["/"] = root_res
+                continue
+
+            # Find the longest matching handoff path for this route
+            handoff_path = self._find_longest_handoff_match(
+                route_path, sorted_handoff_paths
+            )
+
+            # Import the handoff resource from the parent stack
+            handoff_resource_id = resource_id_handoff_map[handoff_path]
+            handoff_resource = self._import_handoff_resource(
+                api_gateway,
+                handoff_path,
+                handoff_resource_id,
+                imported_handoff_resources,
+            )
+
+            # Determine which segments remain after the handoff point
+            if handoff_path == "/":
+                # Handoff from API root — all segments are exclusive
+                remaining_segments = [s for s in route_path.strip("/").split("/") if s]
+            else:
+                # Strip the handoff path prefix from the route path
+                handoff_segments = [s for s in handoff_path.strip("/").split("/") if s]
+                all_segments = [s for s in route_path.strip("/").split("/") if s]
+                remaining_segments = all_segments[len(handoff_segments) :]
+
+            # If no remaining segments, the entire path is shared — attach directly
+            if not remaining_segments:
+                path_resources[route_path] = handoff_resource
+                continue
+
+            # Build exclusive resources incrementally below the handoff point
+            # Use handoff_path as context key to differentiate paths starting
+            # from different handoff points
+            parent_resource = handoff_resource
+            current_path = handoff_path if handoff_path != "/" else ""
+
+            for segment in remaining_segments:
+                current_path = f"{current_path}/{segment}"
+                lookup_key = f"handoff:{current_path}"
+
+                if lookup_key in path_resources:
+                    parent_resource = path_resources[lookup_key]
+                else:
+                    new_resource = parent_resource.add_resource(
+                        segment,
+                        default_cors_preflight_options=None,
+                    )
+                    path_resources[lookup_key] = new_resource
+                    parent_resource = new_resource
+
+            # Map the full original route path to the final resource
+            path_resources[route_path] = parent_resource
+
+        return path_resources
+
+    def _find_longest_handoff_match(
+        self, route_path: str, sorted_handoff_paths: List[str]
+    ) -> str:
+        """
+        Find the longest handoff path that is a prefix of the given route path.
+
+        The match is segment-based (not character-based) to avoid partial segment
+        matches. For example, "/v3/tenants" should NOT match "/v3/tenants-admin/foo".
+
+        Args:
+            route_path: The full route path (e.g., "/v3/tenants/{tenant-id}/users").
+            sorted_handoff_paths: Handoff paths sorted by length (longest first).
+
+        Returns:
+            The longest matching handoff path, or "/" if no other match is found.
+        """
+        route_segments = [s for s in route_path.strip("/").split("/") if s]
+
+        for handoff_path in sorted_handoff_paths:
+            if handoff_path == "/":
+                continue  # "/" always matches — use as fallback
+
+            handoff_segments = [s for s in handoff_path.strip("/").split("/") if s]
+
+            # Check if handoff_segments is a prefix of route_segments
+            if len(handoff_segments) <= len(route_segments):
+                if route_segments[: len(handoff_segments)] == handoff_segments:
+                    return handoff_path
+
+        # Fallback to root
+        return "/"
+
+    def _import_handoff_resource(
+        self,
+        api_gateway: apigateway.IRestApi,
+        handoff_path: str,
+        resource_id: str,
+        cache: Dict[str, apigateway.Resource],
+    ) -> apigateway.Resource:
+        """
+        Import a handoff resource from the parent stack, using a cache to avoid
+        duplicate construct IDs.
+
+        Args:
+            api_gateway: The REST API reference.
+            handoff_path: The path key (e.g., "/v3/tenants/{tenant-id}").
+            resource_id: The resource ID to import.
+            cache: Dict of already-imported resources keyed by handoff_path.
+
+        Returns:
+            The imported apigateway.Resource.
+        """
+        if handoff_path in cache:
+            return cache[handoff_path]
+
+        # Generate a stable construct ID from the handoff path
+        construct_id = f"imported-handoff-{self._sanitize_construct_id(handoff_path)}"
+
+        resource = apigateway.Resource.from_resource_attributes(
+            self,
+            construct_id,
+            rest_api=api_gateway,
+            resource_id=resource_id,
+            path=handoff_path,
+        )
+        cache[handoff_path] = resource
+        return resource
+
+    def _create_path_resources_legacy(
+        self,
+        api_gateway: apigateway.IRestApi,
+        root_resource_id: str,
+        routes: List[Dict[str, Any]],
+        shared_prefix: List[str] | None = None,
+        api_root_resource_id: str | None = None,
+        prefix_resource_ids: List[str] | None = None,
+    ) -> Dict[str, apigateway.Resource]:
+        """
+        (Deprecated) Create path resources using the legacy shared_prefix approach.
+
+        This method is preserved for backward compatibility during the transition
+        to the trie-based resource_id_handoff_map approach.
+
+        Args:
+            api_gateway: The REST API reference.
+            root_resource_id: The branch-point resource ID (end of prefix chain)
+                or API root if no prefix.
+            routes: List of route configuration dicts.
             shared_prefix: Optional list of shared path segments created in parent.
             api_root_resource_id: The actual API root resource ID for non-matching routes.
             prefix_resource_ids: List of resource IDs at each prefix depth.
-                Index 0 = API root, index N = after N-th prefix segment.
 
         Returns:
             Dict mapping full path strings to apigateway.Resource objects.
