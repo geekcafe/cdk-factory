@@ -131,6 +131,7 @@ Reference it in config (name is the literal CloudFormation stack name):
 
 - [Configuration Reference](configuration-reference.md) — Full config.json schema, `__inherits__` with directories, stack-level defaults, `lambda_config_paths`, post-build snapshots
 - [Stack Modules](stack-modules.md) — Per-module config reference (lambda defaults, auto_name, SQS auto-discovery)
+- [Pipeline Commands](pipeline-commands.md) — CI/CD CLI modules: unified orchestrator, Docker build/tag/push, unit tests, SSM publish, Lambda updates, CodeArtifact publishing
 - [Naming & SSM](naming-and-ssm.md) — Declarative stack naming, SSM parameter conventions
 - [Cross-Account](cross-account.md) — Multi-account setup and DNS delegation
 - [Deployment Guide](deployment-guide.md) — How to deploy, add tenants, parameter resolution
