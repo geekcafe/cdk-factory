@@ -523,6 +523,19 @@ class CdkDeploymentCommand:
                         os.environ[key] = resolved
                         changed = True
 
+        # 9. Set CDK-standard env vars for credential/account resolution.
+        # CDK uses CDK_DEFAULT_ACCOUNT and CDK_DEFAULT_REGION to determine
+        # the target environment. Also set AWS_DEFAULT_REGION so the AWS SDK
+        # (used by CDK internally) resolves the correct region.
+        account = os.environ.get("AWS_ACCOUNT") or config.get("aws_account", "")
+        region = os.environ.get("AWS_REGION") or config.get("aws_region", "")
+        if account and "CDK_DEFAULT_ACCOUNT" not in os.environ:
+            os.environ["CDK_DEFAULT_ACCOUNT"] = account
+        if region and "CDK_DEFAULT_REGION" not in os.environ:
+            os.environ["CDK_DEFAULT_REGION"] = region
+        if region and "AWS_DEFAULT_REGION" not in os.environ:
+            os.environ["AWS_DEFAULT_REGION"] = region
+
     def validate_required_variables(self) -> None:
         """Raise SystemExit if any required variable is missing or placeholder."""
         self._print("Validating configuration...", "blue")
@@ -574,39 +587,47 @@ class CdkDeploymentCommand:
         """Synthesise then deploy all stacks."""
         self.run_cdk_synth(config_file)
         self._print("Running CDK deployment...", "blue")
-        self._run(
-            [
-                "cdk",
-                "deploy",
-                "--all",
-                "--require-approval",
-                "never",
-                "--app",
-                f"python3 app.py --config {config_file}",
-            ]
-        )
+        cmd = [
+            "cdk",
+            "deploy",
+            "--all",
+            "--require-approval",
+            "never",
+            "--app",
+            f"python3 app.py --config {config_file}",
+        ]
+        profile = os.environ.get("AWS_PROFILE")
+        if profile:
+            cmd.extend(["--profile", profile])
+        self._run(cmd)
         self._print("CDK deployment completed successfully", "green")
 
     def run_cdk_diff(self, config_file: str) -> None:
         """Synthesise then diff all stacks."""
         self.run_cdk_synth(config_file)
         self._print("Running CDK diff...", "blue")
-        self._run(["cdk", "diff", "--all"])
+        cmd = ["cdk", "diff", "--all"]
+        profile = os.environ.get("AWS_PROFILE")
+        if profile:
+            cmd.extend(["--profile", profile])
+        self._run(cmd)
         self._print("CDK diff completed successfully", "green")
 
     def run_cdk_destroy(self, config_file: str) -> None:
         """Destroy all stacks."""
         self._print("Running CDK destroy...", "red")
-        self._run(
-            [
-                "cdk",
-                "destroy",
-                "--all",
-                "--force",
-                "--app",
-                f"python3 app.py --config {config_file}",
-            ]
-        )
+        cmd = [
+            "cdk",
+            "destroy",
+            "--all",
+            "--force",
+            "--app",
+            f"python3 app.py --config {config_file}",
+        ]
+        profile = os.environ.get("AWS_PROFILE")
+        if profile:
+            cmd.extend(["--profile", profile])
+        self._run(cmd)
         self._print("CDK destroy completed successfully", "green")
 
     def run_target_destroy(
