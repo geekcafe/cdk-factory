@@ -1,0 +1,16 @@
+#!/bin/bash
+# Thin wrapper — all logic lives in Python
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if ! command -v python3 &> /dev/null; then
+    echo "Error: Python3 is required but not found on PATH" >&2
+    exit 1
+fi
+
+DEPLOY_SCRIPT="$SCRIPT_DIR/deploy.py"
+if [ ! -f "$DEPLOY_SCRIPT" ]; then
+    echo "Error: deploy.py not found at $DEPLOY_SCRIPT" >&2
+    exit 1
+fi
+
+exec python3 "$DEPLOY_SCRIPT" "$@"
