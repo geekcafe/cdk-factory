@@ -9,6 +9,7 @@ import hashlib
 import os
 
 import cdk_nag
+import aws_cdk
 from aws_cdk import aws_iam as iam
 from constructs import Construct
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
@@ -334,6 +335,7 @@ class PolicyDocuments:
                 "lambda",
                 "events",
                 "parameter_store",
+                "cognito-idp",
             }
             if known_structured_keys & permission.keys():
                 return {}
@@ -518,6 +520,91 @@ class PolicyDocuments:
                     "id": "AwsSolutions-IAM5",
                     "reason": f"Lambda {action} permission for function: {function}",
                     "resources": [f"Resource::{r}" for r in resources],
+                },
+            }
+
+        # Cognito IDP structured permissions
+        if "cognito-idp" in permission:
+            action = permission["cognito-idp"]
+            user_pool = permission.get("user_pool", "")
+            user_pool_arn = permission.get("user_pool_arn", "")
+            ssm_path = permission.get("ssm_path", "")
+
+            action_map = {
+                "admin": {
+                    "actions": ["cognito-idp:*"],
+                    "sid": "CognitoIdpAdmin",
+                    "description": "Cognito IDP Admin",
+                },
+                "full": {
+                    "actions": ["cognito-idp:*"],
+                    "sid": "CognitoIdpFull",
+                    "description": "Cognito IDP Full Access",
+                },
+                "read": {
+                    "actions": [
+                        "cognito-idp:ListUsers",
+                        "cognito-idp:AdminGetUser",
+                        "cognito-idp:ListGroups",
+                        "cognito-idp:ListUserPools",
+                        "cognito-idp:ListUserPoolClients",
+                        "cognito-idp:DescribeUserPool",
+                    ],
+                    "sid": "CognitoIdpRead",
+                    "description": "Cognito IDP Read",
+                },
+            }
+
+            if action not in action_map:
+                raise ValueError(
+                    f"Unknown cognito-idp action '{action}'. Valid: {list(action_map.keys())}"
+                )
+
+            details = action_map[action]
+
+            # Determine resources — priority: user_pool_arn > ssm_path > user_pool (ID) > wildcard
+            if user_pool_arn:
+                resources = [user_pool_arn]
+            elif ssm_path:
+                # Resolve ARN from SSM at synth time
+                try:
+                    ssm_value = aws_cdk.aws_ssm.StringParameter.value_from_lookup(
+                        self.scope, ssm_path
+                    )
+                    resources = [ssm_value]
+                except Exception:
+                    # SSM lookup failed (first synth or parameter doesn't exist yet)
+                    # Fall back to wildcard
+                    resources = ["*"]
+            elif user_pool:
+                # Build ARN from pool ID
+                resolver = self._get_resource_resolver()
+                region = resolver.get_aws_region()
+                account = resolver.get_aws_account()
+                resources = [
+                    f"arn:aws:cognito-idp:{region}:{account}:userpool/{user_pool}"
+                ]
+            else:
+                # No pool specified — wildcard
+                resources = ["*"]
+
+            pool_slug = self._make_sid_slug(
+                user_pool_arn or ssm_path or user_pool or "all"
+            )
+
+            return {
+                "name": "CognitoIDP",
+                "description": f"{details['description']}: {user_pool_arn or ssm_path or user_pool or '*'}",
+                "sid": f"{details['sid']}{pool_slug}",
+                "actions": details["actions"],
+                "resources": resources,
+                "nag": {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": f"Cognito IDP {action} permission for user pool management.",
+                    "resources": [f"Resource::{r}" for r in resources]
+                    + (
+                        ["Action::cognito-idp:*"] if action in ("admin", "full") else []
+                    ),
                 },
             }
 
