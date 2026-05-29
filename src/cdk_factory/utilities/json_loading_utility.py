@@ -155,13 +155,12 @@ class JsonLoadingUtility:
                     elif os.path.isdir(os.path.join(self.base_path, nested_path)):
                         nested_section = []
                         dir_path = os.path.join(self.base_path, nested_path)
-                        for filename in os.listdir(dir_path):
-                            if filename.endswith(".json"):
-                                file_path = os.path.join(dir_path, filename)
-                                # print(f"Loading file: {file_path}")
-                                file_section = self.__load_json_file(file_path)
-                                nested_section.append(file_section)
-                        # print("done with nested sections")
+                        for root, dirs, files in os.walk(dir_path):
+                            for filename in sorted(files):
+                                if filename.endswith(".json"):
+                                    file_path = os.path.join(root, filename)
+                                    file_section = self.__load_json_file(file_path)
+                                    nested_section.append(file_section)
                     else:
                         # Path is not a .json file and not a directory — treat as
                         # a dot-path reference into the root config. If this fails,
