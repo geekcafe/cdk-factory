@@ -613,13 +613,24 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                         if route["skip_authorizer"]:
                             route["authorization_type"] = "NONE"
 
-                        discovered.append(route)
-                        logger.info(
-                            f"Discovered route: {route['method']} {route['path']} -> {lambda_name}"
+                        # Only add the top-level route if there's no routes[] array,
+                        # or if the top-level route isn't already in the routes[] array.
+                        # When routes[] is present, it's the authoritative list.
+                        sub_routes = api_config.get("routes", [])
+                        top_level_in_sub_routes = any(
+                            sr.get("route") == route["path"]
+                            and sr.get("method", "GET").upper() == route["method"]
+                            for sr in sub_routes
                         )
 
+                        if not top_level_in_sub_routes:
+                            discovered.append(route)
+                            logger.info(
+                                f"Discovered route: {route['method']} {route['path']} -> {lambda_name}"
+                            )
+
                         # Expand multi-route lambdas
-                        for sub_route in api_config.get("routes", []):
+                        for sub_route in sub_routes:
                             sub = {
                                 "path": sub_route.get("route", ""),
                                 "method": sub_route.get("method", "GET").upper(),
@@ -996,19 +1007,6 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
 
         logger.info(f"Imported Lambda for route {route_path}: {lambda_arn}")
 
-        # Add explicit resource-based permission for this specific API Gateway
-        # This is CRITICAL for cross-stack Lambda integrations
-        _lambda.CfnPermission(
-            self,
-            f"lambda-permission-{suffix}",
-            action="lambda:InvokeFunction",
-            function_name=lambda_fn.function_arn,
-            principal="apigateway.amazonaws.com",
-            source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{method}{route_path}",
-        )
-
-        logger.info(f"Granted API Gateway invoke permissions for Lambda: {lambda_arn}")
-
         # Setup API Gateway resource
         resource = (
             api_gateway.root.resource_for_path(route_path)
@@ -1172,16 +1170,6 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 api_gateway.root.resource_for_path(add_path)
                 if add_path != "/"
                 else api_gateway.root
-            )
-
-            # Add CfnPermission for this additional route
-            _lambda.CfnPermission(
-                self,
-                f"lambda-permission-{add_suffix}",
-                action="lambda:InvokeFunction",
-                function_name=lambda_fn.function_arn,
-                principal="apigateway.amazonaws.com",
-                source_arn=f"arn:aws:execute-api:{self.region}:{self.account}:{api_gateway.rest_api_id}/*/{add_method}{add_path}",
             )
 
             # Setup Lambda integration for the additional route
