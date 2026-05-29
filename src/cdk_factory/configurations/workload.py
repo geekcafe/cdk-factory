@@ -6,6 +6,7 @@ MIT License.  See Project Root for the license information.
 
 import os
 import copy
+import sys
 from typing import Any, Dict, List
 
 from aws_lambda_powertools import Logger
@@ -79,15 +80,40 @@ class WorkloadConfig:
         if "devops" not in workload:
             logger.warning("Devops configuration not found in workload, using defaults")
 
-            # Get environment variables for defaults
-            devops_account = os.environ.get("DEVOPS_AWS_ACCOUNT")
-            devops_region = os.environ.get("DEVOPS_REGION")
+            # The "devops" account is where CodePipeline runs (builds code, pushes images).
+            # In cross-account setups this differs from the deployment target account.
+            # In single-account setups (direct mode), it's the same as AWS_ACCOUNT.
+            #
+            # Resolution order:
+            #   1. DEVOPS_AWS_ACCOUNT (explicit pipeline account)
+            #   2. AWS_ACCOUNT (deployment target — works for single-account setups)
+            #   3. CDK_DEFAULT_ACCOUNT (CDK's own resolution)
+            devops_account = (
+                os.environ.get("DEVOPS_AWS_ACCOUNT")
+                or os.environ.get("AWS_ACCOUNT")
+                or os.environ.get("CDK_DEFAULT_ACCOUNT")
+            )
+            devops_region = (
+                os.environ.get("DEVOPS_REGION")
+                or os.environ.get("AWS_REGION")
+                or os.environ.get("CDK_DEFAULT_REGION")
+                or "us-east-1"
+            )
 
-            # Validate required environment variables
-            if not devops_account or not devops_region:
-                raise ValueError(
-                    "DEVOPS_AWS_ACCOUNT and DEVOPS_REGION environment variables must be set when devops config is missing"
+            if not devops_account:
+                print(
+                    "\n✗ Cannot determine the pipeline account.\n"
+                    "\n"
+                    "  cdk-factory needs to know which AWS account hosts the CI/CD pipeline.\n"
+                    "  For single-account setups (direct deploy), this is the same as your deployment account.\n"
+                    "  For cross-account setups, this is the account where CodePipeline runs.\n"
+                    "\n"
+                    "  Fix by doing ONE of:\n"
+                    "    • Add a 'devops' section to your workload config.json\n"
+                    "    • Set DEVOPS_AWS_ACCOUNT in your deployment JSON parameters\n"
+                    "    • Set AWS_ACCOUNT in your deployment JSON parameters (single-account)\n"
                 )
+                sys.exit(1)
 
             # Use a separate defaults object instead of mutating the original
             devops_defaults = {
@@ -98,7 +124,7 @@ class WorkloadConfig:
                     "type": "connector_arn",
                     "connector_arn": os.environ.get(
                         "CODE_REPOSITORY_ARN",
-                        f"arn:aws:codeconnections:{os.environ.get('DEVOPS_REGION', 'us-east-1')}:{os.environ.get('DEVOPS_AWS_ACCOUNT')}:connection/default",
+                        f"arn:aws:codeconnections:{devops_region}:{devops_account}:connection/default",
                     ),
                 },
                 "commands": [],

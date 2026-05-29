@@ -1785,6 +1785,13 @@ class CdkDeploymentCommand:
         env_vars = self.load_env_file(env_config.env_file)
         self.set_environment_variables(env_config, env_vars)
 
+        # Wizard for missing pipeline config (skip for destroy operations)
+        if not getattr(self, "_destroy_target", False) and operation not in (
+            "destroy",
+            "destroy-target",
+        ):
+            self._prompt_devops_config(env_config)
+
         # Select config file
         selected_config = config_file or "config.json"
 
@@ -1968,6 +1975,50 @@ class CdkDeploymentCommand:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _needs_devops_wizard(self) -> bool:
+        """Return True when the DevOps configuration wizard should trigger.
+
+        Checks preconditions: interactive TTY, no existing DEVOPS_AWS_ACCOUNT
+        env var, no devops section in config.json, and at least one deployment
+        that is not direct mode.
+        """
+        # Guard: must be interactive TTY
+        if not sys.stdin.isatty():
+            return False
+
+        # Guard: DEVOPS_AWS_ACCOUNT already set (from deployment JSON or env)
+        if os.environ.get("DEVOPS_AWS_ACCOUNT"):
+            return False
+
+        # Check config.json for devops section and deployment modes
+        config_path = self.script_dir / "config.json"
+        if not config_path.exists():
+            # Conservative: cannot confirm devops section exists, trigger wizard
+            return True
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            self._print(
+                "Warning: config.json is malformed — triggering DevOps wizard as a precaution.",
+                "yellow",
+            )
+            return True
+
+        workload = config.get("workload", {})
+
+        # If devops section exists in config.json, skip
+        if workload.get("devops"):
+            return False
+
+        # If all deployments are direct mode, skip
+        deployments = workload.get("deployments", [])
+        if deployments and all(d.get("mode") == "direct" for d in deployments):
+            return False
+
+        return True
+
     def _print(self, message: str, color: str = "white") -> None:
         _colors = {
             "red": "\033[0;31m",
@@ -2033,6 +2084,134 @@ class CdkDeploymentCommand:
                 f"Warning: Could not update {deployment_file}: {e}",
                 "yellow",
             )
+
+    def _validate_arn(self, arn: str) -> bool:
+        """Validate that a connection ARN matches the expected pattern.
+
+        Args:
+            arn: The user-provided ARN string.
+
+        Returns:
+            True if the ARN starts with ``arn:aws:codeconnections:``, False otherwise.
+        """
+        return arn.startswith("arn:aws:codeconnections:")
+
+    def _prompt_devops_config(self, env_config: EnvironmentConfig) -> None:
+        """Interactive wizard for missing pipeline/DevOps configuration.
+
+        Detects when the workload config lacks a devops section and
+        ``DEVOPS_AWS_ACCOUNT`` is not set, then guides the user through
+        providing the required values. Persists collected values to the
+        deployment JSON and sets them as environment variables for the
+        current process.
+
+        Args:
+            env_config: The selected environment configuration, used to
+                read the deployment JSON file path from
+                ``env_config.extra.get("_file")``.
+        """
+        # 1. Check preconditions — return early if wizard is not needed
+        if not self._needs_devops_wizard():
+            return
+
+        # 2. Print introduction
+        self._print("", "white")
+        self._print("Pipeline account configuration needed.", "yellow")
+        self._print(
+            "Your workload config does not specify where the CI/CD pipeline should run.",
+            "white",
+        )
+        self._print("", "white")
+
+        # 3. Present account strategy menu
+        options = [
+            "Same account as deployment target (single-account setup)",
+            "Dedicated DevOps account (cross-account setup)",
+        ]
+        idx = self._interactive_select("Where should the CI/CD pipeline run?", options)
+
+        # 4. Same account selection
+        if idx == 0:
+            devops_account = os.environ.get("AWS_ACCOUNT", "")
+            devops_region = os.environ.get("AWS_REGION", "us-east-1")
+            if not devops_account:
+                self._print(
+                    "AWS_ACCOUNT is not set. Cannot derive DevOps account.", "red"
+                )
+                return
+
+        # 5. Dedicated account selection
+        else:
+            while True:
+                devops_account = input("  DevOps AWS Account ID: ").strip()
+                if devops_account:
+                    break
+                self._print("  Account ID cannot be empty.", "yellow")
+
+            default_region = os.environ.get("AWS_REGION", "us-east-1")
+            devops_region = (
+                input(f"  DevOps Region [{default_region}]: ").strip() or default_region
+            )
+
+        # 6. Prompt for code repository name (loop until non-empty)
+        while True:
+            repo_name = input("  Code repository (e.g., owner/repo-name): ").strip()
+            if repo_name:
+                break
+            self._print("  Repository name cannot be empty.", "yellow")
+
+        # 7. Prompt for connection ARN (loop until valid)
+        while True:
+            repo_arn = input("  Code connection ARN: ").strip()
+            if self._validate_arn(repo_arn):
+                break
+            self._print("  ARN must start with arn:aws:codeconnections:", "yellow")
+
+        # 8. Get deployment file path
+        deployment_file = env_config.extra.get("_file", "")
+
+        # 9. Persist values to deployment JSON
+        if deployment_file:
+            try:
+                self._update_deployment_json(
+                    deployment_file, "DEVOPS_AWS_ACCOUNT", devops_account
+                )
+                self._update_deployment_json(
+                    deployment_file, "DEVOPS_REGION", devops_region
+                )
+                self._update_deployment_json(
+                    deployment_file, "CODE_REPOSITORY_NAME", repo_name
+                )
+                self._update_deployment_json(
+                    deployment_file, "CODE_REPOSITORY_ARN", repo_arn
+                )
+            except (PermissionError, OSError) as e:
+                self._print(
+                    f"Warning: Could not write to {deployment_file}: {e}", "yellow"
+                )
+                self._print(
+                    "  Values will be used for this run only (not persisted).", "yellow"
+                )
+
+        # 10. Set environment variables
+        os.environ["DEVOPS_AWS_ACCOUNT"] = devops_account
+        os.environ["DEVOPS_REGION"] = devops_region
+        os.environ["CODE_REPOSITORY_NAME"] = repo_name
+        os.environ["CODE_REPOSITORY_ARN"] = repo_arn
+
+        # 11. Print summary
+        self._print("", "white")
+        self._print("Pipeline configuration saved:", "green")
+        self._print(f"  DEVOPS_AWS_ACCOUNT   : {devops_account}", "white")
+        self._print(f"  DEVOPS_REGION        : {devops_region}", "white")
+        self._print(f"  CODE_REPOSITORY_NAME : {repo_name}", "white")
+        self._print(f"  CODE_REPOSITORY_ARN  : {repo_arn}", "white")
+        if deployment_file:
+            self._print(f"  Written to: {os.path.basename(deployment_file)}", "white")
+        self._print(
+            "  Subsequent runs will use these values without prompting.", "blue"
+        )
+        self._print("", "white")
 
     def _prompt_version_locking(self, env_config: EnvironmentConfig) -> None:
         """Prompt user to lock/unlock Docker image versions before CDK operations.
