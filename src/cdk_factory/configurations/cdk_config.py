@@ -463,11 +463,24 @@ class CdkConfig:
         # 2. Environment variable (from deployment JSON or shell)
         # 3. Static value in config.json (acts as a default)
         # 4. default_value (last resort)
+        #
+        # If a value still contains {{...}} placeholders, treat it as
+        # unresolved and fall through to the next source. This allows
+        # deployment files to reference config.json defaults without
+        # having to redefine them (e.g., "WORKLOAD_NAME": "{{WORKLOAD_NAME}}").
+        placeholder_pattern = re.compile(r"\{\{[^}]+\}\}")
+
         if not value and environment_variable_name is not None:
-            value = os.environ.get(environment_variable_name, None)
+            env_value = os.environ.get(environment_variable_name, None)
+            if env_value and not placeholder_pattern.search(env_value):
+                value = env_value
 
         if not value and static_value is not None:
-            value = static_value
+            if not (
+                isinstance(static_value, str)
+                and placeholder_pattern.search(static_value)
+            ):
+                value = static_value
 
         if environment_variable_name is not None and value is not None:
             self._env_vars[environment_variable_name] = value

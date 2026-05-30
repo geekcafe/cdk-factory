@@ -490,25 +490,60 @@ class CdkDeploymentCommand:
         if mgmt.get("hosted_zone_id"):
             os.environ["MGMT_R53_HOSTED_ZONE_ID"] = str(mgmt["hosted_zone_id"])
 
-        # 6. Config.json defaults for unset vars
+        # 6. Config.json defaults for unset or still-unresolved vars
+        # Load defaults from config.json parameters that have a static "value".
+        # These act as fallbacks for vars not defined (or left as placeholders)
+        # in the deployment JSON.
         config_json_path = self.script_dir / "config.json"
+        config_json_defaults: Dict[str, str] = {}
         if config_json_path.exists():
             with open(config_json_path, "r", encoding="utf-8") as fh:
                 main_config = json.load(fh)
             for param in main_config.get("cdk", {}).get("parameters", []):
                 env_var = param.get("env_var_name", "")
                 default_value = param.get("value")
-                if env_var and default_value and env_var not in os.environ:
-                    os.environ[env_var] = str(default_value)
+                if env_var and default_value:
+                    config_json_defaults[env_var] = str(default_value)
+                    if env_var not in os.environ:
+                        os.environ[env_var] = str(default_value)
 
         # 7. Default DEPLOYMENT_NAMESPACE to TENANT_NAME
         if "DEPLOYMENT_NAMESPACE" not in os.environ:
             os.environ["DEPLOYMENT_NAMESPACE"] = os.environ.get("TENANT_NAME", "")
 
         # 8. Resolve {{PLACEHOLDER}} references (max 5 passes)
+        # After resolution, any env var still containing {{...}} that has a
+        # config.json default gets that default applied.
         placeholder_re = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
         changed = True
         max_passes = 5
+        passes = 0
+        while changed and passes < max_passes:
+            changed = False
+            passes += 1
+            for key in list(os.environ.keys()):
+                value = os.environ[key]
+                if "{{" in value:
+                    resolved = placeholder_re.sub(
+                        lambda m: os.environ.get(m.group(1), m.group(0)), value
+                    )
+                    if resolved != value:
+                        os.environ[key] = resolved
+                        changed = True
+
+        # 8b. Apply config.json defaults for any env vars that still contain
+        # unresolved {{...}} placeholders (e.g., self-referential entries like
+        # "WORKLOAD_NAME": "{{WORKLOAD_NAME}}" in the deployment JSON).
+        unresolved_pattern = re.compile(r"\{\{[^}]+\}\}")
+        for key in list(os.environ.keys()):
+            value = os.environ[key]
+            if unresolved_pattern.search(value) and key in config_json_defaults:
+                default = config_json_defaults[key]
+                if not unresolved_pattern.search(default):
+                    os.environ[key] = default
+
+        # 8c. Run one more resolution pass now that defaults are applied
+        changed = True
         passes = 0
         while changed and passes < max_passes:
             changed = False
