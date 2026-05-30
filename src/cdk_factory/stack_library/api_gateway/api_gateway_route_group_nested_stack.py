@@ -19,6 +19,7 @@ from constructs import Construct
 from aws_lambda_powertools import Logger
 
 from cdk_factory.stack_library.stack_base import NestedStackBase
+from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
 
 logger = Logger(service="ApiGatewayRouteGroupNestedStack")
 
@@ -601,6 +602,17 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
                 integration,
                 **method_options,
             )
+
+            # Suppress CDK Nag for routes that intentionally skip authorization
+            if skip_authorizer or (
+                allow_public_override and authorization_type == "NONE"
+            ):
+                ApiGatewayUtilities.add_nag_suppression(
+                    method,
+                    apig4_reason="Route is configured with skip_authorizer or allow_public_override",
+                    cog4_reason="Route is configured with skip_authorizer or allow_public_override",
+                )
+
             return method
         except Exception as e:
             error_msg = (
@@ -746,7 +758,7 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
                 request_templates={"application/json": '{"statusCode": 200}'},
             )
 
-            resource.add_method(
+            options_method = resource.add_method(
                 "OPTIONS",
                 options_integration,
                 method_responses=[
@@ -760,6 +772,13 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
                     )
                 ],
                 authorization_type=apigateway.AuthorizationType.NONE,
+            )
+
+            # Suppress CDK Nag rules for OPTIONS — preflight requests cannot carry auth
+            ApiGatewayUtilities.add_nag_suppression(
+                options_method,
+                apig4_reason="OPTIONS method does not require authorization",
+                cog4_reason="OPTIONS method does not require authorization or Cognito",
             )
 
             # Track that OPTIONS has been created for this path
