@@ -389,11 +389,15 @@ def main(argv: Optional[List[str]] = None) -> None:
         docker_config_path = get_docker_config_path(project_root)
 
         if not os.path.exists(docker_config_path):
+            error_message = (
+                f"🚨 Error: docker-images.json not found at {docker_config_path}. "
+            )
             print(
-                f"⚠️  Warning: docker-images.json not found at {docker_config_path}. "
-                "Skipping deploy-images step.",
+                f"{error_message} - Skipping deploy-images step.",
                 file=sys.stderr,
             )
+
+            raise RuntimeError(error_message)
         else:
             # Sub-step: Docker Build
             step_number += 1
