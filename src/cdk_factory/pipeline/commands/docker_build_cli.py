@@ -333,6 +333,11 @@ def _do_push(
             print(f"  Pushing to ECR: {ecr_uri}")
             print(f"  Tags: {all_tags}")
 
+            # Tag the local image with the fully qualified ECR tags before pushing
+            source_tag = docker.build_tag or f"{repo_name}:{version}"
+            for qualified_tag in qualified_tags:
+                docker.execute_tag_command(source_tag, qualified_tag)
+
             aws_profile = os.environ.get("AWS_PROFILE")
             docker.execute_push_to_aws(
                 aws_region=region,
