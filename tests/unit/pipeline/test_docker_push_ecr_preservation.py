@@ -1,16 +1,8 @@
 """
-Preservation Property Tests — Lambda Deployments Fallback Behavior
+Preservation Property Tests — ECR Push Behavior
 
-These tests capture baseline behavior that MUST be preserved after the fix.
-They run on UNFIXED code first (observation-first methodology) and should
-PASS both before and after the fix is applied.
-
-**Property 2: Preservation** - Lambda Deployments Fallback Behavior
-
-For any image config where no `ecr` field is present but valid `lambda_deployments`
-entries exist, the `_do_push` function SHALL produce exactly the same behavior as
-the original function, deriving ECR URI from deployment entries and pushing the
-image identically.
+These tests verify the ECR push path works correctly for all valid configurations.
+They cover tag resolution, single/multi-region, and error cases.
 
 **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
 """
@@ -18,10 +10,11 @@ image identically.
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from typing import List
 
-from hypothesis import given, settings, assume
+import pytest
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from cdk_factory.pipeline.commands.docker_build_cli import _do_push
@@ -60,14 +53,7 @@ _version_strategy = st.from_regex(r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,5}", fullmat
 
 # Environment names
 _environment_strategy = st.sampled_from(
-    [
-        "dev",
-        "staging",
-        "integration",
-        "qa",
-        "uat",
-        "prod",
-    ]
+    ["dev", "staging", "integration", "qa", "uat", "prod"]
 )
 
 # CLI tag names: alphanumeric with dashes/dots
@@ -78,18 +64,16 @@ _tags_list_strategy = st.lists(_tag_strategy, min_size=0, max_size=3)
 
 
 # ---------------------------------------------------------------------------
-# Property-Based Tests — Lambda Deployments Fallback
+# Property-Based Tests — ECR Push Path
 # ---------------------------------------------------------------------------
 
 
-class TestLambdaDeploymentsFallbackProperty:
+class TestEcrPushProperty:
     """
+    Property: For any valid ecr config, _do_push calls execute_push_to_aws
+    with ECR URI derived from ecr account/region.
+
     **Validates: Requirements 3.1, 3.2**
-
-    Property 2: Preservation — Lambda Deployments Fallback
-
-    For any valid lambda_deployments config (no ecr field), _do_push calls
-    execute_push_to_aws with ECR URI derived from deployment account/region.
     """
 
     @given(
@@ -100,19 +84,14 @@ class TestLambdaDeploymentsFallbackProperty:
         package_name=_package_name_strategy,
     )
     @settings(max_examples=100)
-    def test_single_enabled_deployment_pushes_to_correct_ecr_uri(
+    def test_ecr_config_pushes_to_correct_ecr_uri(
         self, account: str, region: str, repo_name: str, version: str, package_name: str
     ):
-        """For a single enabled deployment, _do_push calls execute_push_to_aws
-        with the ECR URI derived from deployment account and region.
-
-        **Validates: Requirements 3.1**
-        """
+        """For a valid ecr config, _do_push calls execute_push_to_aws
+        with the ECR URI derived from ecr account and region."""
         image_config = {
             "repo_name": repo_name,
-            "lambda_deployments": [
-                {"account": account, "region": region, "enabled": True}
-            ],
+            "ecr": {"account": account, "region": region},
         }
 
         docker = MagicMock()
@@ -130,71 +109,18 @@ class TestLambdaDeploymentsFallbackProperty:
                 environment=None,
             )
 
-        # Should have been called exactly once
         assert docker.execute_push_to_aws.call_count == 1
 
-        call_kwargs = docker.execute_push_to_aws.call_args
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
         expected_ecr_base = f"{account}.dkr.ecr.{region}.amazonaws.com"
         expected_ecr_uri = f"{expected_ecr_base}/{repo_name}"
 
-        # Verify the aws_region matches
-        assert (
-            call_kwargs.kwargs["aws_region"] == region
-            or call_kwargs[1].get("aws_region") == region
-            if call_kwargs.kwargs
-            else call_kwargs[1]["aws_region"] == region
-        )
-
-        # Verify the ECR URI base is correct
-        actual_ecr_uri = call_kwargs.kwargs.get("aws_ecr_uri") or call_kwargs[1].get(
-            "aws_ecr_uri"
-        )
-        assert actual_ecr_uri == expected_ecr_base
+        assert call_kwargs["aws_region"] == region
+        assert call_kwargs["aws_ecr_uri"] == expected_ecr_base
 
         # Verify tags contain the fully qualified ECR URI with repo name
-        actual_tags = call_kwargs.kwargs.get("tags") or call_kwargs[1].get("tags")
-        for tag in actual_tags:
+        for tag in call_kwargs["tags"]:
             assert tag.startswith(expected_ecr_uri + ":")
-
-    @given(
-        account=_account_strategy,
-        region=_region_strategy,
-        repo_name=_repo_name_strategy,
-        version=_version_strategy,
-        package_name=_package_name_strategy,
-    )
-    @settings(max_examples=100)
-    def test_disabled_deployment_skips_push(
-        self, account: str, region: str, repo_name: str, version: str, package_name: str
-    ):
-        """For a disabled deployment, _do_push does NOT call execute_push_to_aws.
-
-        **Validates: Requirements 3.1**
-        """
-        image_config = {
-            "repo_name": repo_name,
-            "lambda_deployments": [
-                {"account": account, "region": region, "enabled": False}
-            ],
-        }
-
-        docker = MagicMock()
-        docker.execute_push_to_aws = MagicMock()
-
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("AWS_PROFILE", None)
-            _do_push(
-                docker=docker,
-                image_config=image_config,
-                version=version,
-                package_name=package_name,
-                tags=[],
-                tag_version=True,
-                environment=None,
-            )
-
-        # Should NOT have been called
-        assert docker.execute_push_to_aws.call_count == 0
 
     @given(
         account=_account_strategy,
@@ -206,15 +132,9 @@ class TestLambdaDeploymentsFallbackProperty:
     def test_repo_name_defaults_to_package_name(
         self, account: str, region: str, version: str, package_name: str
     ):
-        """When repo_name is not specified, it defaults to package_name.
-
-        **Validates: Requirements 3.1**
-        """
+        """When repo_name is not specified, it defaults to package_name."""
         image_config = {
-            # No repo_name specified
-            "lambda_deployments": [
-                {"account": account, "region": region, "enabled": True}
-            ],
+            "ecr": {"account": account, "region": region},
         }
 
         docker = MagicMock()
@@ -234,21 +154,17 @@ class TestLambdaDeploymentsFallbackProperty:
 
         assert docker.execute_push_to_aws.call_count == 1
 
-        call_kwargs = docker.execute_push_to_aws.call_args
-        actual_tags = call_kwargs.kwargs.get("tags") or call_kwargs[1].get("tags")
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
         expected_ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{package_name}"
-        for tag in actual_tags:
+        for tag in call_kwargs["tags"]:
             assert tag.startswith(expected_ecr_uri + ":")
 
 
-class TestTagResolutionPreservationProperty:
+class TestTagResolutionProperty:
     """
+    Property: Tag resolution produces correct output for all combinations.
+
     **Validates: Requirements 3.3, 3.4**
-
-    Property 2: Preservation — Tag Resolution
-
-    For all tag combinations (version, environment, CLI tags), tag resolution
-    produces the same output whether invoked through _do_push or directly.
     """
 
     @given(
@@ -273,18 +189,10 @@ class TestTagResolutionPreservationProperty:
         cli_tags: List[str],
         tag_version: bool,
     ):
-        """Tags passed to execute_push_to_aws match the expected tag resolution logic.
-
-        The expected tags are: CLI tags + version (if tag_version) + environment tags.
-        If no tags at all, defaults to [version].
-
-        **Validates: Requirements 3.3, 3.4**
-        """
+        """Tags passed to execute_push_to_aws match the expected tag resolution logic."""
         image_config = {
             "repo_name": repo_name,
-            "lambda_deployments": [
-                {"account": account, "region": region, "enabled": True}
-            ],
+            "ecr": {"account": account, "region": region},
         }
 
         docker = MagicMock()
@@ -304,8 +212,8 @@ class TestTagResolutionPreservationProperty:
 
         assert docker.execute_push_to_aws.call_count == 1
 
-        call_kwargs = docker.execute_push_to_aws.call_args
-        actual_tags = call_kwargs.kwargs.get("tags") or call_kwargs[1].get("tags")
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
+        actual_tags = call_kwargs["tags"]
 
         # Compute expected tags using the same logic as _do_push
         expected_all_tags: List[str] = list(cli_tags)
@@ -321,11 +229,7 @@ class TestTagResolutionPreservationProperty:
         ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
         expected_qualified = [f"{ecr_uri}:{t}" for t in expected_all_tags]
 
-        assert actual_tags == expected_qualified, (
-            f"Tag mismatch.\n"
-            f"  Expected: {expected_qualified}\n"
-            f"  Actual:   {actual_tags}"
-        )
+        assert actual_tags == expected_qualified
 
     @given(
         account=_account_strategy,
@@ -336,22 +240,12 @@ class TestTagResolutionPreservationProperty:
     )
     @settings(max_examples=50)
     def test_tag_version_flag_includes_version_in_tags(
-        self,
-        account: str,
-        region: str,
-        repo_name: str,
-        version: str,
-        package_name: str,
+        self, account: str, region: str, repo_name: str, version: str, package_name: str
     ):
-        """When --tag-version is set, the version string appears in the pushed tags.
-
-        **Validates: Requirements 3.4**
-        """
+        """When --tag-version is set, the version string appears in the pushed tags."""
         image_config = {
             "repo_name": repo_name,
-            "lambda_deployments": [
-                {"account": account, "region": region, "enabled": True}
-            ],
+            "ecr": {"account": account, "region": region},
         }
 
         docker = MagicMock()
@@ -369,16 +263,10 @@ class TestTagResolutionPreservationProperty:
                 environment=None,
             )
 
-        assert docker.execute_push_to_aws.call_count == 1
-
-        call_kwargs = docker.execute_push_to_aws.call_args
-        actual_tags = call_kwargs.kwargs.get("tags") or call_kwargs[1].get("tags")
-
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
         ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
         version_tag = f"{ecr_uri}:{version}"
-        assert (
-            version_tag in actual_tags
-        ), f"Version tag '{version_tag}' not found in actual tags: {actual_tags}"
+        assert version_tag in call_kwargs["tags"]
 
     @given(
         account=_account_strategy,
@@ -389,22 +277,12 @@ class TestTagResolutionPreservationProperty:
     )
     @settings(max_examples=50)
     def test_no_tags_defaults_to_version(
-        self,
-        account: str,
-        region: str,
-        repo_name: str,
-        version: str,
-        package_name: str,
+        self, account: str, region: str, repo_name: str, version: str, package_name: str
     ):
-        """When no CLI tags, no tag_version, and no environment, defaults to [version].
-
-        **Validates: Requirements 3.3**
-        """
+        """When no CLI tags, no tag_version, and no environment, defaults to [version]."""
         image_config = {
             "repo_name": repo_name,
-            "lambda_deployments": [
-                {"account": account, "region": region, "enabled": True}
-            ],
+            "ecr": {"account": account, "region": region},
         }
 
         docker = MagicMock()
@@ -422,47 +300,29 @@ class TestTagResolutionPreservationProperty:
                 environment=None,
             )
 
-        assert docker.execute_push_to_aws.call_count == 1
-
-        call_kwargs = docker.execute_push_to_aws.call_args
-        actual_tags = call_kwargs.kwargs.get("tags") or call_kwargs[1].get("tags")
-
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
         ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
         expected = [f"{ecr_uri}:{version}"]
-        assert actual_tags == expected
+        assert call_kwargs["tags"] == expected
 
 
 # ---------------------------------------------------------------------------
-# Observation Tests — Concrete Examples (Observation-First Methodology)
+# Error Case Tests
 # ---------------------------------------------------------------------------
 
 
-class TestPreservationObservations:
-    """
-    Concrete observation tests that verify specific behaviors on unfixed code.
-    These serve as the observation step before writing property tests.
+class TestPushErrorCases:
+    """Tests for error conditions in _do_push."""
 
-    **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
-    """
-
-    def test_observe_single_deployment_pushes_to_correct_uri(self):
-        """Observe: _do_push with lambda_deployments calls execute_push_to_aws
-        with URI derived from deployment account/region.
-
-        **Validates: Requirements 3.1**
-        """
+    def test_no_ecr_field_raises_error(self):
+        """When no ecr field is present, raises RuntimeError."""
         image_config = {
             "repo_name": "my-service",
-            "lambda_deployments": [
-                {"account": "013453151395", "region": "us-east-1", "enabled": True}
-            ],
         }
 
         docker = MagicMock()
-        docker.execute_push_to_aws = MagicMock()
 
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("AWS_PROFILE", None)
+        with pytest.raises(RuntimeError, match="No 'ecr' field found"):
             _do_push(
                 docker=docker,
                 image_config=image_config,
@@ -473,30 +333,18 @@ class TestPreservationObservations:
                 environment=None,
             )
 
-        docker.execute_push_to_aws.assert_called_once()
-        call_kwargs = docker.execute_push_to_aws.call_args
-        actual_ecr_uri = call_kwargs.kwargs.get("aws_ecr_uri") or call_kwargs[1].get(
-            "aws_ecr_uri"
-        )
-        assert actual_ecr_uri == "013453151395.dkr.ecr.us-east-1.amazonaws.com"
-
-    def test_observe_disabled_deployment_skips(self):
-        """Observe: _do_push with disabled deployment skips that deployment.
-
-        **Validates: Requirements 3.1**
-        """
+    def test_lambda_deployments_without_ecr_raises_error(self):
+        """lambda_deployments alone is no longer sufficient for push — ecr is required."""
         image_config = {
             "repo_name": "my-service",
             "lambda_deployments": [
-                {"account": "013453151395", "region": "us-east-1", "enabled": False}
+                {"account": "013453151395", "region": "us-east-1", "enabled": True}
             ],
         }
 
         docker = MagicMock()
-        docker.execute_push_to_aws = MagicMock()
 
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("AWS_PROFILE", None)
+        with pytest.raises(RuntimeError, match="No 'ecr' field found"):
             _do_push(
                 docker=docker,
                 image_config=image_config,
@@ -507,19 +355,11 @@ class TestPreservationObservations:
                 environment=None,
             )
 
-        docker.execute_push_to_aws.assert_not_called()
-
-    def test_observe_tag_resolution_with_environment(self):
-        """Observe: tag resolution produces version + environment + latest tags
-        correctly on unfixed code.
-
-        **Validates: Requirements 3.3, 3.4**
-        """
+    def test_ecr_with_tag_resolution_and_environment(self):
+        """Verify tag resolution produces version + environment + latest tags."""
         image_config = {
             "repo_name": "my-service",
-            "lambda_deployments": [
-                {"account": "013453151395", "region": "us-east-1", "enabled": True}
-            ],
+            "ecr": {"account": "013453151395", "region": "us-east-1"},
         }
 
         docker = MagicMock()
@@ -538,45 +378,11 @@ class TestPreservationObservations:
             )
 
         docker.execute_push_to_aws.assert_called_once()
-        call_kwargs = docker.execute_push_to_aws.call_args
-        actual_tags = call_kwargs.kwargs.get("tags") or call_kwargs[1].get("tags")
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
+        actual_tags = call_kwargs["tags"]
 
         ecr_uri = "013453151395.dkr.ecr.us-east-1.amazonaws.com/my-service"
-        # Expected: custom-tag, 1.2.3 (tag_version), then env tags: 1.2.3, dev, latest
-        # After dedup: custom-tag, 1.2.3, dev, latest
         assert f"{ecr_uri}:custom-tag" in actual_tags
         assert f"{ecr_uri}:1.2.3" in actual_tags
         assert f"{ecr_uri}:dev" in actual_tags
         assert f"{ecr_uri}:latest" in actual_tags
-
-    def test_observe_no_deployments_raises_error(self):
-        """Observe: _do_push with no ecr config or lambda_deployments raises RuntimeError.
-
-        **Validates: Requirements 3.2**
-        """
-        import pytest
-
-        image_config = {
-            "repo_name": "my-service",
-            "lambda_deployments": [],
-        }
-
-        docker = MagicMock()
-        docker.execute_push_to_aws = MagicMock()
-
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("AWS_PROFILE", None)
-            with pytest.raises(
-                RuntimeError, match="No ecr config or lambda_deployments"
-            ):
-                _do_push(
-                    docker=docker,
-                    image_config=image_config,
-                    version="1.0.0",
-                    package_name="my-service",
-                    tags=[],
-                    tag_version=True,
-                    environment=None,
-                )
-
-        docker.execute_push_to_aws.assert_not_called()

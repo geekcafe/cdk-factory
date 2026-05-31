@@ -192,3 +192,148 @@ class TestDockerPushEcrBugCondition:
             assert (
                 expected_ecr_repo_uri in t
             ), f"Expected tag to contain '{expected_ecr_repo_uri}', got: {t}"
+
+
+# ---------------------------------------------------------------------------
+# Multi-Region ECR Tests
+# ---------------------------------------------------------------------------
+
+
+class TestDockerPushEcrMultiRegion:
+    """Tests for multi-region ECR push support (ecr as array)."""
+
+    def test_ecr_array_pushes_to_all_regions(self):
+        """When ecr is an array, _do_push pushes to each target."""
+        docker = MagicMock(spec=DockerUtilities)
+        docker.build_tag = "my-repo:1.0.0"
+
+        image_config = {
+            "repo_name": "my-repo",
+            "ecr": [
+                {"account": "072708757319", "region": "us-east-1"},
+                {"account": "072708757319", "region": "us-west-2"},
+                {"account": "072708757319", "region": "eu-west-1"},
+            ],
+        }
+
+        _do_push(
+            docker=docker,
+            image_config=image_config,
+            version="1.0.0",
+            package_name="my-package",
+            tags=["latest"],
+            tag_version=True,
+            environment=None,
+        )
+
+        # Should be called once per region
+        assert docker.execute_push_to_aws.call_count == 3
+
+        # Verify each call targets the correct region
+        calls = docker.execute_push_to_aws.call_args_list
+        regions_pushed = [c.kwargs.get("aws_region") for c in calls]
+        assert "us-east-1" in regions_pushed
+        assert "us-west-2" in regions_pushed
+        assert "eu-west-1" in regions_pushed
+
+    def test_ecr_array_different_accounts(self):
+        """When ecr array has different accounts, each gets its own push."""
+        docker = MagicMock(spec=DockerUtilities)
+        docker.build_tag = "my-repo:1.0.0"
+
+        image_config = {
+            "repo_name": "my-repo",
+            "ecr": [
+                {"account": "072708757319", "region": "us-east-1"},
+                {"account": "111222333444", "region": "eu-west-1"},
+            ],
+        }
+
+        _do_push(
+            docker=docker,
+            image_config=image_config,
+            version="1.0.0",
+            package_name="my-package",
+            tags=[],
+            tag_version=True,
+            environment=None,
+        )
+
+        assert docker.execute_push_to_aws.call_count == 2
+
+        calls = docker.execute_push_to_aws.call_args_list
+        ecr_uris = [c.kwargs.get("aws_ecr_uri") for c in calls]
+        assert "072708757319.dkr.ecr.us-east-1.amazonaws.com" in ecr_uris
+        assert "111222333444.dkr.ecr.eu-west-1.amazonaws.com" in ecr_uris
+
+    def test_ecr_single_object_still_works(self):
+        """Single object shape continues to work (backward compat)."""
+        docker = MagicMock(spec=DockerUtilities)
+        docker.build_tag = "my-repo:1.0.0"
+
+        image_config = {
+            "repo_name": "my-repo",
+            "ecr": {"account": "072708757319", "region": "us-east-1"},
+        }
+
+        _do_push(
+            docker=docker,
+            image_config=image_config,
+            version="1.0.0",
+            package_name="my-package",
+            tags=["latest"],
+            tag_version=False,
+            environment=None,
+        )
+
+        docker.execute_push_to_aws.assert_called_once()
+        call_kwargs = docker.execute_push_to_aws.call_args.kwargs
+        assert call_kwargs["aws_region"] == "us-east-1"
+        assert (
+            call_kwargs["aws_ecr_uri"] == "072708757319.dkr.ecr.us-east-1.amazonaws.com"
+        )
+
+    def test_ecr_empty_array_raises_error(self):
+        """Empty ecr array raises RuntimeError."""
+        docker = MagicMock(spec=DockerUtilities)
+        docker.build_tag = "my-repo:1.0.0"
+
+        image_config = {
+            "repo_name": "my-repo",
+            "ecr": [],
+        }
+
+        with pytest.raises(RuntimeError, match="Empty 'ecr' array"):
+            _do_push(
+                docker=docker,
+                image_config=image_config,
+                version="1.0.0",
+                package_name="my-package",
+                tags=[],
+                tag_version=True,
+                environment=None,
+            )
+
+    def test_ecr_array_entry_missing_account_raises_error(self):
+        """If any entry in the ecr array is missing account, raises RuntimeError."""
+        docker = MagicMock(spec=DockerUtilities)
+        docker.build_tag = "my-repo:1.0.0"
+
+        image_config = {
+            "repo_name": "my-repo",
+            "ecr": [
+                {"account": "072708757319", "region": "us-east-1"},
+                {"region": "us-west-2"},  # Missing account
+            ],
+        }
+
+        with pytest.raises(RuntimeError, match="ecr.account is required"):
+            _do_push(
+                docker=docker,
+                image_config=image_config,
+                version="1.0.0",
+                package_name="my-package",
+                tags=[],
+                tag_version=True,
+                environment=None,
+            )

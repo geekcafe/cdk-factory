@@ -277,106 +277,79 @@ def _do_push(
     repo_name = image_config.get("repo_name", package_name)
 
     # Check for top-level ecr field first (takes priority over lambda_deployments)
+    # Accepts either a single object or an array of objects:
+    #   "ecr": {"account": "...", "region": "..."}
+    #   "ecr": [{"account": "...", "region": "..."}, {"account": "...", "region": "..."}]
     ecr_config = image_config.get("ecr")
     if ecr_config is not None:
-        account = ecr_config.get("account", "")
-        region = ecr_config.get("region", "us-east-1")
-
-        if not account:
+        # Normalize to a list
+        if isinstance(ecr_config, dict):
+            ecr_targets = [ecr_config]
+        elif isinstance(ecr_config, list):
+            ecr_targets = ecr_config
+        else:
             raise RuntimeError(
-                f"ecr.account is required for image '{repo_name}'. "
-                "Cannot determine ECR URI for push. "
-                "Add a valid 'account' to the 'ecr' field in docker-images.json."
+                f"Invalid 'ecr' field for image '{repo_name}'. "
+                "Expected an object or array of objects with 'account' and 'region'."
             )
 
-        ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
+        if not ecr_targets:
+            raise RuntimeError(
+                f"Empty 'ecr' array for image '{repo_name}'. "
+                "Provide at least one ECR target with 'account' and 'region'."
+            )
 
-        # Resolve tags to push
-        all_tags: List[str] = list(tags)
-        if tag_version:
-            all_tags.append(version)
+        for ecr_target in ecr_targets:
+            account = ecr_target.get("account", "")
+            region = ecr_target.get("region", "us-east-1")
 
-        if environment:
-            env_tags = resolve_docker_tags(environment=environment, version=version)
-            for t in env_tags:
-                if t not in all_tags:
-                    all_tags.append(t)
+            if not account:
+                raise RuntimeError(
+                    f"ecr.account is required for image '{repo_name}'. "
+                    "Cannot determine ECR URI for push. "
+                    "Add a valid 'account' to the 'ecr' field in docker-images.json."
+                )
 
-        # If no explicit tags, use version
-        if not all_tags:
-            all_tags = [version]
+            ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
 
-        # Build fully qualified tag list
-        qualified_tags = [f"{ecr_uri}:{t}" for t in all_tags]
+            # Resolve tags to push
+            all_tags: List[str] = list(tags)
+            if tag_version:
+                all_tags.append(version)
 
-        print(f"  Pushing to ECR: {ecr_uri}")
-        print(f"  Tags: {all_tags}")
+            if environment:
+                env_tags = resolve_docker_tags(environment=environment, version=version)
+                for t in env_tags:
+                    if t not in all_tags:
+                        all_tags.append(t)
 
-        aws_profile = os.environ.get("AWS_PROFILE")
-        docker.execute_push_to_aws(
-            aws_region=region,
-            aws_ecr_uri=f"{account}.dkr.ecr.{region}.amazonaws.com",
-            tags=qualified_tags,
-            aws_profile=aws_profile,
-        )
+            # If no explicit tags, use version
+            if not all_tags:
+                all_tags = [version]
+
+            # Build fully qualified tag list
+            qualified_tags = [f"{ecr_uri}:{t}" for t in all_tags]
+
+            print(f"  Pushing to ECR: {ecr_uri}")
+            print(f"  Tags: {all_tags}")
+
+            aws_profile = os.environ.get("AWS_PROFILE")
+            docker.execute_push_to_aws(
+                aws_region=region,
+                aws_ecr_uri=f"{account}.dkr.ecr.{region}.amazonaws.com",
+                tags=qualified_tags,
+                aws_profile=aws_profile,
+            )
+
         return
 
-    # Fallback: Determine ECR details from lambda_deployments
-    deployments = image_config.get("lambda_deployments", [])
-    if not deployments:
-        raise RuntimeError(
-            f"No ecr config or lambda_deployments found for image '{repo_name}'. "
-            "Cannot determine ECR URI for push. "
-            "Add an 'ecr' field with 'account' and 'region', or configure 'lambda_deployments' "
-            "in docker-images.json."
-        )
-
-    for deployment in deployments:
-        enabled = deployment.get("enabled", True)
-        if not enabled:
-            continue
-
-        account = deployment.get("account") or deployment.get("ecr_account", "")
-        region = deployment.get("region", "us-east-1")
-        ecr_account = deployment.get("ecr_account", account)
-
-        if not ecr_account:
-            print(
-                f"  Warning: No account specified for deployment of {repo_name}. Skipping.",
-                file=sys.stderr,
-            )
-            continue
-
-        ecr_uri = f"{ecr_account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
-
-        # Resolve tags to push
-        all_tags: List[str] = list(tags)
-        if tag_version:
-            all_tags.append(version)
-
-        if environment:
-            env_tags = resolve_docker_tags(environment=environment, version=version)
-            for t in env_tags:
-                if t not in all_tags:
-                    all_tags.append(t)
-
-        # If no explicit tags, use version
-        if not all_tags:
-            all_tags = [version]
-
-        # Build fully qualified tag list
-        qualified_tags = [f"{ecr_uri}:{t}" for t in all_tags]
-
-        print(f"  Pushing to ECR: {ecr_uri}")
-        print(f"  Tags: {all_tags}")
-
-        aws_profile = os.environ.get("AWS_PROFILE")
-        docker.execute_push_to_aws(
-            aws_region=region,
-            aws_ecr_uri=f"{ecr_account}.dkr.ecr.{region}.amazonaws.com",
-            tags=qualified_tags,
-            aws_profile=aws_profile,
-        )
+    # No ecr field configured — the push action requires it
+    raise RuntimeError(
+        f"No 'ecr' field found for image '{repo_name}'. "
+        "Cannot determine ECR URI for push. "
+        "Add an 'ecr' field with 'account' and 'region' to docker-images.json. "
+        'Example: "ecr": {"account": "123456789012", "region": "us-east-1"}'
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> None:
