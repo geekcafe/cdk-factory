@@ -276,11 +276,57 @@ def _do_push(
     """
     repo_name = image_config.get("repo_name", package_name)
 
-    # Determine ECR details from image config or environment
+    # Check for top-level ecr field first (takes priority over lambda_deployments)
+    ecr_config = image_config.get("ecr")
+    if ecr_config is not None:
+        account = ecr_config.get("account", "")
+        region = ecr_config.get("region", "us-east-1")
+
+        if not account:
+            print(
+                f"  Warning: ecr.account is required for {repo_name}. "
+                "Cannot determine ECR URI for push.",
+                file=sys.stderr,
+            )
+            return
+
+        ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
+
+        # Resolve tags to push
+        all_tags: List[str] = list(tags)
+        if tag_version:
+            all_tags.append(version)
+
+        if environment:
+            env_tags = resolve_docker_tags(environment=environment, version=version)
+            for t in env_tags:
+                if t not in all_tags:
+                    all_tags.append(t)
+
+        # If no explicit tags, use version
+        if not all_tags:
+            all_tags = [version]
+
+        # Build fully qualified tag list
+        qualified_tags = [f"{ecr_uri}:{t}" for t in all_tags]
+
+        print(f"  Pushing to ECR: {ecr_uri}")
+        print(f"  Tags: {all_tags}")
+
+        aws_profile = os.environ.get("AWS_PROFILE")
+        docker.execute_push_to_aws(
+            aws_region=region,
+            aws_ecr_uri=f"{account}.dkr.ecr.{region}.amazonaws.com",
+            tags=qualified_tags,
+            aws_profile=aws_profile,
+        )
+        return
+
+    # Fallback: Determine ECR details from lambda_deployments
     deployments = image_config.get("lambda_deployments", [])
     if not deployments:
         print(
-            f"  Warning: No lambda_deployments found for {repo_name}. "
+            f"  Warning: No ecr config or lambda_deployments found for {repo_name}. "
             "Cannot determine ECR URI for push.",
             file=sys.stderr,
         )
