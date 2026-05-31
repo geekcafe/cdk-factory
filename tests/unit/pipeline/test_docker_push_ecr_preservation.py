@@ -549,13 +549,12 @@ class TestPreservationObservations:
         assert f"{ecr_uri}:dev" in actual_tags
         assert f"{ecr_uri}:latest" in actual_tags
 
-    def test_observe_no_deployments_prints_warning(self):
-        """Observe: _do_push with no lambda_deployments prints warning and skips.
+    def test_observe_no_deployments_raises_error(self):
+        """Observe: _do_push with no ecr config or lambda_deployments raises RuntimeError.
 
         **Validates: Requirements 3.2**
         """
-        import io
-        import sys
+        import pytest
 
         image_config = {
             "repo_name": "my-service",
@@ -565,12 +564,11 @@ class TestPreservationObservations:
         docker = MagicMock()
         docker.execute_push_to_aws = MagicMock()
 
-        captured_stderr = io.StringIO()
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AWS_PROFILE", None)
-            old_stderr = sys.stderr
-            sys.stderr = captured_stderr
-            try:
+            with pytest.raises(
+                RuntimeError, match="No ecr config or lambda_deployments"
+            ):
                 _do_push(
                     docker=docker,
                     image_config=image_config,
@@ -580,9 +578,5 @@ class TestPreservationObservations:
                     tag_version=True,
                     environment=None,
                 )
-            finally:
-                sys.stderr = old_stderr
 
         docker.execute_push_to_aws.assert_not_called()
-        warning_output = captured_stderr.getvalue()
-        assert "Warning" in warning_output or "lambda_deployments" in warning_output

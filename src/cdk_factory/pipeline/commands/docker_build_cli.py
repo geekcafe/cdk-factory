@@ -283,12 +283,11 @@ def _do_push(
         region = ecr_config.get("region", "us-east-1")
 
         if not account:
-            print(
-                f"  Warning: ecr.account is required for {repo_name}. "
-                "Cannot determine ECR URI for push.",
-                file=sys.stderr,
+            raise RuntimeError(
+                f"ecr.account is required for image '{repo_name}'. "
+                "Cannot determine ECR URI for push. "
+                "Add a valid 'account' to the 'ecr' field in docker-images.json."
             )
-            return
 
         ecr_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
 
@@ -325,12 +324,12 @@ def _do_push(
     # Fallback: Determine ECR details from lambda_deployments
     deployments = image_config.get("lambda_deployments", [])
     if not deployments:
-        print(
-            f"  Warning: No ecr config or lambda_deployments found for {repo_name}. "
-            "Cannot determine ECR URI for push.",
-            file=sys.stderr,
+        raise RuntimeError(
+            f"No ecr config or lambda_deployments found for image '{repo_name}'. "
+            "Cannot determine ECR URI for push. "
+            "Add an 'ecr' field with 'account' and 'region', or configure 'lambda_deployments' "
+            "in docker-images.json."
         )
-        return
 
     for deployment in deployments:
         enabled = deployment.get("enabled", True)
