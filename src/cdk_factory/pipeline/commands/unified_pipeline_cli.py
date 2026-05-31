@@ -120,16 +120,84 @@ def derive_app_name(package_name: str) -> str:
     return package_name.replace("_", "-")
 
 
-def get_docker_config_path(project_root: str) -> str:
-    """Get the path to the Docker images configuration file.
+def get_docker_images_path_from_pyproject(project_root: str) -> Optional[str]:
+    """Read docker_images_path from pyproject.toml [tool.cdk-factory] section.
 
     Args:
         project_root: Path to the project root directory.
 
     Returns:
+        The configured docker_images_path value, or None if not configured.
+    """
+    pyproject_path = Path(project_root) / "pyproject.toml"
+    if not pyproject_path.exists():
+        return None
+
+    try:
+        data = _load_toml(pyproject_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    tool = data.get("tool")
+    if not isinstance(tool, dict):
+        return None
+
+    cdk_factory = tool.get("cdk-factory")
+    if not isinstance(cdk_factory, dict):
+        return None
+
+    docker_images_path = cdk_factory.get("docker_images_path")
+    if not isinstance(docker_images_path, str) or not docker_images_path.strip():
+        return None
+
+    return docker_images_path.strip()
+
+
+def get_docker_config_path(
+    project_root: str, docker_images_path: Optional[str] = None
+) -> str:
+    """Get the path to the Docker images configuration file.
+
+    Resolution order:
+      1. Explicit docker_images_path argument (from CLI --docker-images-path flag)
+      2. [tool.cdk-factory].docker_images_path from pyproject.toml
+      3. Project root (fallback)
+
+    If the resolved path does not contain docker-images.json, falls back to
+    the project root. If neither location has the file, returns the last
+    checked path (caller is responsible for raising the error).
+
+    Args:
+        project_root: Path to the project root directory.
+        docker_images_path: Optional explicit path to the directory containing
+            docker-images.json. Can be absolute or relative to project_root.
+
+    Returns:
         Absolute path to docker-images.json.
     """
-    return str(Path(project_root) / "docker-images.json")
+    filename = "docker-images.json"
+
+    # 1. Explicit override from CLI flag
+    if docker_images_path:
+        explicit_path = Path(docker_images_path)
+        if not explicit_path.is_absolute():
+            explicit_path = Path(project_root) / explicit_path
+        candidate = explicit_path / filename
+        if candidate.exists():
+            return str(candidate.resolve())
+
+    # 2. pyproject.toml [tool.cdk-factory].docker_images_path
+    pyproject_path = get_docker_images_path_from_pyproject(project_root)
+    if pyproject_path:
+        configured_path = Path(pyproject_path)
+        if not configured_path.is_absolute():
+            configured_path = Path(project_root) / configured_path
+        candidate = configured_path / filename
+        if candidate.exists():
+            return str(candidate.resolve())
+
+    # 3. Fallback to project root
+    return str(Path(project_root) / filename)
 
 
 def get_image_app_names(config_path: str) -> List[str]:
@@ -286,6 +354,15 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=None,
         help="Project root directory. Defaults to CODEBUILD_SRC_DIR or cwd.",
     )
+    parser.add_argument(
+        "--docker-images-path",
+        type=str,
+        default=None,
+        help=(
+            "Directory containing docker-images.json. Can be absolute or "
+            "relative to project root. Overrides pyproject.toml config."
+        ),
+    )
 
     # Deprecated arguments — accepted without error for backward compatibility
     parser.add_argument(
@@ -386,11 +463,16 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # Step: Deploy Images
     if args.deploy_images:
-        docker_config_path = get_docker_config_path(project_root)
+        docker_config_path = get_docker_config_path(
+            project_root, docker_images_path=args.docker_images_path
+        )
 
         if not os.path.exists(docker_config_path):
             error_message = (
-                f"🚨 Error: docker-images.json not found at {docker_config_path}. "
+                f"🚨 Error: docker-images.json not found. "
+                f"Searched: {docker_config_path}. "
+                f"Configure via --docker-images-path flag or "
+                f"[tool.cdk-factory].docker_images_path in pyproject.toml."
             )
             print(
                 f"{error_message} - Skipping deploy-images step.",

@@ -241,6 +241,13 @@ def _do_tag(
     if tag_version:
         all_tags.append(version)
 
+    # Include tags declared in docker-images.json
+    config_tags = image_config.get("tags", [])
+    if isinstance(config_tags, list):
+        for t in config_tags:
+            if isinstance(t, str) and t.strip() and t.strip() not in all_tags:
+                all_tags.append(t.strip())
+
     # If environment is available, resolve environment-specific tags
     if environment:
         env_tags = resolve_docker_tags(environment=environment, version=version)
@@ -316,6 +323,13 @@ def _do_push(
             all_tags: List[str] = list(tags)
             if tag_version:
                 all_tags.append(version)
+
+            # Include tags declared in docker-images.json
+            config_tags = image_config.get("tags", [])
+            if isinstance(config_tags, list):
+                for t in config_tags:
+                    if isinstance(t, str) and t.strip() and t.strip() not in all_tags:
+                        all_tags.append(t.strip())
 
             if environment:
                 env_tags = resolve_docker_tags(environment=environment, version=version)
