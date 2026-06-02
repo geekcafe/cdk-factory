@@ -7,6 +7,7 @@ MIT License.  See Project Root for the license information.
 from typing import Any, Dict, List, Optional
 import hashlib
 import os
+import re
 
 import cdk_nag
 import aws_cdk
@@ -262,6 +263,104 @@ class PolicyDocuments:
             )
         return self._resource_resolver
 
+    def _resolve_template_variables(self, path: str) -> str:
+        """Resolve {{PLACEHOLDER}} template variables from os.environ.
+
+        Supports: WORKLOAD_NAME, DEPLOYMENT_NAMESPACE, and any other
+        environment variable set during CDK synth.
+
+        Args:
+            path: String potentially containing {{PLACEHOLDER}} patterns
+
+        Returns:
+            String with all matched placeholders replaced. Unresolved
+            placeholders are left in place if the env var is not set.
+        """
+
+        def _replace_match(match):
+            var_name = match.group(1)
+            return os.environ.get(var_name, match.group(0))
+
+        return re.sub(r"\{\{(\w+)\}\}", _replace_match, path)
+
+    def _resolve_ssm_arn_permission(self, action: str, ssm_arn_path: str) -> dict:
+        """Resolve a Lambda permission using an SSM parameter path.
+
+        Uses CDK's StringParameter.value_for_string_parameter() to produce
+        a CloudFormation dynamic reference ({{resolve:ssm:path}}) that gets
+        resolved at deploy time. No live AWS calls during synth.
+
+        Args:
+            action: The Lambda action (e.g., "invoke")
+            ssm_arn_path: SSM parameter path, may contain {{TEMPLATE_VARS}}
+
+        Returns:
+            Structured permission dict with SSM-resolved ARN token as resource
+
+        Raises:
+            ValueError: If ssm_arn_path is empty or doesn't start with /
+        """
+        # Resolve template variables
+        resolved_path = self._resolve_template_variables(ssm_arn_path)
+
+        # Validate the resolved path
+        if not resolved_path:
+            raise ValueError(
+                f"SSM ARN path is empty after template variable resolution. "
+                f"Original: '{ssm_arn_path}'"
+            )
+
+        if not resolved_path.startswith("/"):
+            raise ValueError(
+                f"SSM ARN path must be absolute (start with '/'). "
+                f"Got: '{resolved_path}' (original: '{ssm_arn_path}')"
+            )
+
+        # Build the action details
+        action_map = {
+            "invoke": {
+                "actions": ["lambda:InvokeFunction"],
+                "sid": "LambdaInvoke",
+                "description": "Lambda Invoke",
+            },
+        }
+
+        if action not in action_map:
+            raise ValueError(
+                f"Unknown lambda action '{action}'. Valid: {list(action_map.keys())}"
+            )
+
+        details = action_map[action]
+        path_slug = self._make_sid_slug(
+            resolved_path, extra_strip={"/": "", "*": "All"}
+        )
+
+        # Use CDK's StringParameter to produce a CF token resolved at deploy time
+        # This avoids live AWS calls during synth and handles first-deploy gracefully
+        ssm_value = aws_cdk.aws_ssm.StringParameter.value_for_string_parameter(
+            self.scope, resolved_path
+        )
+        resources = [ssm_value]
+
+        description = f"{details['description']} via SSM: {resolved_path}"
+        nag_reason = (
+            f"Lambda invoke scoped to SSM-resolved ARN at deploy time: "
+            f"{resolved_path}"
+        )
+
+        return {
+            "name": "Lambda",
+            "description": description,
+            "sid": f"{details['sid']}Ssm{path_slug}",
+            "actions": details["actions"],
+            "resources": resources,
+            "nag": {
+                "id": "AwsSolutions-IAM5",
+                "reason": nag_reason,
+                "resources": [f"Resource::<{resolved_path}>"],
+            },
+        }
+
     def get_permission_details(self, permission: str | dict) -> dict:
         """Returns the details of a specific permission.
 
@@ -481,6 +580,12 @@ class PolicyDocuments:
         # Lambda structured permissions
         if "lambda" in permission:
             action = permission["lambda"]
+
+            # ssm_arn takes precedence over function
+            ssm_arn_path = permission.get("ssm_arn")
+            if ssm_arn_path:
+                return self._resolve_ssm_arn_permission(action, ssm_arn_path)
+
             function = permission.get("function", "*")
 
             resolver = self._get_resource_resolver()
