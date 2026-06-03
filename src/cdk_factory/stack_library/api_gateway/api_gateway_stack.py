@@ -423,14 +423,20 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             # For nested paths like "workflow/api", uses the full path as the group name.
             # For top-level paths like "users", uses "users" as the group name.
             # Lambdas that can't be resolved to a folder go into "default".
+            # If the route has an explicit route_group, use it directly.
             logger.info(
                 "No explicit 'grouping' configured — auto-grouping routes by "
                 "Lambda resource folder structure."
             )
             for route in routes:
-                lambda_name = route.get("lambda_name")
-                folder_path = self._resolve_lambda_folder(lambda_name)
-                group_name = folder_path if folder_path else "default"
+                # Check for explicit route_group first (bypasses folder resolution)
+                route_group = route.get("route_group")
+                if route_group:
+                    group_name = route_group
+                else:
+                    lambda_name = route.get("lambda_name")
+                    folder_path = self._resolve_lambda_folder(lambda_name)
+                    group_name = folder_path if folder_path else "default"
                 groups.setdefault(group_name, []).append(route)
 
         return groups
@@ -458,13 +464,19 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         """Build a lookup cache mapping lambda_name to its resource folder path.
 
         Scans the Lambda resource folders on disk, loading each JSON config
-        file and extracting the 'name' field. The relative folder path from
-        the resources root directory is used as the value.
+        file and extracting the 'name' field. Placeholder tokens in the name
+        (e.g., ``{{WORKLOAD_NAME}}``) are resolved using environment variables
+        before storing the cache key, so that lookups with fully resolved names
+        succeed.
+
+        Also populates ``self._lambda_route_group_cache`` with any explicit
+        ``route_group`` values found in the resource config's ``api`` section.
 
         Returns:
-            Dict mapping lambda names to their relative folder paths.
+            Dict mapping resolved lambda names to their relative folder paths.
         """
         cache: Dict[str, str] = {}
+        self._lambda_route_group_cache: Dict[str, str] = {}
         resources_dir = self._find_lambda_resources_dir()
         if not resources_dir:
             logger.warning(
@@ -473,6 +485,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             )
             return cache
 
+        # Build replacements dict once from os.environ (same vars available during CDK synth)
+        replacements = {f"{{{{{key}}}}}": value for key, value in os.environ.items()}
+
         resources_path = Path(resources_dir)
         for json_file in resources_path.rglob("*.json"):
             try:
@@ -480,12 +495,21 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                     config = json.load(f)
                 name = config.get("name")
                 if name:
+                    # Resolve placeholder tokens in the name field
+                    for placeholder, value in replacements.items():
+                        name = name.replace(placeholder, value)
+
                     # Compute relative folder path from resources root
                     relative_folder = str(json_file.parent.relative_to(resources_path))
                     # Normalize path separators and handle current dir
                     if relative_folder == ".":
                         relative_folder = ""
                     cache[name] = relative_folder
+
+                    # Extract route_group from api section if present
+                    route_group = config.get("api", {}).get("route_group")
+                    if route_group:
+                        self._lambda_route_group_cache[name] = route_group
             except (json.JSONDecodeError, OSError):
                 # Skip files that can't be parsed
                 continue
@@ -610,6 +634,10 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                                 "allow_public_override", False
                             ),
                         }
+                        # Include route_group if present in api config
+                        route_group = api_config.get("route_group")
+                        if route_group:
+                            route["route_group"] = route_group
                         if route["skip_authorizer"]:
                             route["authorization_type"] = "NONE"
 
@@ -644,6 +672,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                                     api_config.get("allow_public_override", False),
                                 ),
                             }
+                            # Propagate route_group to sub-routes
+                            if route_group:
+                                sub["route_group"] = route_group
                             if sub["skip_authorizer"]:
                                 sub["authorization_type"] = "NONE"
                             discovered.append(sub)
