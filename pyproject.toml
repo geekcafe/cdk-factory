@@ -1,7 +1,7 @@
 [project]
 
 name = "cdk_factory"
-version = "1.7.3"
+version = "1.7.4"
 authors = [
   { name="Eric Wilson", email="eric.wilson@geekcafe.com" }
 ]
