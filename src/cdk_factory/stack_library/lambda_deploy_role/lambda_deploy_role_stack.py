@@ -151,6 +151,35 @@ class LambdaDeployRoleStack(IStack, StandardizedSsmMixin):
             )
         )
 
+        # ECR read — needed for Lambda UpdateFunctionCode to validate cross-account
+        # ECR images. Without these permissions, UpdateFunctionCode fails with
+        # "Lambda does not have permission to access the ECR image" even when the
+        # ECR repository policy grants access to the Lambda service principal.
+        ecr_resource = f"arn:aws:ecr:{deployment.region}:{devops_account}:repository/*"
+        self.role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ECRReadForImageValidation",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "ecr:BatchGetImage",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchCheckLayerAvailability",
+                ],
+                resources=[ecr_resource],
+            )
+        )
+        # ECR auth token — required to authenticate with ECR before pulling
+        self.role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ECRAuthToken",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "ecr:GetAuthorizationToken",
+                ],
+                resources=["*"],
+            )
+        )
+
         # Suppress cdk-nag wildcard findings — the wildcards are intentionally
         # scoped to a prefix and needed because Lambda functions are discovered
         # dynamically via SSM at deploy time.
