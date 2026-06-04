@@ -259,7 +259,7 @@ The Docker build, Lambda updater, and unified CLI all read from this file:
 | `lambda_deployments[].ssm_parameter` | Legacy: direct SSM parameter path to Lambda ARN |
 | `lambda_deployments[].tag` | Image tag to deploy (default: `latest`) |
 | `lambda_deployments[].enabled` | Enable/disable this deployment (default: `true`) |
-| `lambda_deployments[].role_name` | IAM role for cross-account access |
+| `lambda_deployments[].role_name` | IAM role for cross-account access (default: `DevOpsCrossAccountAccessRole`). Recommended: `DevOpsLambdaDeployRole` — see [Lambda Deploy Role](./lambda-deploy-role.md) |
 | `lambda_deployments[].ecr_account` | Account owning the ECR repo (defaults to caller) |
 
 ### pyproject.toml

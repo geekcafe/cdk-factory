@@ -57,6 +57,9 @@ npx cdk bootstrap aws://TARGET_ACCOUNT/us-east-1 \
 
 ## DevOpsCrossAccountAccessRole
 
+> **Note:** For Lambda image deployments specifically, use the purpose-built
+> `lambda_deploy_role_stack` module instead. See [Lambda Deploy Role](./lambda-deploy-role.md).
+
 Each target and management account needs an IAM role that the DevOps account can assume:
 
 ```

@@ -673,3 +673,40 @@ CloudWatch dashboard with SNS topics and log metric filters.
 > SSM imports are now at the top-level `ssm` block, not inside `monitoring.ssm`.
 
 The monitoring stack reads Lambda ARNs from SSM (via namespace imports) to build dashboard widgets automatically.
+
+---
+
+## `lambda_deploy_role_stack`
+
+Cross-account IAM role for Lambda image deployment. See [full documentation](./lambda-deploy-role.md).
+
+Creates an IAM role in the target account that allows the DevOps pipeline to discover and update Lambda function images.
+
+```json
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-iam-lambda-deploy-role",
+  "description": "IAM role for cross-account Lambda image deployment",
+  "module": "lambda_deploy_role_stack",
+  "enabled": true,
+  "phase": "persistent",
+  "ssm": {
+    "auto_export": true,
+    "namespace": "{{WORKLOAD_NAME}}/{{DEPLOYMENT_NAMESPACE}}/iam/lambda-deploy-role"
+  },
+  "lambda_deploy_role": {
+    "role_name": "DevOpsLambdaDeployRole",
+    "devops_account": "{{DEVOPS_AWS_ACCOUNT}}",
+    "ssm_resource_prefix": "*",
+    "lambda_resource_prefix": "*"
+  }
+}
+```
+
+Auto-exports (when `auto_export: true`): `role_arn`, `role_name`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `role_name` | string | `DevOpsLambdaDeployRole` | IAM role name |
+| `devops_account` | string | — | **Required.** DevOps/pipeline account ID |
+| `ssm_resource_prefix` | string | `*` | SSM path prefix to scope read access |
+| `lambda_resource_prefix` | string | `*` | Lambda function name prefix to scope update access |
