@@ -519,9 +519,12 @@ class PolicyDocuments:
             action = permission["s3"]
             bucket = permission.get("bucket", "")
             if not bucket:
-                raise ValueError(
-                    f"Structured S3 permission requires 'bucket' field: {permission}"
+                print(
+                    f"WARNING: Skipping S3 permission with empty 'bucket' field: {permission}. "
+                    f"This is expected for optional features (e.g., legacy systems) "
+                    f"not configured in this environment."
                 )
+                return None
 
             bucket_slug = self._make_sid_slug(bucket)
             if action == "read":
