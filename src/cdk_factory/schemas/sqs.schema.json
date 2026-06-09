@@ -1,22 +1,78 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "SQS Resource Config",
+  "title": "SQS Standalone Queue Config",
+  "description": "Schema for standalone SQS queue configuration files placed in configs/stacks/sqs/. Template variables (e.g., {{WORKLOAD_NAME}}, {{DEPLOYMENT_NAMESPACE}}) are supported in string fields and resolved at runtime.",
   "type": "object",
+  "required": ["name"],
   "properties": {
-    "queues": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "queue_name": { "type": "string" },
-          "type": { "type": "string" },
-          "visibility_timeout_seconds": { "type": "integer" },
-          "max_receive_count": { "type": "integer" },
-          "batch_size": { "type": "integer" },
-          "add_dead_letter_queue": { "type": ["boolean", "string"] }
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Queue name. Supports template variables such as {{WORKLOAD_NAME}} and {{DEPLOYMENT_NAMESPACE}}."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the queue's purpose."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["standard", "fifo"],
+      "default": "standard",
+      "description": "Queue type. FIFO queues require the queue name to end with .fifo suffix."
+    },
+    "visibility_timeout_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 43200,
+      "description": "Time in seconds that a message is invisible after being received. Default: 30."
+    },
+    "message_retention_period_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 14,
+      "description": "Number of days messages are retained in the queue. Default: 4."
+    },
+    "delay_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 900,
+      "description": "Delivery delay in seconds for messages sent to the queue. Default: 0."
+    },
+    "dead_letter_queue": {
+      "type": "object",
+      "description": "Dead letter queue configuration. When present, a DLQ is created and associated with the main queue.",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "DLQ name. Supports template variables."
         },
-        "additionalProperties": true
-      }
+        "max_receive_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of times a message can be received before being sent to the DLQ. Default: 5."
+        },
+        "message_retention_period_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 14,
+          "description": "Number of days messages are retained in the DLQ. Default: 14."
+        }
+      },
+      "additionalProperties": true
+    },
+    "ssm_parameters": {
+      "type": "object",
+      "description": "SSM Parameter Store export configuration. When present, queue ARN and URL are published to SSM.",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SSM path prefix for publishing queue ARN and URL. Supports template variables."
+        }
+      },
+      "additionalProperties": true
     }
   },
   "additionalProperties": true

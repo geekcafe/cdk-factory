@@ -67,6 +67,22 @@ class SQSStack(IStack):
         # CdkConfig._resolve_lambda_config_paths() during config resolution.
         self.sqs_config = SQSConfig(stack_config.dictionary.get("sqs", {}))
 
+        # Load standalone queue configs from directory (new)
+        queue_config_dir = stack_config.dictionary.get("queue_config_dir", "")
+        if queue_config_dir:
+            standalone_configs = self._load_standalone_queue_configs(queue_config_dir)
+            for config in standalone_configs:
+                resolved = self._resolve_template_variables(config)
+                # Map standalone config fields to what SQSConfig expects
+                normalized = self._normalize_standalone_config(resolved)
+                queue_config = SQSConfig(normalized)
+                if not queue_config.name:
+                    raise ValueError(
+                        f"Standalone queue config is missing required 'queue_name' "
+                        f"(or 'name') field: {config}"
+                    )
+                self.sqs_config.queues.append(queue_config)
+
         # Validate discovered consumer queues have required fields
         for queue_config in self.sqs_config.queues:
             if queue_config.is_consumer:
@@ -247,6 +263,82 @@ class SQSStack(IStack):
         self._publish_queue_to_ssm(dlq, queue_config, is_dlq=True)
 
         return dlq
+
+    def _load_standalone_queue_configs(self, config_dir: str) -> list[dict]:
+        """Load all JSON files from the standalone queue config directory.
+
+        Args:
+            config_dir: Path to directory containing standalone queue JSON config files.
+
+        Returns:
+            List of parsed config dictionaries, sorted alphabetically by filename.
+            Returns an empty list if the directory does not exist.
+        """
+        configs: list[dict] = []
+        dir_path = Path(config_dir)
+        if not dir_path.exists():
+            return configs
+        for json_file in sorted(dir_path.glob("*.json")):
+            with open(json_file, "r") as f:
+                config = json.load(f)
+                configs.append(config)
+        return configs
+
+    def _resolve_template_variables(self, config: dict) -> dict:
+        """Resolve template variables like {{WORKLOAD_NAME}} in config values.
+
+        Serializes the config to a JSON string, performs string replacements
+        for known template variables, then deserializes back to a dict.
+
+        Args:
+            config: A queue config dictionary potentially containing template variables.
+
+        Returns:
+            A new dict with all known template variables replaced.
+        """
+        variables = {
+            "WORKLOAD_NAME": self.deployment.workload_name,
+            "DEPLOYMENT_NAMESPACE": self.deployment.environment,
+        }
+        config_str = json.dumps(config)
+        for key, value in variables.items():
+            config_str = config_str.replace(f"{{{{{key}}}}}", value)
+        return json.loads(config_str)
+
+    def _normalize_standalone_config(self, config: dict) -> dict:
+        """Normalize a standalone queue config to the format expected by SQSConfig.
+
+        Standalone configs use `name` for the queue name and a `dead_letter_queue`
+        object for DLQ settings. The SQSConfig model expects `queue_name` and
+        `add_dead_letter_queue` (boolean). This method bridges the two formats.
+
+        Args:
+            config: A resolved standalone queue config dictionary.
+
+        Returns:
+            A new dict compatible with SQSConfig constructor expectations.
+        """
+        normalized = dict(config)
+
+        # Map 'name' to 'queue_name' if 'queue_name' is not already present
+        if "name" in normalized and "queue_name" not in normalized:
+            normalized["queue_name"] = normalized.pop("name")
+
+        # Map 'dead_letter_queue' object to 'add_dead_letter_queue' boolean
+        # and extract max_receive_count from the DLQ object
+        dlq_config = normalized.pop("dead_letter_queue", None)
+        if dlq_config and isinstance(dlq_config, dict):
+            normalized["add_dead_letter_queue"] = "true"
+            # Use DLQ's max_receive_count if provided, otherwise keep default
+            if "max_receive_count" in dlq_config:
+                normalized["max_receive_count"] = dlq_config["max_receive_count"]
+            # Store DLQ retention for the _create_dead_letter_queue method
+            if "message_retention_period_days" in dlq_config:
+                normalized["dlq_message_retention_period_days"] = dlq_config[
+                    "message_retention_period_days"
+                ]
+
+        return normalized
 
     def _add_outputs(self) -> None:
         """Add CloudFormation outputs for the SQS queues"""

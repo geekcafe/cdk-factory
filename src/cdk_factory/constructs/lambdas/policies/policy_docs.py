@@ -435,6 +435,7 @@ class PolicyDocuments:
                 "events",
                 "parameter_store",
                 "cognito-idp",
+                "sqs",
             }
             if known_structured_keys & permission.keys():
                 return {}
@@ -759,6 +760,62 @@ class PolicyDocuments:
                     "id": "AwsSolutions-IAM5",
                     "reason": f"EventBridge {action} permission for schedule rules.",
                     "resources": ["Resource::*"],
+                },
+            }
+
+        # SQS structured permissions
+        if "sqs" in permission:
+            action = permission["sqs"]
+            queue_name = permission.get("queue_name", "")
+            queue_ssm_path = permission.get("queue_ssm_path", "")
+
+            if not queue_name and not queue_ssm_path:
+                raise ValueError(
+                    f"Structured SQS permission requires 'queue_name' or "
+                    f"'queue_ssm_path' field: {permission}"
+                )
+
+            action_map = {
+                "send": {
+                    "actions": ["sqs:SendMessage"],
+                    "sid": "SqsSend",
+                    "description": "SQS Send Message",
+                },
+            }
+
+            if action not in action_map:
+                raise ValueError(
+                    f"Unknown SQS action '{action}'. Valid: {list(action_map.keys())}"
+                )
+
+            details = action_map[action]
+
+            # Resolve queue ARN
+            if queue_ssm_path:
+                # Use CDK token — resolved by CloudFormation at deploy time
+                queue_arn = aws_cdk.aws_ssm.StringParameter.value_for_string_parameter(
+                    self.scope, queue_ssm_path
+                )
+            else:
+                # Construct ARN from queue name + deployment context
+                resolver = self._get_resource_resolver()
+                region = resolver.get_aws_region()
+                account = resolver.get_aws_account()
+                queue_arn = f"arn:aws:sqs:{region}:{account}:{queue_name}"
+
+            resources = [queue_arn]
+            queue_slug = self._make_sid_slug(queue_name or queue_ssm_path)
+
+            return {
+                "name": "SQS",
+                "description": f"{details['description']}: {queue_name or queue_ssm_path}",
+                "sid": f"{details['sid']}{queue_slug}",
+                "actions": details["actions"],
+                "resources": resources,
+                "nag": {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": f"SQS {action} permission for queue: {queue_name or queue_ssm_path}",
+                    "resources": [f"Resource::{r}" for r in resources],
                 },
             }
 

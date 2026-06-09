@@ -98,6 +98,38 @@ class LambdaTriggersConfig:
         return ""
 
     @property
+    def queue_name(self) -> str:
+        """SQS queue name for SQS triggers."""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("queue_name", "")
+
+        return ""
+
+    @property
+    def queue_ssm_path(self) -> str:
+        """SSM parameter path to resolve queue ARN for SQS triggers."""
+        if self.__config and isinstance(self.__config, dict):
+            return self.__config.get("queue_ssm_path", "")
+
+        return ""
+
+    @property
+    def batch_size(self) -> int:
+        """Batch size for SQS event source mapping. Default: 1."""
+        if self.__config and isinstance(self.__config, dict):
+            return int(self.__config.get("batch_size", 1))
+
+        return 1
+
+    @property
+    def max_batching_window_seconds(self) -> int:
+        """Max batching window in seconds for SQS event source mapping. Default: 0."""
+        if self.__config and isinstance(self.__config, dict):
+            return int(self.__config.get("max_batching_window_seconds", 0))
+
+        return 0
+
+    @property
     def schedule(self) -> dict:
         """Schedule, used for event bridge"""
         if self.__config and isinstance(self.__config, dict):

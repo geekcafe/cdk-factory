@@ -212,6 +212,12 @@ class LambdaStack(IStack):
                             lambda_function=lambda_function,
                             name=f"{function_config.name}-{trigger_id}",
                         )
+                    elif trigger.resource_type.lower() == "sqs":
+                        self.__setup_sqs_trigger(
+                            trigger=trigger,
+                            lambda_function=lambda_function,
+                            function_name=f"{function_config.name}-{trigger_id}",
+                        )
                     else:
                         raise ValueError(
                             f"Trigger type {trigger.resource_type} is not supported"
@@ -368,6 +374,75 @@ class LambdaStack(IStack):
                 logger.warning(
                     f"EventBridge trigger on '{name}' has no name field — skipping SSM registration"
                 )
+
+    def __setup_sqs_trigger(
+        self,
+        trigger: LambdaTriggersConfig,
+        lambda_function: _lambda.Function | _lambda.DockerImageFunction,
+        function_name: str,
+    ) -> None:
+        """
+        Set up an SQS queue event source trigger for a Lambda function.
+        Imports an existing queue by ARN (constructed from name or resolved from SSM)
+        and creates an EventSourceMapping with configured batch settings.
+        """
+        # Resolve queue ARN
+        queue_arn: str = ""
+
+        if trigger.queue_ssm_path:
+            # Resolve queue ARN from SSM parameter (CDK token — no live AWS call)
+            queue_arn = ssm.StringParameter.value_for_string_parameter(
+                self, trigger.queue_ssm_path
+            )
+        elif trigger.queue_name:
+            # Construct ARN from queue name + deployment context
+            queue_name = self.deployment.build_resource_name(
+                trigger.queue_name, ResourceTypes.SQS
+            )
+            queue_arn = (
+                f"arn:aws:sqs:{self.deployment.region}"
+                f":{self.deployment.account}:{queue_name}"
+            )
+        else:
+            raise ValueError(
+                f"SQS trigger on Lambda '{function_name}' requires either "
+                "'queue_name' or 'queue_ssm_path'"
+            )
+
+        # Import the existing queue by ARN (no live AWS call)
+        queue = sqs.Queue.from_queue_arn(
+            self,
+            id=f"{function_name}-sqs-trigger",
+            queue_arn=queue_arn,
+        )
+
+        # Create Event Source Mapping
+        max_batching_window = (
+            aws_cdk.Duration.seconds(trigger.max_batching_window_seconds)
+            if trigger.max_batching_window_seconds > 0
+            else None
+        )
+
+        _lambda.EventSourceMapping(
+            self,
+            id=f"{function_name}-sqs-esm",
+            target=lambda_function,
+            event_source_arn=queue.queue_arn,
+            batch_size=trigger.batch_size,
+            max_batching_window=max_batching_window,
+        )
+
+        # Grant consume permissions
+        lambda_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:GetQueueAttributes",
+                ],
+                resources=[queue.queue_arn],
+            )
+        )
 
     def __setup_s3_trigger(
         self,
