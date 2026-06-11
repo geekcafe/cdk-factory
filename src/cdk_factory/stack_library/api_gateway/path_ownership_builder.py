@@ -61,11 +61,24 @@ class TrieNode:
 class PathOwnershipBuilder:
     """Builds a path trie and computes ownership for API Gateway resources."""
 
-    def __init__(self, route_groups: Dict[str, List[Dict[str, Any]]]):
+    # Synthetic group name injected into nodes to force them into the parent stack.
+    _PREEMPTIVE_GROUP = "__preemptive__"
+
+    def __init__(
+        self,
+        route_groups: Dict[str, List[Dict[str, Any]]],
+        preemptive_shared_parameterized: bool = True,
+    ):
         """
         Args:
             route_groups: Dict mapping group names to lists of route dicts.
                 Each route dict must have a "path" key (e.g., "/v3/tenants/{tenant-id}/users").
+            preemptive_shared_parameterized: When True (default), any path segment
+                containing a parameterized part (e.g., ``{tenant-id}``) and all of its
+                ancestors are automatically treated as shared — even if only one route
+                group currently uses them. This prevents CloudFormation resource
+                relocation conflicts when a new group is added later that shares the
+                same parameterized prefix.
 
         Raises:
             ValueError: If route_groups is empty.
@@ -73,12 +86,19 @@ class PathOwnershipBuilder:
         if not route_groups:
             raise ValueError("PathOwnershipBuilder requires at least one route group")
         self._route_groups = route_groups
+        self._preemptive_shared_parameterized = preemptive_shared_parameterized
         self._root = TrieNode(segment="", groups=set(), children={}, parent=None)
         self._built = False
 
     def build(self) -> "PathOwnershipBuilder":
         """
         Construct the trie from all routes across all groups in a single pass.
+
+        When ``preemptive_shared_parameterized`` is enabled, a post-processing pass
+        marks parameterized nodes and their ancestors as shared by injecting a
+        synthetic group. This ensures those API Gateway path resources are always
+        created in the parent stack, preventing resource relocation conflicts when
+        new route groups are added later that share the same parameterized prefix.
 
         Returns self for chaining.
         """
@@ -106,8 +126,53 @@ class PathOwnershipBuilder:
                     current = current.children[segment]
                     current.groups.add(group_name)
 
+        # Post-processing: preemptively mark parameterized paths as shared
+        if self._preemptive_shared_parameterized:
+            self._mark_parameterized_paths_as_shared(self._root)
+
         self._built = True
         return self
+
+    def _mark_parameterized_paths_as_shared(self, node: TrieNode) -> None:
+        """
+        Walk the trie and inject a synthetic group into parameterized nodes
+        and all their ancestors (up to root) to force them into the parent stack.
+
+        A parameterized segment is one that contains '{' (e.g., ``{tenant-id}``).
+        The immediate children of a parameterized segment are also marked shared
+        because they represent the branching points where different groups will
+        diverge (e.g., ``users``, ``assets`` after ``{tenant-id}``).
+
+        This ensures that adding a new route group under the same parameterized
+        prefix never causes a CloudFormation resource relocation conflict.
+        """
+        self._walk_and_mark(self._root)
+
+    def _walk_and_mark(self, node: TrieNode) -> None:
+        """Recursively walk the trie marking parameterized nodes and their children."""
+        for child in node.children.values():
+            if self._is_parameterized(child.segment):
+                # Mark this parameterized node and all ancestors as shared
+                self._inject_preemptive_group_upward(child)
+                # Mark immediate children of parameterized nodes as shared.
+                # These are the branching points where different groups diverge
+                # (e.g., "users", "assets", "admin" after {tenant-id}).
+                for grandchild in child.children.values():
+                    grandchild.groups.add(self._PREEMPTIVE_GROUP)
+            # Recurse into all children regardless
+            self._walk_and_mark(child)
+
+    def _inject_preemptive_group_upward(self, node: TrieNode) -> None:
+        """Inject the synthetic preemptive group into this node and all ancestors."""
+        current: Optional[TrieNode] = node
+        while current is not None and current.segment != "":
+            current.groups.add(self._PREEMPTIVE_GROUP)
+            current = current.parent
+
+    @staticmethod
+    def _is_parameterized(segment: str) -> bool:
+        """Return True if the segment contains a path parameter (e.g., '{tenant-id}')."""
+        return "{" in segment and "}" in segment
 
     def validate(self) -> None:
         """

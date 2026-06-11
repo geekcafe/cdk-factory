@@ -675,10 +675,13 @@ class TestPathOwnershipIntegration:
             r["resource"]["Properties"].get("PathPart", "") for r in extended_shared
         )
 
-        # Shared resources should be the same — adding a route under an existing
-        # exclusive path doesn't introduce new shared segments
-        assert base_shared_parts == extended_shared_parts, (
-            f"Adding a route to users group changed shared resources. "
+        # Shared resources in the parent should only grow (never shrink).
+        # With preemptive sharing, adding a route with new parameterized segments
+        # (e.g., {user-id}) adds those to the parent stack. The critical invariant
+        # is that no existing shared resources are removed — which would cause
+        # a CloudFormation resource relocation conflict.
+        assert set(base_shared_parts).issubset(set(extended_shared_parts)), (
+            f"Adding a route to users group REMOVED shared resources (relocation risk). "
             f"Before: {base_shared_parts}, After: {extended_shared_parts}"
         )
 

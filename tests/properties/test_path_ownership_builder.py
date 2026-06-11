@@ -418,9 +418,11 @@ class TestSingleGroupNoSharedNodes:
     @given(route_groups=route_groups_strategy(min_groups=1, max_groups=1))
     @settings(max_examples=100)
     def test_property_7_single_group_no_shared_nodes(self, route_groups):
-        """All routes in one group → zero shared nodes, handoff map has only "/".
+        """All routes in one group → zero shared nodes when preemptive sharing is disabled.
 
         Validates: Requirements 6.2
+        Note: With preemptive sharing enabled (default), parameterized paths create
+        shared nodes even with a single group. This property tests the opt-out behavior.
         """
         # Ensure we have exactly one group with at least one route
         route_groups = {k: v for k, v in route_groups.items() if v}
@@ -434,10 +436,13 @@ class TestSingleGroupNoSharedNodes:
         has_valid_route = any(route.get("path", "").strip() for route in routes)
         assume(has_valid_route)
 
-        builder = PathOwnershipBuilder(route_groups)
+        builder = PathOwnershipBuilder(
+            route_groups, preemptive_shared_parameterized=False
+        )
         builder.build()
 
         # Property: zero shared nodes when all routes belong to one group
+        # (with preemptive sharing disabled)
         shared_nodes = builder.get_shared_nodes()
         assert shared_nodes == [], (
             f"Expected zero shared nodes for single group '{group_name}', "
@@ -530,7 +535,11 @@ class TestGroupAnnotationCorrectness:
     @given(route_groups=route_groups_strategy())
     @settings(max_examples=100)
     def test_node_groups_match_routes_passing_through(self, route_groups):
-        """Each node's group set equals exactly the set of groups whose routes pass through it.
+        """Each node's real group set equals exactly the set of groups whose routes pass through it.
+
+        The __preemptive__ synthetic group is excluded from comparison since it is
+        injected by the preemptive sharing feature and does not correspond to any
+        real route group.
 
         Validates: Requirements 1.2
         """
@@ -576,17 +585,23 @@ class TestGroupAnnotationCorrectness:
                         expected_groups.add(group_name)
                         break  # One matching route is enough for this group
 
-            assert node.groups == expected_groups, (
+            # Exclude the synthetic __preemptive__ group from comparison
+            actual_groups = node.groups - {PathOwnershipBuilder._PREEMPTIVE_GROUP}
+            assert actual_groups == expected_groups, (
                 f"Group annotation mismatch at node '{'/' + '/'.join(node_path)}':\n"
                 f"  Expected groups: {sorted(expected_groups)}\n"
-                f"  Actual groups:   {sorted(node.groups)}\n"
+                f"  Actual groups (excluding __preemptive__):   {sorted(actual_groups)}\n"
                 f"  Route groups: {list(route_groups.keys())}"
             )
 
     @given(route_groups=route_groups_strategy(min_groups=2))
     @settings(max_examples=100)
     def test_no_extra_groups_on_nodes(self, route_groups):
-        """No node has a group in its set unless at least one route from that group passes through it.
+        """No node has a real group in its set unless at least one route from that group passes through it.
+
+        The __preemptive__ synthetic group is excluded from this check since it is
+        injected by the preemptive sharing feature and does not correspond to any
+        real route group.
 
         Validates: Requirements 1.2
         """
@@ -597,7 +612,7 @@ class TestGroupAnnotationCorrectness:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
 
-        # For each node, verify that every group in node.groups has at least
+        # For each node, verify that every real group in node.groups has at least
         # one route that actually passes through this node
         stack = [builder._root]
         while stack:
@@ -605,7 +620,10 @@ class TestGroupAnnotationCorrectness:
             for child in node.children.values():
                 child_path = child.full_path
 
-                for group_name in child.groups:
+                # Exclude the synthetic __preemptive__ group
+                real_groups = child.groups - {PathOwnershipBuilder._PREEMPTIVE_GROUP}
+
+                for group_name in real_groups:
                     # Verify this group has at least one route passing through this node
                     routes = route_groups.get(group_name, [])
                     has_matching_route = False
