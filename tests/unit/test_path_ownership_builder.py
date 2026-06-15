@@ -268,11 +268,12 @@ class TestHandoffMap:
         assert "/v3/tenants/{tenant-id}/users/{user-id}" in handoff
 
     def test_users_group_handoff_at_tenant_id_when_users_exclusive(self):
-        """When 'users' is a child of parameterized {tenant-id}, handoff is deeper.
+        """When 'users' is a child of parameterized {tenant-id}, handoff is at 'users'.
 
         With preemptive sharing, 'users' (child of {tenant-id}) is automatically
-        shared, so the handoff goes deeper — to the shared leaf where the group's
-        exclusive segments begin.
+        shared because its parent is a parameterized node in a multi-group subtree.
+        But '{user-id}' below 'users' is NOT preemptively marked because 'users'
+        only has one real group flowing through it — the nested stack owns '{user-id}'.
         """
         route_groups = {
             "users": [
@@ -286,11 +287,11 @@ class TestHandoffMap:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
         handoff = builder.get_handoff_map("users")
-        # 'users' is shared (preemptive child of {tenant-id}), and
-        # '{user-id}' is shared (parameterized). Both routes are entirely shared paths,
-        # so handoff occurs at the leaf shared nodes.
+        # 'users' is shared (preemptive child of {tenant-id} in multi-group context).
+        # '{user-id}' is NOT shared — it's exclusive to users group.
+        # Handoff occurs at 'users' — the nested stack creates '{user-id}' itself.
         assert "/v3/tenants/{tenant-id}/users" in handoff
-        assert "/v3/tenants/{tenant-id}/users/{user-id}" in handoff
+        assert "/v3/tenants/{tenant-id}/users/{user-id}" not in handoff
 
     def test_warmup_group_handoff_contains_v3(self, built_builder):
         """Warm-up group with route '/v3/admin/warm-up' has handoff at '/v3'."""
@@ -419,7 +420,12 @@ class TestSingleGroupEdgeCase:
     """Tests for single group edge case."""
 
     def test_single_group_no_shared_nodes(self):
-        """Single group with parameterized paths produces shared nodes due to preemptive sharing."""
+        """Single group with parameterized paths produces NO shared nodes.
+
+        When all paths in a subtree belong to a single real group, preemptive
+        sharing is skipped — there is no relocation risk because no other group
+        could ever branch from this parameterized prefix.
+        """
         route_groups = {
             "only-group": [
                 {"path": "/v3/tenants/{tenant-id}/users", "method": "GET"},
@@ -429,14 +435,8 @@ class TestSingleGroupEdgeCase:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
         shared_nodes = builder.get_shared_nodes()
-        # Preemptive sharing marks parameterized segments and their children as shared
-        shared_segments = [node.segment for node in shared_nodes]
-        assert "{tenant-id}" in shared_segments
-        assert "users" in shared_segments
-        assert "metrics" in shared_segments
-        # Ancestors of parameterized segments are also shared
-        assert "v3" in shared_segments
-        assert "tenants" in shared_segments
+        # Single group → no shared nodes even with parameterized paths
+        assert len(shared_nodes) == 0
 
     def test_single_group_no_shared_nodes_when_preemptive_disabled(self):
         """Single group produces no shared nodes when preemptive sharing is disabled."""
@@ -469,7 +469,7 @@ class TestSingleGroupEdgeCase:
         assert handoff == {"/": "/"}
 
     def test_single_group_handoff_with_preemptive_sharing(self):
-        """Single group handoff map includes preemptively shared paths."""
+        """Single group handoff map only has '/' — no preemptive sharing in single-group subtrees."""
         route_groups = {
             "only-group": [
                 {"path": "/v3/tenants/{tenant-id}/users", "method": "GET"},
@@ -479,10 +479,8 @@ class TestSingleGroupEdgeCase:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
         handoff = builder.get_handoff_map("only-group")
-        # Both routes are entirely shared (all segments are preemptively shared),
-        # so handoff occurs at the leaf shared nodes
-        assert "/v3/tenants/{tenant-id}/users" in handoff
-        assert "/v3/tenants/{tenant-id}/metrics" in handoff
+        # Single group → handoff from root only (no shared nodes to hand off from)
+        assert handoff == {"/": "/"}
 
 
 # ---------------------------------------------------------------------------
@@ -638,15 +636,24 @@ class TestPreemptiveSharedParameterized:
     This feature prevents CloudFormation resource relocation conflicts when a new
     route group is added that shares a parameterized path prefix with existing groups.
 
-    The exact scenario this solves: a 'profiles' group owns
-    /tenants/{tenant-id}/users/{user-id}/profile, and a new 'notifications' group
-    is added with /tenants/{tenant-id}/users/{user-id}/notifications. Without
-    preemptive sharing, the 'users' resource would move from the profiles nested
-    stack to the parent stack, causing a 409 AlreadyExists conflict.
+    The exact scenario this solves: two groups ('profiles' and 'notifications') both
+    use /tenants/{tenant-id}/users/{user-id}/... — because {tenant-id} exists in a
+    multi-group context, it and its children are preemptively marked as shared.
+
+    IMPORTANT: Preemptive marking only applies when the parameterized node is in a
+    multi-group context (i.e., its parent's children collectively have multiple real
+    groups). In single-group deployments, no preemptive marking occurs because
+    there's no relocation risk — and marking would actually CAUSE relocation
+    conflicts when new parameterized paths are added to the same group later.
     """
 
-    def test_parameterized_segment_is_always_shared(self):
-        """Parameterized segments are shared even with a single route group."""
+    def test_parameterized_segment_not_shared_in_single_group(self):
+        """Parameterized segments are NOT shared with only a single route group.
+
+        In a single-group deployment, the parent of the parameterized node has
+        only one real group flowing through it, so preemptive marking is skipped
+        to avoid causing relocation conflicts on incremental deployments.
+        """
         route_groups = {
             "profiles": [
                 {
@@ -659,11 +666,59 @@ class TestPreemptiveSharedParameterized:
         builder.build()
         tenant_id = builder._root.children["tenants"].children["{tenant-id}"]
         user_id = tenant_id.children["users"].children["{user-id}"]
-        assert tenant_id.is_shared is True
-        assert user_id.is_shared is True
+        # Single group → no preemptive marking
+        assert tenant_id.is_shared is False
+        assert user_id.is_shared is False
 
-    def test_children_of_parameterized_segment_are_shared(self):
-        """Immediate children of parameterized segments are shared (branching points)."""
+    def test_parameterized_segment_shared_in_multi_group(self):
+        """Parameterized segments ARE shared when multiple groups exist at parent level."""
+        route_groups = {
+            "profiles": [
+                {
+                    "path": "/tenants/{tenant-id}/users/{user-id}/profile",
+                    "method": "GET",
+                },
+            ],
+            "notifications": [
+                {
+                    "path": "/tenants/{tenant-id}/users/{user-id}/notifications",
+                    "method": "GET",
+                },
+            ],
+        }
+        builder = PathOwnershipBuilder(route_groups)
+        builder.build()
+        tenant_id = builder._root.children["tenants"].children["{tenant-id}"]
+        # Multi-group context → preemptive marking applies
+        assert tenant_id.is_shared is True
+        assert PathOwnershipBuilder._PREEMPTIVE_GROUP in tenant_id.groups
+
+    def test_children_of_parameterized_segment_shared_in_multi_group(self):
+        """Immediate children of parameterized segments are shared in multi-group context."""
+        route_groups = {
+            "profiles": [
+                {
+                    "path": "/tenants/{tenant-id}/users/{user-id}/profile",
+                    "method": "GET",
+                },
+            ],
+            "notifications": [
+                {
+                    "path": "/tenants/{tenant-id}/users/{user-id}/notifications",
+                    "method": "GET",
+                },
+            ],
+        }
+        builder = PathOwnershipBuilder(route_groups)
+        builder.build()
+        tenant_id = builder._root.children["tenants"].children["{tenant-id}"]
+        users_node = tenant_id.children["users"]
+        # 'users' is a child of {tenant-id} in a multi-group context → preemptively shared
+        assert users_node.is_shared is True
+        assert PathOwnershipBuilder._PREEMPTIVE_GROUP in users_node.groups
+
+    def test_children_of_parameterized_segment_not_shared_in_single_group(self):
+        """Immediate children of parameterized segments are NOT shared in single-group."""
         route_groups = {
             "profiles": [
                 {
@@ -676,12 +731,34 @@ class TestPreemptiveSharedParameterized:
         builder.build()
         tenant_id = builder._root.children["tenants"].children["{tenant-id}"]
         users_node = tenant_id.children["users"]
-        # 'users' is a child of {tenant-id} (parameterized) → preemptively shared
-        assert users_node.is_shared is True
-        assert PathOwnershipBuilder._PREEMPTIVE_GROUP in users_node.groups
+        # Single group → no preemptive marking
+        assert users_node.is_shared is False
+        assert PathOwnershipBuilder._PREEMPTIVE_GROUP not in users_node.groups
 
-    def test_ancestors_of_parameterized_segment_are_shared(self):
-        """All ancestors of a parameterized segment are shared."""
+    def test_ancestors_of_parameterized_segment_shared_in_multi_group(self):
+        """Ancestors of a parameterized segment are shared in multi-group context."""
+        route_groups = {
+            "profiles": [
+                {
+                    "path": "/tenants/{tenant-id}/users/{user-id}/profile",
+                    "method": "GET",
+                },
+            ],
+            "notifications": [
+                {
+                    "path": "/tenants/{tenant-id}/users/{user-id}/notifications",
+                    "method": "GET",
+                },
+            ],
+        }
+        builder = PathOwnershipBuilder(route_groups)
+        builder.build()
+        tenants_node = builder._root.children["tenants"]
+        assert tenants_node.is_shared is True
+        assert PathOwnershipBuilder._PREEMPTIVE_GROUP in tenants_node.groups
+
+    def test_ancestors_not_shared_in_single_group(self):
+        """Ancestors of a parameterized segment are NOT shared in single-group."""
         route_groups = {
             "profiles": [
                 {
@@ -693,16 +770,22 @@ class TestPreemptiveSharedParameterized:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
         tenants_node = builder._root.children["tenants"]
-        assert tenants_node.is_shared is True
-        assert PathOwnershipBuilder._PREEMPTIVE_GROUP in tenants_node.groups
+        assert tenants_node.is_shared is False
+        assert PathOwnershipBuilder._PREEMPTIVE_GROUP not in tenants_node.groups
 
     def test_adding_new_group_does_not_relocate_resources(self):
-        """Adding a new group under the same parameterized prefix has no relocation.
+        """Adding a new group under the same parameterized prefix works correctly.
 
-        This is the exact scenario that caused the deployment failure:
-        profiles existed alone, then notifications was added.
+        In the multi-group (after) state, preemptive marking correctly identifies
+        shared paths. In the single-group (before) state, no marking occurs.
+
+        NOTE: The transition from single-group to multi-group DOES create new shared
+        nodes. This means adding a brand new second group to a previously single-group
+        parameterized prefix will relocate resources. This is an accepted trade-off —
+        the alternative (always marking single-group paths) causes the SAME relocation
+        issue when adding new parameterized routes to an existing single group.
         """
-        # Before: only profiles
+        # Before: only profiles — single group, no preemptive marking
         route_groups_before = {
             "profiles": [
                 {
@@ -716,8 +799,10 @@ class TestPreemptiveSharedParameterized:
         shared_before = {
             "/" + "/".join(n.full_path) for n in builder_before.get_shared_nodes()
         }
+        # Single group → no shared nodes
+        assert len(shared_before) == 0
 
-        # After: profiles + notifications
+        # After: profiles + notifications — multi-group, preemptive marking applies
         route_groups_after = {
             "profiles": [
                 {
@@ -738,14 +823,9 @@ class TestPreemptiveSharedParameterized:
             "/" + "/".join(n.full_path) for n in builder_after.get_shared_nodes()
         }
 
-        # The critical assertion: all paths that are shared AFTER adding a group
-        # were ALREADY shared BEFORE. No resource relocation needed.
-        # (The after set may have more shared nodes — that's fine, just no removals.)
-        assert shared_before.issubset(shared_after)
-
-        # Specifically, /tenants/{tenant-id}/users must be shared in both
-        assert "/tenants/{tenant-id}/users" in shared_before
+        # Multi-group: shared paths include the parameterized prefix
         assert "/tenants/{tenant-id}/users" in shared_after
+        assert "/tenants/{tenant-id}" in shared_after
 
     def test_non_parameterized_paths_not_affected(self):
         """Paths without parameterized segments are not preemptively shared."""
@@ -779,8 +859,8 @@ class TestPreemptiveSharedParameterized:
         assert tenant_id.is_exclusive is True
         assert PathOwnershipBuilder._PREEMPTIVE_GROUP not in tenant_id.groups
 
-    def test_nested_parameterized_segments_both_shared(self):
-        """Multiple nested parameterized segments are all shared."""
+    def test_nested_parameterized_segments_not_shared_in_single_group(self):
+        """Multiple nested parameterized segments are NOT shared in single-group context."""
         route_groups = {
             "tasks": [
                 {
@@ -792,7 +872,7 @@ class TestPreemptiveSharedParameterized:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
 
-        # All parameterized segments and their immediate children should be shared
+        # Single group → no preemptive marking anywhere
         tenant_id = builder._root.children["tenants"].children["{tenant-id}"]
         assets = tenant_id.children["assets"]
         asset_id = assets.children["{asset-id}"]
@@ -800,12 +880,40 @@ class TestPreemptiveSharedParameterized:
         schedule_id = maintenance.children["{schedule-id}"]
         tasks = schedule_id.children["tasks"]
 
+        assert tenant_id.is_shared is False
+        assert assets.is_shared is False
+        assert asset_id.is_shared is False
+        assert maintenance.is_shared is False
+        assert schedule_id.is_shared is False
+        assert tasks.is_shared is False
+
+    def test_nested_parameterized_segments_shared_in_multi_group(self):
+        """Multiple nested parameterized segments are shared in multi-group context."""
+        route_groups = {
+            "tasks": [
+                {
+                    "path": "/tenants/{tenant-id}/assets/{asset-id}/maintenance/{schedule-id}/tasks",
+                    "method": "GET",
+                },
+            ],
+            "reports": [
+                {
+                    "path": "/tenants/{tenant-id}/assets/{asset-id}/reports",
+                    "method": "GET",
+                },
+            ],
+        }
+        builder = PathOwnershipBuilder(route_groups)
+        builder.build()
+
+        # Multi-group: {tenant-id} is in multi-group context → marked
+        tenant_id = builder._root.children["tenants"].children["{tenant-id}"]
+        assets = tenant_id.children["assets"]
+        asset_id = assets.children["{asset-id}"]
+
         assert tenant_id.is_shared is True
         assert assets.is_shared is True  # child of {tenant-id}
-        assert asset_id.is_shared is True  # parameterized
-        assert maintenance.is_shared is True  # child of {asset-id}
-        assert schedule_id.is_shared is True  # parameterized
-        assert tasks.is_shared is True  # child of {schedule-id}
+        assert asset_id.is_shared is True  # parameterized, parent has multiple groups
 
     def test_validate_passes_with_preemptive_sharing(self):
         """Validation still passes with preemptive sharing enabled."""
@@ -829,7 +937,7 @@ class TestPreemptiveSharedParameterized:
         builder.validate()
 
     def test_validate_passes_with_single_group_preemptive(self):
-        """Validation passes with preemptive sharing on a single group."""
+        """Validation passes with single group (no shared nodes created)."""
         route_groups = {
             "profiles": [
                 {
@@ -840,11 +948,11 @@ class TestPreemptiveSharedParameterized:
         }
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
-        # Should not raise even though synthetic group creates shared nodes
+        # Should not raise — no shared nodes, no conflicts
         builder.validate()
 
     def test_handoff_map_with_preemptive_single_group(self):
-        """Handoff map reflects preemptively shared paths for a single group."""
+        """Single group handoff map has only '/' — no shared paths."""
         route_groups = {
             "profiles": [
                 {
@@ -860,7 +968,163 @@ class TestPreemptiveSharedParameterized:
         builder = PathOwnershipBuilder(route_groups)
         builder.build()
         handoff = builder.get_handoff_map("profiles")
-        # 'profile' is a child of {user-id} (parameterized), so it's shared.
-        # The handoff should be at 'profile' (the deepest shared point before
-        # exclusive segments like 'preferences').
-        assert "/tenants/{tenant-id}/users/{user-id}/profile" in handoff
+        # Single group → handoff from root only
+        assert handoff == {"/": "/"}
+
+
+# ---------------------------------------------------------------------------
+# Regression: Feature-Flags Incremental Deployment (Issue #409)
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureFlagsIncrementalDeployment:
+    """Regression tests for the feature-flags deployment conflict.
+
+    Scenario: A 'feature-flags' group exists with routes under
+    /v3/feature-flags/... alongside other groups under /v3/tenants/...
+    Adding a new parameterized route (/v3/feature-flags/registry/{registration-id})
+    should NOT cause 'registry' to be promoted to the parent stack.
+
+    This was caused by the preemptive marking logic marking ancestors of ANY
+    parameterized segment as shared — even when those ancestors were exclusively
+    owned by a single group deep within its private subtree.
+    """
+
+    @pytest.fixture
+    def multi_group_with_feature_flags(self):
+        """Simulate the real Aplos NCA deployment with feature-flags."""
+        route_groups = {
+            "users": [
+                {"path": "/v3/tenants/{tenant-id}/users", "method": "GET"},
+                {"path": "/v3/tenants/{tenant-id}/users/{user-id}", "method": "GET"},
+            ],
+            "metrics": [
+                {"path": "/v3/tenants/{tenant-id}/metrics", "method": "GET"},
+            ],
+            "feature-flags": [
+                {"path": "/v3/feature-flags/registry", "method": "GET"},
+                {
+                    "path": "/v3/feature-flags/registry/{registration-id}",
+                    "method": "DELETE",
+                },
+                {
+                    "path": "/v3/feature-flags/registry/{registration-id}",
+                    "method": "PUT",
+                },
+                {"path": "/v3/feature-flags/rules", "method": "GET"},
+                {"path": "/v3/feature-flags/rules/{rule-id}", "method": "DELETE"},
+                {"path": "/v3/feature-flags/evaluate", "method": "GET"},
+            ],
+        }
+        return route_groups
+
+    def test_registry_not_shared(self, multi_group_with_feature_flags):
+        """'registry' under feature-flags should NOT be shared (not promoted to parent)."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+
+        feature_flags = builder._root.children["v3"].children["feature-flags"]
+        registry = feature_flags.children["registry"]
+
+        # registry should be exclusive to feature-flags group — NOT shared
+        assert registry.is_shared is False
+        assert PathOwnershipBuilder._PREEMPTIVE_GROUP not in registry.groups
+
+    def test_registration_id_not_shared(self, multi_group_with_feature_flags):
+        """{registration-id} should NOT be shared."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+
+        registration_id = (
+            builder._root.children["v3"]
+            .children["feature-flags"]
+            .children["registry"]
+            .children["{registration-id}"]
+        )
+        assert registration_id.is_shared is False
+
+    def test_feature_flags_not_shared(self, multi_group_with_feature_flags):
+        """'feature-flags' itself should NOT be shared (only one group routes through it)."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+
+        feature_flags = builder._root.children["v3"].children["feature-flags"]
+        assert feature_flags.is_shared is False
+
+    def test_v3_is_genuinely_shared(self, multi_group_with_feature_flags):
+        """'v3' should be shared because multiple real groups route through it."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+
+        v3 = builder._root.children["v3"]
+        real_groups = v3.groups - {PathOwnershipBuilder._PREEMPTIVE_GROUP}
+        assert len(real_groups) > 1
+        assert v3.is_shared is True
+
+    def test_tenant_id_is_shared_in_multi_group(self, multi_group_with_feature_flags):
+        """{tenant-id} is correctly shared because tenants has multiple groups."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+
+        tenant_id = (
+            builder._root.children["v3"].children["tenants"].children["{tenant-id}"]
+        )
+        assert tenant_id.is_shared is True
+
+    def test_handoff_map_feature_flags_from_v3(self, multi_group_with_feature_flags):
+        """Feature-flags group handoff should be at /v3 (shared), not deeper."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+
+        handoff = builder.get_handoff_map("feature-flags")
+        # v3 is the only shared ancestor — handoff from there
+        assert "/v3" in handoff
+        # registry should NOT be in handoff (it's not shared)
+        assert "/v3/feature-flags/registry" not in handoff
+
+    def test_adding_parameterized_route_no_relocation(
+        self, multi_group_with_feature_flags
+    ):
+        """Adding {registration-id} routes should not create new shared nodes under feature-flags.
+
+        This is the exact regression: previously, adding DELETE/PUT routes for
+        /v3/feature-flags/registry/{registration-id} caused 'registry' to be
+        promoted to the parent stack (409 conflict).
+        """
+        # Before: no {registration-id} routes
+        route_groups_before = {
+            "users": multi_group_with_feature_flags["users"],
+            "metrics": multi_group_with_feature_flags["metrics"],
+            "feature-flags": [
+                {"path": "/v3/feature-flags/registry", "method": "GET"},
+                {"path": "/v3/feature-flags/rules", "method": "GET"},
+                {"path": "/v3/feature-flags/rules/{rule-id}", "method": "DELETE"},
+                {"path": "/v3/feature-flags/evaluate", "method": "GET"},
+            ],
+        }
+        builder_before = PathOwnershipBuilder(route_groups_before)
+        builder_before.build()
+        shared_before = {
+            "/" + "/".join(n.full_path) for n in builder_before.get_shared_nodes()
+        }
+
+        # After: {registration-id} routes added
+        builder_after = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder_after.build()
+        shared_after = {
+            "/" + "/".join(n.full_path) for n in builder_after.get_shared_nodes()
+        }
+
+        # Critical: no new shared paths under feature-flags/ should appear
+        new_shared = shared_after - shared_before
+        feature_flags_new_shared = {p for p in new_shared if "feature-flags" in p}
+        assert feature_flags_new_shared == set(), (
+            f"Adding parameterized routes caused new shared nodes under feature-flags: "
+            f"{feature_flags_new_shared}"
+        )
+
+    def test_validate_passes(self, multi_group_with_feature_flags):
+        """Validation passes with the feature-flags multi-group configuration."""
+        builder = PathOwnershipBuilder(multi_group_with_feature_flags)
+        builder.build()
+        builder.validate()

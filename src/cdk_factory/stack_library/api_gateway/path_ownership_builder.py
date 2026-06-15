@@ -149,25 +149,86 @@ class PathOwnershipBuilder:
         self._walk_and_mark(self._root)
 
     def _walk_and_mark(self, node: TrieNode) -> None:
-        """Recursively walk the trie marking parameterized nodes and their children."""
+        """Recursively walk the trie marking parameterized nodes and their children.
+
+        Applies preemptive marking to parameterized nodes when the node is at a
+        "multi-group junction" — i.e., its parent or an ancestor is already shared
+        by multiple real groups. This prevents resource relocation when a future
+        group branches from the same parameterized prefix.
+
+        Does NOT apply preemptive marking when the parameterized node is deep within
+        a single-group's exclusive subtree (where no other group could ever branch).
+        In such cases, preemptive marking would actually *cause* relocation conflicts
+        during incremental deployments (pulling resources from nested to parent stack).
+        """
         for child in node.children.values():
             if self._is_parameterized(child.segment):
-                # Mark this parameterized node and all ancestors as shared
-                self._inject_preemptive_group_upward(child)
-                # Mark immediate children of parameterized nodes as shared.
-                # These are the branching points where different groups diverge
-                # (e.g., "users", "assets", "admin" after {tenant-id}).
-                for grandchild in child.children.values():
-                    grandchild.groups.add(self._PREEMPTIVE_GROUP)
+                # Attempt to mark this parameterized node and its ancestors.
+                # _inject_preemptive_group_upward returns whether marking was applied.
+                was_marked = self._inject_preemptive_group_upward(child)
+                if was_marked:
+                    # Mark immediate children of parameterized nodes as shared.
+                    # These are the branching points where different groups diverge
+                    # (e.g., "users", "assets", "admin" after {tenant-id}).
+                    for grandchild in child.children.values():
+                        grandchild.groups.add(self._PREEMPTIVE_GROUP)
             # Recurse into all children regardless
             self._walk_and_mark(child)
 
-    def _inject_preemptive_group_upward(self, node: TrieNode) -> None:
-        """Inject the synthetic preemptive group into this node and all ancestors."""
+    def _inject_preemptive_group_upward(self, node: TrieNode) -> bool:
+        """Inject the synthetic preemptive group into this node and ancestors.
+
+        Propagates upward only while the path is at a "multi-group junction" —
+        meaning the node's parent has children from multiple real groups (indicating
+        that other groups share the prefix and a future group could realistically
+        branch from the parameterized segment).
+
+        Stops propagating when it reaches a node whose parent only routes traffic
+        from a single real group — at that depth, no other group can reach this
+        subtree, so preemptive marking would only cause resource relocation conflicts
+        during incremental deployments (pulling nested-stack resources into parent).
+
+        Returns:
+            True if the node was marked (preemptive sharing applied),
+            False if marking was skipped (single-group subtree, no relocation risk).
+        """
         current: Optional[TrieNode] = node
+        marked_any = False
+
         while current is not None and current.segment != "":
-            current.groups.add(self._PREEMPTIVE_GROUP)
-            current = current.parent
+            # Check if this node's parent has children from multiple real groups.
+            # If so, this level is at a multi-group junction — safe to mark.
+            parent = current.parent
+            if parent is None or parent.segment == "":
+                # Reached the root level. Mark if the root has children from
+                # multiple real groups (indicating this is a shared API prefix).
+                if parent is not None:
+                    root_real_groups = self._get_all_real_groups_in_children(parent)
+                    if len(root_real_groups) > 1:
+                        current.groups.add(self._PREEMPTIVE_GROUP)
+                        marked_any = True
+                break
+
+            # Check if the parent level has multiple real groups across its children
+            parent_child_groups = self._get_all_real_groups_in_children(parent)
+            if len(parent_child_groups) > 1:
+                # Multi-group junction — this node can be shared safely
+                current.groups.add(self._PREEMPTIVE_GROUP)
+                marked_any = True
+                current = parent
+            else:
+                # Single-group subtree — stop propagating.
+                # This node is exclusively owned by one group's nested stack.
+                break
+
+        return marked_any
+
+    def _get_all_real_groups_in_children(self, node: TrieNode) -> Set[str]:
+        """Get the union of all real groups across a node's children."""
+        all_groups: Set[str] = set()
+        for child in node.children.values():
+            all_groups.update(child.groups - {self._PREEMPTIVE_GROUP})
+        return all_groups
 
     @staticmethod
     def _is_parameterized(segment: str) -> bool:
