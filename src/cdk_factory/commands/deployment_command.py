@@ -44,7 +44,7 @@ from botocore.exceptions import ClientError, ProfileNotFound
 
 from cdk_factory.utilities.route53_delegation import Route53Delegation
 from cdk_factory.utilities.docker_version_locker import DockerVersionLocker
-
+from cdk_factory.version import __version__
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -1925,6 +1925,8 @@ class CdkDeploymentCommand:
             script_dir: Directory containing the deploy script, config.json,
                 and deployments/ folder.  Defaults to cwd.
         """
+
+        print(f"✨ CDK Factory v{__version__}")
         instance = cls(script_dir=script_dir)
         env_choices = list(instance.environments.keys())
 
