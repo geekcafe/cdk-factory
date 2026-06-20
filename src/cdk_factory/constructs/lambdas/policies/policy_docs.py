@@ -129,11 +129,18 @@ class PolicyDocuments:
         Uses a prefix + hash approach to guarantee uniqueness while maintaining
         readability.  Output is always alphanumeric and exactly 20 characters
         (12-char prefix + 8-char MD5 hex suffix).
+
+        IAM requires SIDs to match [0-9A-Za-z]*, so all non-alphanumeric
+        characters are stripped after applying extra_strip replacements.
         """
         cleaned = resource_name.replace("-", "").replace("_", "")
         if extra_strip:
             for char, replacement in extra_strip.items():
                 cleaned = cleaned.replace(char, replacement)
+
+        # Strip any remaining non-alphanumeric characters (e.g., *, /, .)
+        # to satisfy IAM SID constraint [0-9A-Za-z]*
+        cleaned = re.sub(r"[^0-9A-Za-z]", "", cleaned)
 
         hash_suffix = hashlib.md5(cleaned.encode()).hexdigest()[:8]
         prefix = cleaned[:12]
