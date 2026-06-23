@@ -9,8 +9,9 @@ import hashlib
 import os
 import re
 
+import cdk_nag
 import aws_cdk
-from aws_cdk import aws_iam as iam, Validations, Acknowledgment
+from aws_cdk import aws_iam as iam
 from constructs import Construct
 from cdk_factory.configurations.resources.resource_types import ResourceTypes
 from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
@@ -181,15 +182,19 @@ class PolicyDocuments:
             statements=statements,
         )
 
-        Validations.of(policy).acknowledge(
-            Acknowledgment(
-                id="AwsSolutions-IAM5[Resource::arn:aws:logs:*:*:*]",
-                reason="Logging permissions require broad log group access",
-            ),
-            Acknowledgment(
-                id="AwsSolutions-IAM5[Resource::*]",
-                reason="CloudWatch PutMetricData and X-Ray require wildcard resource",
-            ),
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            construct=policy,
+            suppressions=[
+                cdk_nag.NagPackSuppression(
+                    id="AwsSolutions-IAM5",
+                    reason="Not sure how to get rid of these errors",
+                    applies_to=[
+                        "Resource::arn:aws:logs:*:*:*",  # logging
+                        "Resource::*",  # put metric
+                    ],
+                )
+            ],
+            apply_to_children=True,
         )
 
         return policy
@@ -241,19 +246,17 @@ class PolicyDocuments:
                     if nag is None:
                         continue
 
-                    resources = nag.get("resources", [])
-                    reason = nag["reason"]
-                    if resources:
-                        acknowledgments = [
-                            Acknowledgment(
-                                id=f"{nag['id']}[{res}]",
-                                reason=reason,
+                    cdk_nag.NagSuppressions.add_resource_suppressions(
+                        construct=policy,
+                        suppressions=[
+                            cdk_nag.NagPackSuppression(
+                                id=nag["id"],
+                                reason=nag["reason"],
+                                applies_to=nag["resources"],
                             )
-                            for res in resources
-                        ]
-                    else:
-                        acknowledgments = [Acknowledgment(id=nag["id"], reason=reason)]
-                    Validations.of(policy).acknowledge(*acknowledgments)
+                        ],
+                        apply_to_children=True,
+                    )
 
         return None
 

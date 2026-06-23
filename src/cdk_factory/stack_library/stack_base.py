@@ -5,8 +5,6 @@ import cdk_nag
 from aws_cdk import (
     NestedStack,
     Stack,
-    Validations,
-    Acknowledgment,
 )
 from aws_lambda_powertools import Logger
 from constructs import Construct, IConstruct
@@ -45,7 +43,7 @@ class StackStandards:
 
     @staticmethod
     def set_standards(scope: Construct):
-        Validations.of(scope).add_plugins(cdk_nag.AwsSolutionsChecks(verbose=True))
+        aws_cdk.Aspects.of(scope).add(cdk_nag.AwsSolutionsChecks(verbose=True))
         company_name = os.getenv("COMPANY_NAME", "NA")
         workload_name = os.getenv("WORKLOAD_NAME", "NA")
         aws_cdk.Tags.of(scope).add("Company", company_name)
@@ -84,17 +82,24 @@ class StackStandards:
             )
             if not construct:
                 return
-            cdk_nag_suppressions = [
-                Acknowledgment(
-                    id="AwsSolutions-IAM4",
-                    reason="The CDK Internal resource does not need nag rules.",
-                ),
-                Acknowledgment(
-                    id="AwsSolutions-IAM5[Resource::*]",
-                    reason="The CDK Internal resource does not need nag rules.",
-                ),
-            ]
-            Validations.of(construct).acknowledge(*cdk_nag_suppressions)
+            cdk_nag.NagSuppressions.add_resource_suppressions(
+                construct=construct,
+                suppressions=[
+                    cdk_nag.NagPackSuppression(
+                        id="AwsSolutions-IAM4",
+                        reason="The CDK Internal resource does not need nag rules.",
+                        applies_to=[
+                            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                        ],
+                    ),
+                    cdk_nag.NagPackSuppression(
+                        id="AwsSolutions-IAM5",
+                        reason="The CDK Internal resource does not need nag rules.",
+                        applies_to=["Resource::*"],
+                    ),
+                ],
+                apply_to_children=True,
+            )
         except Exception as e:  # pylint: disable=w0718
             logger.warning(
                 {

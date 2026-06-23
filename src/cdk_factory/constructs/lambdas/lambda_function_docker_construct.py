@@ -5,7 +5,8 @@ MIT License.  See Project Root for the license information.
 """
 
 import os
-from aws_cdk import aws_ecr, aws_lambda, Validations, Acknowledgment
+import cdk_nag
+from aws_cdk import aws_ecr, aws_lambda
 from aws_cdk import aws_iam as iam
 from aws_lambda_powertools import Logger
 from constructs import Construct
@@ -306,13 +307,20 @@ class LambdaDockerConstruct(Construct):
         # fixme
         # Add suppressions
 
-        Validations.of(role).acknowledge(
-            Acknowledgment(
-                id="AwsSolutions-IAM4",
-                reason="The AWSLambdaBasicExecutionRole is required for the basic Lambda execution and is managed by AWS.",
-            ),
-            Acknowledgment(
-                id="AwsSolutions-IAM5[Resource::*]",
-                reason="The wildcard permissions are necessary for the Lambda function to access the bucket.",
-            ),
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            role,
+            suppressions=[
+                {
+                    "id": "AwsSolutions-IAM4",
+                    "reason": "The AWSLambdaBasicExecutionRole is required for the basic Lambda execution and is managed by AWS.",
+                    "appliesTo": [
+                        "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                    ],
+                },
+                {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": "The wildcard permissions are necessary for the Lambda function to access the bucket.",
+                    "appliesTo": ["Resource::*"],
+                },
+            ],
         )

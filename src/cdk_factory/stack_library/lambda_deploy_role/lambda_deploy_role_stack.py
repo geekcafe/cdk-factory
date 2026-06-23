@@ -33,7 +33,8 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
-from aws_cdk import aws_iam as iam, Validations, Acknowledgment
+import cdk_nag
+from aws_cdk import aws_iam as iam
 from constructs import Construct
 from aws_lambda_powertools import Logger
 
@@ -182,15 +183,19 @@ class LambdaDeployRoleStack(IStack, StandardizedSsmMixin):
         # Suppress cdk-nag wildcard findings — the wildcards are intentionally
         # scoped to a prefix and needed because Lambda functions are discovered
         # dynamically via SSM at deploy time.
-        Validations.of(self.role).acknowledge(
-            Acknowledgment(
-                id="AwsSolutions-IAM5",
-                reason=(
-                    "Wildcard resources are scoped to configured prefixes. "
-                    "Lambda functions are discovered dynamically via SSM "
-                    "by the Lambda Image Updater."
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.role,
+            [
+                cdk_nag.NagPackSuppression(
+                    id="AwsSolutions-IAM5",
+                    reason=(
+                        "Wildcard resources are scoped to configured prefixes. "
+                        "Lambda functions are discovered dynamically via SSM "
+                        "by the Lambda Image Updater."
+                    ),
                 ),
-            ),
+            ],
+            apply_to_children=True,
         )
 
         # Export role details to SSM
