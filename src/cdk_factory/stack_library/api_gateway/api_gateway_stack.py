@@ -1731,11 +1731,18 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             )
 
         if certificate:
+            # Determine security policy for the custom domain
+            security_policy_str = domain_config.get("security_policy", "TLS_1_2")
+            security_policy = apigateway.SecurityPolicy.TLS_1_2
+            if security_policy_str == "TLS_1_0":
+                security_policy = apigateway.SecurityPolicy.TLS_1_0
+
             api_gateway_domain_resource = apigateway.DomainName(
                 self,
                 f"ApiCustomDomain{suffix}",
                 domain_name=record_name,
                 certificate=certificate,
+                security_policy=security_policy,
             )
 
             apigateway.BasePathMapping(
