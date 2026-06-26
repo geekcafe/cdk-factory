@@ -553,20 +553,26 @@ class CloudFrontDistributionConstruct(Construct):
 
     def __update_bucket_policy(self, distribution: cloudfront.Distribution):
         """
-        Update the bucket policy to allow access to the distribution
+        Update the bucket policy to allow access to the distribution.
+
+        Only needed for OAI (legacy). When using OAC,
+        S3BucketOrigin.with_origin_access_control() automatically adds the
+        required bucket policy statement, so creating a second BucketPolicy
+        resource would cause a 409 conflict (concurrent PutBucketPolicy calls
+        on the same bucket during CloudFormation deployment).
         """
+        if self.use_oac:
+            # OAC automatically manages the bucket policy via
+            # S3BucketOrigin.with_origin_access_control() — skip to avoid
+            # duplicate AWS::S3::BucketPolicy resources on the same bucket.
+            return
+
         bucket_policy = s3.BucketPolicy(
             self,
             id="CloudFrontBucketPolicy",
             bucket=self.source_bucket,
         )
-
-        if self.use_oac:
-            bucket_policy.document.add_statements(
-                self.__get_policy_statement_for_oac(distribution=distribution)
-            )
-        else:
-            bucket_policy.document.add_statements(self.__get_policy_statement_for_oai())
+        bucket_policy.document.add_statements(self.__get_policy_statement_for_oai())
 
     def __get_policy_statement_for_oai(self) -> iam.PolicyStatement:
         """
