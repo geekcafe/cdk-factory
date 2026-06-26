@@ -94,6 +94,96 @@ class DockerVersionLocker:
             json.dump(entries, f, indent=4)
             f.write("\n")
 
+    # --- Pin file validation ---
+
+    def validate_pin_entry(self, entry: Any, index: int) -> Optional[Dict[str, str]]:
+        """
+        Validate a single pin file entry.
+
+        Args:
+            entry: The raw entry from the JSON array.
+            index: The 0-based index in the array (for error reporting).
+
+        Returns:
+            The validated entry dict if valid, or None if invalid.
+            Logs a warning for invalid entries with index and field details.
+        """
+        if not isinstance(entry, dict):
+            logger.warning("Pin entry at index %d is not a dict, skipping", index)
+            return None
+
+        ecr = entry.get("ecr")
+        if not isinstance(ecr, str) or not ecr:
+            logger.warning(
+                "Pin entry at index %d has invalid 'ecr' field, skipping", index
+            )
+            return None
+
+        tag = entry.get("tag")
+        if not isinstance(tag, str) or not tag:
+            logger.warning(
+                "Pin entry at index %d has invalid 'tag' field, skipping", index
+            )
+            return None
+
+        return {"ecr": ecr, "tag": tag}
+
+    def load_pin_file(self) -> List[Dict[str, str]]:
+        """
+        Load and validate the pin file from the same directory as the locked versions file.
+
+        Returns:
+            List of validated pin entries (each with 'ecr' and 'tag' keys).
+            Returns empty list if file doesn't exist, contains invalid JSON,
+            or has no valid entries.
+        """
+        pin_file_path = os.path.join(
+            os.path.dirname(self.locked_versions_path),
+            ".docker-pinned-versions.json",
+        )
+
+        if not os.path.isfile(pin_file_path):
+            return []
+
+        try:
+            with open(pin_file_path, "r") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.warning("Pin file %s contains invalid JSON: %s", pin_file_path, e)
+            return []
+
+        if not isinstance(data, list):
+            logger.warning("Pin file %s is not a JSON array, skipping", pin_file_path)
+            return []
+
+        # Validate each entry and collect valid ones
+        valid_entries: List[Dict[str, str]] = []
+        seen_ecr: set = set()
+
+        for index, entry in enumerate(data):
+            validated = self.validate_pin_entry(entry, index)
+            if validated is None:
+                continue
+            # Deduplicate by ecr field — first match wins
+            if validated["ecr"] in seen_ecr:
+                continue
+            seen_ecr.add(validated["ecr"])
+            valid_entries.append(validated)
+
+        if valid_entries:
+            pinned_count = sum(1 for e in valid_entries if e["tag"].lower() != "auto")
+            auto_count = len(valid_entries) - pinned_count
+            parts = []
+            if pinned_count:
+                parts.append(f"{pinned_count} pinned")
+            if auto_count:
+                parts.append(f"{auto_count} auto (resolve from ECR)")
+            print(
+                f"📌 Loaded {len(valid_entries)} pin entries ({', '.join(parts)}) from {pin_file_path}"
+            )
+
+        return valid_entries
+
     # --- Core resolution ---
 
     def resolve_latest_version(self, ecr_client: Any, repo_name: str) -> Optional[str]:
@@ -450,6 +540,16 @@ class DockerVersionLocker:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
+        # --- Load pin file ---
+        pin_entries = self.load_pin_file()
+        # "auto" means resolve from ECR (not pinned)
+        pinned_repos: Dict[str, str] = {
+            p["ecr"]: p["tag"] for p in pin_entries if p["tag"].lower() != "auto"
+        }
+        auto_repos: set[str] = {
+            p["ecr"] for p in pin_entries if p["tag"].lower() == "auto"
+        }
+
         # Collect unique ECR repos
         ecr_repos: set[str] = set()
         for entry in entries:
@@ -461,79 +561,96 @@ class DockerVersionLocker:
             print("No ECR repositories found in locked versions file.")
             return 0
 
-        # Create ECR client (with credential validation)
-        try:
-            session = boto3.Session(profile_name=self.profile, region_name=self.region)
-            ecr_client = session.client("ecr")
-            # Validate credentials by making a lightweight call
-            ecr_client.describe_registry()
-        except ClientError as e:
-            error_code = e.response["Error"]["Code"]
-            if error_code in (
-                "ExpiredTokenException",
-                "UnrecognizedClientException",
-            ):
-                print(
-                    f"\n❌ AWS credentials expired or invalid for profile '{self.profile}'.",
-                    file=sys.stderr,
-                )
-                print(
-                    f"   Run: aws sso login --profile {self.profile}",
-                    file=sys.stderr,
-                )
-                return 2
-            raise
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "token" in error_msg and (
-                "expired" in error_msg or "refresh failed" in error_msg
-            ):
-                print(
-                    f"\n❌ SSO token expired for profile '{self.profile}'.",
-                    file=sys.stderr,
-                )
-                print(
-                    f"   Run: aws sso login --profile {self.profile}",
-                    file=sys.stderr,
-                )
-                return 2
-            if (
-                "could not find profile" in error_msg
-                or "NoCredentialProviders" in error_msg
-            ):
-                print(
-                    f"\n❌ AWS profile '{self.profile}' not found or has no credentials.",
-                    file=sys.stderr,
-                )
-                print(
-                    f"   Check your ~/.aws/config and run: aws sso login --profile {self.profile}",
-                    file=sys.stderr,
-                )
-                return 2
-            print(f"\n❌ Failed to create AWS session: {e}", file=sys.stderr)
-            return 2
+        # Partition repos into pinned vs unresolved (auto entries resolve from ECR)
+        pinned_set = ecr_repos & set(pinned_repos.keys())
+        unresolved_set = ecr_repos - pinned_set
 
-        # Resolve latest version for each unique repo
-        print(f"Resolving versions for {len(ecr_repos)} ECR repositories...\n")
+        # Resolve versions
         repo_versions: Dict[str, str] = {}
         failed_repos: List[str] = []
 
-        for repo in sorted(ecr_repos):
-            print(f"  {repo}...", end=" ", flush=True)
-            version = self.resolve_latest_version(ecr_client, repo)
-            if version:
-                repo_versions[repo] = version
-                print(f"→ {version}")
-            else:
-                failed_repos.append(repo)
-                print("→ SKIPPED")
+        # Add pinned repos to repo_versions
+        for repo in sorted(pinned_set):
+            repo_versions[repo] = pinned_repos[repo]
+            print(f"  {repo}... → {pinned_repos[repo]} 📌 PINNED")
 
-        # Update entries
+        # Only create ECR client and resolve if there are non-pinned repos
+        if unresolved_set:
+            # Create ECR client (with credential validation)
+            try:
+                session = boto3.Session(
+                    profile_name=self.profile, region_name=self.region
+                )
+                ecr_client = session.client("ecr")
+                # Validate credentials by making a lightweight call
+                ecr_client.describe_registry()
+            except ClientError as e:
+                error_code = e.response["Error"]["Code"]
+                if error_code in (
+                    "ExpiredTokenException",
+                    "UnrecognizedClientException",
+                ):
+                    print(
+                        f"\n❌ AWS credentials expired or invalid for profile '{self.profile}'.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"   Run: aws sso login --profile {self.profile}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                raise
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "token" in error_msg and (
+                    "expired" in error_msg or "refresh failed" in error_msg
+                ):
+                    print(
+                        f"\n❌ SSO token expired for profile '{self.profile}'.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"   Run: aws sso login --profile {self.profile}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                if (
+                    "could not find profile" in error_msg
+                    or "NoCredentialProviders" in error_msg
+                ):
+                    print(
+                        f"\n❌ AWS profile '{self.profile}' not found or has no credentials.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"   Check your ~/.aws/config and run: aws sso login --profile {self.profile}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                print(f"\n❌ Failed to create AWS session: {e}", file=sys.stderr)
+                return 2
+
+            # Resolve latest version for each non-pinned repo
+            print(f"Resolving versions for {len(unresolved_set)} ECR repositories...\n")
+
+            for repo in sorted(unresolved_set):
+                print(f"  {repo}...", end=" ", flush=True)
+                version = self.resolve_latest_version(ecr_client, repo)
+                if version:
+                    repo_versions[repo] = version
+                    print(f"→ {version}")
+                else:
+                    failed_repos.append(repo)
+                    print("→ SKIPPED")
+
+        # Update entries with merged repo_versions (pinned + ECR-resolved)
         updated = self.update_entries(entries, repo_versions)
 
         # Summary
+        resolved_count = len(repo_versions) - len(pinned_set)
         print(
-            f"\n📋 Summary: {len(repo_versions)} repos resolved, "
+            f"\n📋 Summary: {resolved_count} repos resolved, "
+            f"{len(pinned_set)} pinned, "
             f"{updated} entries updated"
         )
         if failed_repos:

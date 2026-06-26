@@ -3,6 +3,7 @@ Unit tests for DockerVersionLocker utility.
 """
 
 import json
+import logging
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -1168,3 +1169,879 @@ class TestPreservationProperty:
             f"VIOLATION: subdirectory names {sub_names} not subset of "
             f"parent names {parent_names}"
         )
+
+
+class TestValidatePinEntry:
+    """Tests for validate_pin_entry.
+
+    Validates: Requirements 6.1, 6.2
+    """
+
+    def _make_locker(self):
+        return DockerVersionLocker(
+            locked_versions_path="/tmp/test.json", profile="test", region="us-east-1"
+        )
+
+    def test_valid_entry_returns_entry(self):
+        """Valid entry with non-empty ecr and tag strings returns the entry."""
+        locker = self._make_locker()
+        entry = {"ecr": "repo/core", "tag": "1.2.3"}
+        result = locker.validate_pin_entry(entry, 0)
+        assert result == {"ecr": "repo/core", "tag": "1.2.3"}
+
+    def test_missing_ecr_field_returns_none(self, caplog):
+        """Entry missing the ecr field returns None with warning."""
+        locker = self._make_locker()
+        entry = {"tag": "1.0.0"}
+        result = locker.validate_pin_entry(entry, 2)
+        assert result is None
+        assert "index 2" in caplog.text
+        assert "ecr" in caplog.text
+
+    def test_missing_tag_field_returns_none(self, caplog):
+        """Entry missing the tag field returns None with warning."""
+        locker = self._make_locker()
+        entry = {"ecr": "repo/core"}
+        result = locker.validate_pin_entry(entry, 3)
+        assert result is None
+        assert "index 3" in caplog.text
+        assert "tag" in caplog.text
+
+    def test_empty_string_ecr_returns_none(self, caplog):
+        """Entry with empty string ecr returns None."""
+        locker = self._make_locker()
+        entry = {"ecr": "", "tag": "1.0.0"}
+        result = locker.validate_pin_entry(entry, 0)
+        assert result is None
+        assert "ecr" in caplog.text
+
+    def test_empty_string_tag_returns_none(self, caplog):
+        """Entry with empty string tag returns None."""
+        locker = self._make_locker()
+        entry = {"ecr": "repo/core", "tag": ""}
+        result = locker.validate_pin_entry(entry, 0)
+        assert result is None
+        assert "tag" in caplog.text
+
+    @pytest.mark.parametrize("ecr_value", [123, None, ["repo/core"]])
+    def test_non_string_ecr_returns_none(self, ecr_value, caplog):
+        """Entry with non-string ecr (int, None, list) returns None."""
+        locker = self._make_locker()
+        entry = {"ecr": ecr_value, "tag": "1.0.0"}
+        result = locker.validate_pin_entry(entry, 0)
+        assert result is None
+        assert "ecr" in caplog.text
+
+    @pytest.mark.parametrize("entry_value", ["just a string", [1, 2, 3], None])
+    def test_non_dict_entry_returns_none(self, entry_value, caplog):
+        """Non-dict entry (string, list, None) returns None."""
+        locker = self._make_locker()
+        result = locker.validate_pin_entry(entry_value, 1)
+        assert result is None
+        assert "index 1" in caplog.text
+        assert "not a dict" in caplog.text
+
+
+class TestLoadPinFile:
+    """Tests for load_pin_file().
+
+    Validates: Requirements 1.1, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 6.1, 6.2, 6.3, 6.4
+    """
+
+    def test_file_does_not_exist_returns_empty_list(self, tmp_path):
+        """Return empty list silently when pin file doesn't exist."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        result = locker.load_pin_file()
+        assert result == []
+
+    def test_valid_json_array_returns_validated_entries(self, tmp_path):
+        """Load a valid JSON array and return validated entries."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "3.3.29"},
+            {"ecr": "repo/files", "tag": "1.0.0"},
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        result = locker.load_pin_file()
+        assert result == pin_entries
+
+    def test_invalid_json_warns_returns_empty_list(self, tmp_path, caplog):
+        """Warn and return empty list when pin file contains invalid JSON."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text("{not valid json!!")
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        with caplog.at_level(logging.WARNING):
+            result = locker.load_pin_file()
+
+        assert result == []
+        assert "invalid JSON" in caplog.text
+
+    def test_json_object_not_array_warns_returns_empty_list(self, tmp_path, caplog):
+        """Warn and return empty list when pin file is a JSON object, not array."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps({"ecr": "repo/core", "tag": "1.0.0"}))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        with caplog.at_level(logging.WARNING):
+            result = locker.load_pin_file()
+
+        assert result == []
+        assert "not a JSON array" in caplog.text
+
+    def test_mixed_valid_invalid_entries_returns_only_valid(self, tmp_path, caplog):
+        """Return only valid entries and warn about invalid ones."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "3.3.29"},  # valid
+            {"ecr": "", "tag": "1.0.0"},  # invalid: empty ecr
+            "not a dict",  # invalid: not a dict
+            {"ecr": "repo/files", "tag": "2.0.0"},  # valid
+            {"ecr": "repo/other"},  # invalid: missing tag
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        with caplog.at_level(logging.WARNING):
+            result = locker.load_pin_file()
+
+        assert len(result) == 2
+        assert result[0] == {"ecr": "repo/core", "tag": "3.3.29"}
+        assert result[1] == {"ecr": "repo/files", "tag": "2.0.0"}
+        # Should have warnings for the 3 invalid entries
+        assert caplog.text.count("skipping") >= 3
+
+    def test_duplicate_ecr_entries_first_match_wins(self, tmp_path):
+        """First match wins when duplicate ecr entries exist."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "1.0.0"},
+            {"ecr": "repo/core", "tag": "2.0.0"},
+            {"ecr": "repo/core", "tag": "3.0.0"},
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        result = locker.load_pin_file()
+
+        assert len(result) == 1
+        assert result[0] == {"ecr": "repo/core", "tag": "1.0.0"}
+
+    def test_all_entries_invalid_returns_empty_list(self, tmp_path, caplog):
+        """Return empty list when all entries fail validation."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_entries = [
+            {"ecr": "", "tag": ""},
+            "just a string",
+            {"ecr": 123, "tag": "1.0.0"},
+            None,
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        with caplog.at_level(logging.WARNING):
+            result = locker.load_pin_file()
+
+        assert result == []
+
+    def test_prints_count_message_when_entries_loaded(self, tmp_path, capsys):
+        """Print count message when valid entries are loaded."""
+        locked_versions_path = str(tmp_path / ".docker-locked-versions.json")
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "3.3.29"},
+            {"ecr": "repo/files", "tag": "1.0.0"},
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=locked_versions_path,
+            profile="test",
+            region="us-east-1",
+        )
+        locker.load_pin_file()
+
+        captured = capsys.readouterr()
+        assert "2 pin entries" in captured.out
+        assert "2 pinned" in captured.out
+
+
+class TestRunWithPins:
+    """Tests for run() method with pin file integration.
+
+    Validates: Requirements 3.1, 3.2, 3.3, 3.4, 4.1, 4.3, 7.1, 7.2, 7.3
+    """
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_pinned_repos_get_pin_tag_non_pinned_get_ecr_tag(
+        self, mock_session_cls, tmp_path
+    ):
+        """Pinned repos use pin tag; non-pinned repos use ECR-resolved tag.
+
+        Validates: Requirements 3.1, 3.2, 4.1
+        """
+        # Setup locked versions with entries from two repos
+        entries = [
+            {"name": "svc-a", "tag": "", "ecr": "repo/core"},
+            {"name": "svc-b", "tag": "", "ecr": "repo/files"},
+            {"name": "svc-c", "tag": "", "ecr": "repo/core"},
+        ]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # Pin only repo/core
+        pin_entries = [{"ecr": "repo/core", "tag": "1.5.0"}]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        # Mock ECR client to resolve repo/files
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_ecr = MagicMock()
+        mock_session.client.return_value = mock_ecr
+        mock_ecr.describe_registry.return_value = {}
+        mock_ecr.describe_images.return_value = {
+            "imageDetails": [{"imageTags": ["latest", "2.0.0"]}]
+        }
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test"
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        result = json.loads(locked_path.read_text())
+        # repo/core entries get the pinned tag
+        assert result[0]["tag"] == "1.5.0"
+        assert result[2]["tag"] == "1.5.0"
+        # repo/files entry gets ECR-resolved tag
+        assert result[1]["tag"] == "2.0.0"
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_all_repos_pinned_no_ecr_client_created(self, mock_session_cls, tmp_path):
+        """When all repos are pinned, no ECR client is created (Session not called).
+
+        Validates: Requirements 3.4, 4.3
+        """
+        entries = [
+            {"name": "svc-a", "tag": "", "ecr": "repo/core"},
+            {"name": "svc-b", "tag": "", "ecr": "repo/files"},
+        ]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # Pin both repos
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "1.0.0"},
+            {"ecr": "repo/files", "tag": "2.0.0"},
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test"
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        # boto3.Session should never be instantiated
+        mock_session_cls.assert_not_called()
+        # Verify tags were applied
+        result = json.loads(locked_path.read_text())
+        assert result[0]["tag"] == "1.0.0"
+        assert result[1]["tag"] == "2.0.0"
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_pin_references_unknown_repo_skipped_silently(
+        self, mock_session_cls, tmp_path
+    ):
+        """Pin referencing an ECR repo not in locked versions is skipped silently.
+
+        Validates: Requirements 4.3
+        """
+        entries = [
+            {"name": "svc-a", "tag": "", "ecr": "repo/core"},
+        ]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # Pin includes a repo that doesn't exist in locked versions
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "1.0.0"},
+            {"ecr": "repo/nonexistent", "tag": "9.9.9"},
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test"
+        )
+        exit_code = locker.run()
+
+        # Should succeed without error
+        assert exit_code == 0
+        result = json.loads(locked_path.read_text())
+        assert result[0]["tag"] == "1.0.0"
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_seed_mode_with_pins_applied_after_merge(self, mock_session_cls, tmp_path):
+        """In seed mode, pins are applied after the merge step.
+
+        Validates: Requirements 7.1, 7.2, 7.3
+        """
+        # Setup config directory with two Docker lambdas
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+        config_a = {
+            "name": "svc-a",
+            "docker": {"image": True},
+            "ecr": {"name": "repo/core"},
+        }
+        config_b = {
+            "name": "svc-b",
+            "docker": {"image": True},
+            "ecr": {"name": "repo/files"},
+        }
+        (config_dir / "svc-a.json").write_text(json.dumps(config_a))
+        (config_dir / "svc-b.json").write_text(json.dumps(config_b))
+
+        locked_path = tmp_path / ".docker-locked-versions.json"
+
+        # Pin repo/core — should get applied after seed merge
+        pin_entries = [{"ecr": "repo/core", "tag": "5.0.0"}]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        # Mock ECR for the non-pinned repo
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_ecr = MagicMock()
+        mock_session.client.return_value = mock_ecr
+        mock_ecr.describe_registry.return_value = {}
+        mock_ecr.describe_images.return_value = {
+            "imageDetails": [{"imageTags": ["latest", "3.0.0"]}]
+        }
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path),
+            profile="test",
+            seed=True,
+            config_dir=str(config_dir),
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        result = json.loads(locked_path.read_text())
+        result_by_name = {e["name"]: e for e in result}
+        # repo/core should have the pinned tag
+        assert result_by_name["svc-a"]["tag"] == "5.0.0"
+        # repo/files should have the ECR-resolved tag
+        assert result_by_name["svc-b"]["tag"] == "3.0.0"
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_pin_file_absent_normal_ecr_resolution_unchanged(
+        self, mock_session_cls, tmp_path
+    ):
+        """When pin file is absent, normal ECR resolution proceeds unchanged.
+
+        Validates: Requirements 3.3, 7.1
+        """
+        entries = [
+            {"name": "svc-a", "tag": "", "ecr": "repo/core"},
+            {"name": "svc-b", "tag": "", "ecr": "repo/files"},
+        ]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # No pin file created — it doesn't exist
+
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+        mock_ecr = MagicMock()
+        mock_session.client.return_value = mock_ecr
+        mock_ecr.describe_registry.return_value = {}
+        mock_ecr.describe_images.side_effect = [
+            {"imageDetails": [{"imageTags": ["latest", "3.3.29"]}]},
+            {"imageDetails": [{"imageTags": ["latest", "1.0.0"]}]},
+        ]
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test"
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        result = json.loads(locked_path.read_text())
+        # Both repos resolved from ECR
+        tags = {e["tag"] for e in result}
+        assert "3.3.29" in tags
+        assert "1.0.0" in tags
+
+
+class TestRunOutputWithPins:
+    """Tests for output formatting when pins are present.
+
+    Validates: Requirements 5.1, 5.2, 5.3
+    """
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_pinned_repo_output_contains_pin_indicator(
+        self, mock_session_cls, tmp_path, capsys
+    ):
+        """Output line for pinned repo contains '📌 PINNED'.
+
+        Validates: Requirements 5.1
+        """
+        # Setup locked versions with one repo
+        entries = [{"name": "svc-a", "tag": "", "ecr": "repo/core"}]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # Setup pin file pinning that repo
+        pin_entries = [{"ecr": "repo/core", "tag": "1.2.3"}]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "📌 PINNED" in captured.out
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_summary_line_includes_pinned_count(
+        self, mock_session_cls, tmp_path, capsys
+    ):
+        """Summary line matches format with pinned count.
+
+        Validates: Requirements 5.2
+        """
+        # Setup locked versions with two repos
+        entries = [
+            {"name": "svc-a", "tag": "", "ecr": "repo/core"},
+            {"name": "svc-b", "tag": "", "ecr": "repo/files"},
+        ]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # Pin one repo, let the other resolve from ECR
+        pin_entries = [{"ecr": "repo/core", "tag": "1.2.3"}]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        # Mock ECR for the non-pinned repo
+        mock_ecr = MagicMock()
+        mock_ecr.describe_images.return_value = {
+            "imageDetails": [
+                {"imageTags": ["latest", "2.0.0"], "imageDigest": "sha256:b"}
+            ]
+        }
+        mock_session_cls.return_value.client.return_value = mock_ecr
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        # Summary line should contain: "1 repos resolved, 1 pinned, 2 entries updated"
+        assert "📋 Summary:" in captured.out
+        assert "1 pinned" in captured.out
+        assert "1 repos resolved" in captured.out
+        assert "2 entries updated" in captured.out
+
+    @patch("cdk_factory.utilities.docker_version_locker.boto3.Session")
+    def test_dry_run_with_pins_shows_pinned_indicator_and_json(
+        self, mock_session_cls, tmp_path, capsys
+    ):
+        """Dry-run with pins shows '📌 PINNED' and includes pinned tags in JSON output.
+
+        Validates: Requirements 5.3
+        """
+        # Setup locked versions with one repo
+        entries = [{"name": "svc-a", "tag": "", "ecr": "repo/core"}]
+        locked_path = tmp_path / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps(entries, indent=4) + "\n")
+
+        # Pin that repo
+        pin_entries = [{"ecr": "repo/core", "tag": "4.5.6"}]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path),
+            profile="test",
+            region="us-east-1",
+            dry_run=True,
+        )
+        exit_code = locker.run()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        # Should show PINNED indicator
+        assert "📌 PINNED" in captured.out
+        # Should show dry-run JSON
+        assert "[DRY RUN]" in captured.out
+        # The JSON output should contain the pinned tag value
+        assert "4.5.6" in captured.out
+
+
+class TestPinFilePathDerivation:
+    """Tests for pin file path derivation from locked_versions_path.
+
+    The pin file path is always derived as:
+        os.path.join(os.path.dirname(locked_versions_path), ".docker-pinned-versions.json")
+
+    This means the pin file always resolves to the same directory as the locked
+    versions file with the fixed name `.docker-pinned-versions.json`.
+
+    Validates: Requirements 1.2, 1.3, 2.1
+    """
+
+    def test_pin_file_in_same_directory_as_locked_versions(self, tmp_path):
+        """When locked_versions_path is /some/dir/.docker-locked-versions.json,
+        pin file is looked for at /some/dir/.docker-pinned-versions.json.
+
+        Validates: Requirements 1.2, 1.3, 2.1
+        """
+        some_dir = tmp_path / "some" / "dir"
+        some_dir.mkdir(parents=True)
+
+        locked_path = some_dir / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps([]) + "\n")
+
+        # Create a pin file in the SAME directory
+        pin_entries = [{"ecr": "repo/core", "tag": "1.0.0"}]
+        pin_file = some_dir / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        result = locker.load_pin_file()
+
+        # Should find and load the pin file from the same directory
+        assert len(result) == 1
+        assert result[0] == {"ecr": "repo/core", "tag": "1.0.0"}
+
+    def test_pin_file_deep_nested_path(self, tmp_path):
+        """When locked_versions_path is /deep/nested/path/locked.json,
+        pin file is at /deep/nested/path/.docker-pinned-versions.json.
+
+        Validates: Requirements 1.2, 1.3, 2.1
+        """
+        deep_dir = tmp_path / "deep" / "nested" / "path"
+        deep_dir.mkdir(parents=True)
+
+        locked_path = deep_dir / "locked.json"
+        locked_path.write_text(json.dumps([]) + "\n")
+
+        # Create a pin file in the same deep nested directory
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "2.5.0"},
+            {"ecr": "repo/files", "tag": "1.2.3"},
+        ]
+        pin_file = deep_dir / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        result = locker.load_pin_file()
+
+        # Should find and load the pin file from the deep nested path
+        assert len(result) == 2
+        assert result[0] == {"ecr": "repo/core", "tag": "2.5.0"}
+        assert result[1] == {"ecr": "repo/files", "tag": "1.2.3"}
+
+    def test_pin_file_when_locked_versions_is_just_filename(
+        self, tmp_path, monkeypatch
+    ):
+        """When locked_versions_path is just a filename (no directory),
+        pin file is looked for in the current working directory.
+
+        Validates: Requirements 1.2, 2.1
+        """
+        # Change working directory to tmp_path so that dirname("locked.json") == ""
+        # resolves relative to cwd
+        monkeypatch.chdir(tmp_path)
+
+        # Create a pin file in tmp_path (the cwd)
+        pin_entries = [{"ecr": "repo/alpha", "tag": "0.1.0"}]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        # Use just a filename — dirname will be ""
+        locker = DockerVersionLocker(
+            locked_versions_path="locked.json", profile="test", region="us-east-1"
+        )
+        result = locker.load_pin_file()
+
+        # Should find pin file in current directory (since dirname("locked.json") == "")
+        assert len(result) == 1
+        assert result[0] == {"ecr": "repo/alpha", "tag": "0.1.0"}
+
+    def test_pin_file_in_different_directory_not_found(self, tmp_path):
+        """Pin file in a DIFFERENT directory from locked versions is NOT found.
+
+        Validates: Requirements 1.2, 1.3, 2.1
+        """
+        correct_dir = tmp_path / "correct"
+        correct_dir.mkdir()
+        wrong_dir = tmp_path / "wrong"
+        wrong_dir.mkdir()
+
+        locked_path = correct_dir / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps([]) + "\n")
+
+        # Create pin file in the WRONG directory (not where locked versions is)
+        pin_entries = [{"ecr": "repo/core", "tag": "9.9.9"}]
+        pin_file = wrong_dir / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        result = locker.load_pin_file()
+
+        # Should NOT find the pin file since it's in a different directory
+        assert result == []
+
+    def test_pin_file_name_is_always_docker_pinned_versions(self, tmp_path):
+        """Regardless of locked versions filename, pin file is always
+        `.docker-pinned-versions.json`.
+
+        Validates: Requirements 1.3, 2.1
+        """
+        some_dir = tmp_path / "configs" / "pipelines"
+        some_dir.mkdir(parents=True)
+
+        # Use a non-standard locked versions filename
+        locked_path = some_dir / "my-custom-locked-file.json"
+        locked_path.write_text(json.dumps([]) + "\n")
+
+        # The pin file must still be named .docker-pinned-versions.json
+        pin_entries = [{"ecr": "repo/core", "tag": "3.0.0"}]
+        pin_file = some_dir / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        result = locker.load_pin_file()
+
+        assert len(result) == 1
+        assert result[0] == {"ecr": "repo/core", "tag": "3.0.0"}
+
+    def test_pin_file_with_different_name_not_loaded(self, tmp_path):
+        """A file with a different name in the same directory is NOT loaded as pin file.
+
+        Validates: Requirements 1.3
+        """
+        some_dir = tmp_path / "configs"
+        some_dir.mkdir()
+
+        locked_path = some_dir / ".docker-locked-versions.json"
+        locked_path.write_text(json.dumps([]) + "\n")
+
+        # Create a file with a different name (not .docker-pinned-versions.json)
+        wrong_name_file = some_dir / "pinned-versions.json"
+        wrong_name_file.write_text(json.dumps([{"ecr": "repo/core", "tag": "1.0.0"}]))
+
+        locker = DockerVersionLocker(
+            locked_versions_path=str(locked_path), profile="test", region="us-east-1"
+        )
+        result = locker.load_pin_file()
+
+        # Should not find it — only .docker-pinned-versions.json is recognized
+        assert result == []
+
+
+class TestApplyModeWithPins:
+    """Tests for apply mode with pinned tag values.
+
+    Verifies that apply_to_deployment writes a per-tenant file containing
+    pinned tag values from locked versions as-is, without re-resolving
+    from ECR or re-consulting the pin file.
+
+    Validates: Requirements 8.1, 8.2
+    """
+
+    def test_apply_mode_preserves_pinned_tags(self, tmp_path):
+        """Apply mode writes entries with tags exactly as provided — no re-resolution.
+
+        The entries already have pinned tag values (as if run() was previously
+        called with a pin file). apply_to_deployment simply filters and writes.
+
+        Validates: Requirements 8.1, 8.2
+        """
+        entries = [
+            {"name": "svc-a", "tag": "1.5.0", "ecr": "repo/core"},  # was pinned
+            {"name": "svc-b", "tag": "2.0.0", "ecr": "repo/files"},  # was ECR-resolved
+        ]
+        locked_path = str(tmp_path / ".docker-locked-versions.json")
+        with open(locked_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+        locker = DockerVersionLocker(locked_versions_path=locked_path, profile="test")
+        exit_code = locker.apply_to_deployment("demo", entries)
+
+        assert exit_code == 0
+        output_path = tmp_path / "locked-versions-demo.json"
+        assert output_path.exists()
+        result = json.loads(output_path.read_text())
+        assert len(result) == 2
+        assert result[0]["tag"] == "1.5.0"
+        assert result[1]["tag"] == "2.0.0"
+
+    def test_apply_mode_does_not_consult_pin_file(self, tmp_path):
+        """Apply mode does not re-read or consult the pin file — tags come from entries.
+
+        Even if the pin file has different values, apply_to_deployment uses
+        the entries passed to it directly.
+
+        Validates: Requirements 8.2
+        """
+        entries = [
+            {"name": "svc-a", "tag": "1.5.0", "ecr": "repo/core"},
+            {"name": "svc-b", "tag": "2.0.0", "ecr": "repo/files"},
+        ]
+        locked_path = str(tmp_path / ".docker-locked-versions.json")
+        with open(locked_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+        # Create a pin file with DIFFERENT values to prove it's not consulted
+        pin_entries = [
+            {"ecr": "repo/core", "tag": "99.99.99"},
+            {"ecr": "repo/files", "tag": "88.88.88"},
+        ]
+        pin_file = tmp_path / ".docker-pinned-versions.json"
+        pin_file.write_text(json.dumps(pin_entries))
+
+        locker = DockerVersionLocker(locked_versions_path=locked_path, profile="test")
+        exit_code = locker.apply_to_deployment("staging", entries)
+
+        assert exit_code == 0
+        output_path = tmp_path / "locked-versions-staging.json"
+        result = json.loads(output_path.read_text())
+        # Tags match what was passed in entries, NOT what's in the pin file
+        assert result[0]["tag"] == "1.5.0"
+        assert result[1]["tag"] == "2.0.0"
+
+    def test_apply_mode_filters_entries_without_tag(self, tmp_path):
+        """Apply mode only writes entries that have both a non-empty name and tag.
+
+        Validates: Requirements 8.1
+        """
+        entries = [
+            {"name": "svc-a", "tag": "1.5.0", "ecr": "repo/core"},
+            {"name": "svc-b", "tag": "", "ecr": "repo/files"},  # empty tag — excluded
+            {"name": "", "tag": "3.0.0", "ecr": "repo/other"},  # empty name — excluded
+            {"name": "svc-d", "tag": "4.0.0", "ecr": "repo/extra"},
+        ]
+        locked_path = str(tmp_path / ".docker-locked-versions.json")
+        with open(locked_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+        locker = DockerVersionLocker(locked_versions_path=locked_path, profile="test")
+        exit_code = locker.apply_to_deployment("prod", entries)
+
+        assert exit_code == 0
+        output_path = tmp_path / "locked-versions-prod.json"
+        result = json.loads(output_path.read_text())
+        assert len(result) == 2
+        names = [e["name"] for e in result]
+        assert "svc-a" in names
+        assert "svc-d" in names
+        assert "svc-b" not in names
+
+    def test_apply_mode_multiple_entries_same_pinned_repo(self, tmp_path):
+        """Multiple entries sharing a pinned ECR repo all retain their pinned tag.
+
+        Validates: Requirements 8.1, 8.2
+        """
+        entries = [
+            {"name": "lambda-1", "tag": "5.0.0", "ecr": "repo/core"},
+            {"name": "lambda-2", "tag": "5.0.0", "ecr": "repo/core"},
+            {"name": "lambda-3", "tag": "5.0.0", "ecr": "repo/core"},
+            {"name": "lambda-4", "tag": "2.1.0", "ecr": "repo/files"},
+        ]
+        locked_path = str(tmp_path / ".docker-locked-versions.json")
+        with open(locked_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+        locker = DockerVersionLocker(locked_versions_path=locked_path, profile="test")
+        exit_code = locker.apply_to_deployment("abbvie", entries)
+
+        assert exit_code == 0
+        output_path = tmp_path / "locked-versions-abbvie.json"
+        result = json.loads(output_path.read_text())
+        assert len(result) == 4
+        # All repo/core entries preserve the pinned tag
+        core_tags = [e["tag"] for e in result if e["ecr"] == "repo/core"]
+        assert all(t == "5.0.0" for t in core_tags)
+        # repo/files entry preserves its tag
+        files_entry = next(e for e in result if e["ecr"] == "repo/files")
+        assert files_entry["tag"] == "2.1.0"
+
+    def test_apply_mode_deployment_name_derived_from_path(self, tmp_path):
+        """Apply mode derives deployment name from path, stripping deployment. prefix and .json.
+
+        Validates: Requirements 8.1
+        """
+        entries = [
+            {"name": "svc-a", "tag": "1.0.0", "ecr": "repo/core"},
+        ]
+        locked_path = str(tmp_path / ".docker-locked-versions.json")
+        with open(locked_path, "w") as f:
+            json.dump(entries, f, indent=4)
+
+        locker = DockerVersionLocker(locked_versions_path=locked_path, profile="test")
+        exit_code = locker.apply_to_deployment("deployment.prod.demo.json", entries)
+
+        assert exit_code == 0
+        output_path = tmp_path / "locked-versions-prod.demo.json"
+        result = json.loads(output_path.read_text())
+        assert len(result) == 1
+        assert result[0]["tag"] == "1.0.0"
