@@ -37,6 +37,34 @@ class TestGateEnabled:
         )
         assert stage.gate_enabled is False
 
+    def test_gate_defaults_to_enabled_when_key_missing(self):
+        """If gate object exists but 'enabled' is not specified, defaults to True."""
+        stage = PipelineStageConfig(
+            {"name": "deploy", "gate": {"message": "Approve deployment"}},
+            workload={"name": "test"},
+        )
+        assert stage.gate_enabled is True
+
+    def test_gate_enabled_case_insensitive_false(self):
+        """Gate is disabled for any case variation of 'false'."""
+        for value in ("False", "FALSE", "false", "FaLsE"):
+            stage = PipelineStageConfig(
+                {"name": "deploy", "gate": {"enabled": value}},
+                workload={"name": "test"},
+            )
+            assert (
+                stage.gate_enabled is False
+            ), f"Expected disabled for enabled={value!r}"
+
+    def test_gate_enabled_any_non_false_value(self):
+        """Any value other than 'false' (case-insensitive) keeps the gate enabled."""
+        for value in ("true", "True", "yes", "1", "enabled", ""):
+            stage = PipelineStageConfig(
+                {"name": "deploy", "gate": {"enabled": value}},
+                workload={"name": "test"},
+            )
+            assert stage.gate_enabled is True, f"Expected enabled for enabled={value!r}"
+
 
 class TestGateBlocksAllSteps:
     """

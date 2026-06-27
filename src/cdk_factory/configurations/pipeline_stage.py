@@ -156,13 +156,13 @@ class PipelineStageConfig:
         """
         Returns True if the gate is configured and enabled.
 
-        Follows the existing boolean parsing pattern:
-        str(value).lower() == "true"
+        If a gate object exists, it defaults to enabled (True).
+        It is only disabled if the value is expressly "false" (case-insensitive).
         """
         gate = self.gate
         if not gate:
             return False
-        return str(gate.get("enabled", "false")).lower() == "true"
+        return str(gate.get("enabled", "true")).lower() != "false"
 
     @property
     def gate_message(self) -> str:
