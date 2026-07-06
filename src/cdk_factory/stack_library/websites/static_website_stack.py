@@ -4,7 +4,9 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -429,15 +431,56 @@ class StaticWebSiteStack(IStack):
         )
 
     def __get_version_number(self, assets_path: str) -> str:
-        version = "0.0.1.ckd.factory"
+        """Get version number with fallback chain: version.txt → package.json → default."""
+        default_version = "0.0.1.cdk.factory"
 
-        # look for a version file
+        # Primary source: look for a version.txt file
         version_file = os.path.join(Path(assets_path), "version.txt")
         if os.path.exists(version_file):
             with open(version_file, "r", encoding="utf-8") as file:
                 version = file.read().strip()
-        else:
-            message = f"No version file found at {version_file}. Using default version: {version}"
-            logger.warning(message)
+            return version
 
-        return version
+        # Fallback: traverse parent directories for package.json (up to 10 levels)
+        current_dir = Path(assets_path).resolve()
+        for _ in range(10):
+            parent_dir = current_dir.parent
+            if parent_dir == current_dir:
+                # Reached filesystem root
+                break
+            current_dir = parent_dir
+
+            package_json_path = current_dir / "package.json"
+            if package_json_path.exists():
+                try:
+                    with open(package_json_path, "r", encoding="utf-8") as f:
+                        package_data = json.loads(f.read())
+                except (json.JSONDecodeError, OSError):
+                    logger.warning(
+                        f"Found package.json at {package_json_path} but failed to parse it. "
+                        f"Using default version: {default_version}"
+                    )
+                    return default_version
+
+                version_value = package_data.get("version")
+                if version_value and isinstance(version_value, str):
+                    # Validate at least MAJOR.MINOR format
+                    if re.match(r"^\d+\.\d+", version_value):
+                        logger.info(
+                            f"Using version '{version_value}' from {package_json_path}"
+                        )
+                        return version_value
+
+                # package.json found but version is invalid or missing
+                logger.warning(
+                    f"Found package.json at {package_json_path} but it does not contain "
+                    f"a valid semver version field. Using default version: {default_version}"
+                )
+                return default_version
+
+        # Nothing found within traversal limit
+        logger.warning(
+            f"No version.txt found at {version_file} and no package.json with a valid "
+            f"version found in parent directories. Using default version: {default_version}"
+        )
+        return default_version

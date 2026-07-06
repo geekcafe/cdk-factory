@@ -11,6 +11,7 @@ class VersionSource(Enum):
 
     FILE = "file"  # Read from version.txt or similar file
     GIT_TAG = "git_tag"  # Read from latest git tag
+    PACKAGE_JSON = "package_json"  # Read from package.json
 
 
 class VersionStrategy(Enum):
