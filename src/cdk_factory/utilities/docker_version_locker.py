@@ -18,12 +18,13 @@ Usage:
         --profile <aws-profile> --seed --config-dir /path/to/configs
 """
 
+import copy
 import json
 import logging
 import os
 import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
@@ -672,6 +673,565 @@ class DockerVersionLocker:
         return 1 if failed_repos else 0
 
 
+class PinnedVersionUpdater:
+    """Updates the .docker-pinned-versions.json file with latest ECR tags.
+
+    Reads the pinned versions file, discovers new ECR repositories under a
+    configurable prefix, resolves the latest semver tag for each non-auto entry,
+    preserves auto entries unchanged, appends newly discovered repositories,
+    and writes the updated file back (or prints a dry-run report).
+
+    Uses composition over inheritance — delegates to DockerVersionLocker
+    static-compatible methods where possible and reuses the module-level
+    SEMVER_RE pattern.
+    """
+
+    def __init__(
+        self,
+        pinned_versions_path: str,
+        profile: str,
+        region: str = "us-east-1",
+        dry_run: bool = False,
+        repo_prefix: str = "aplos-analytics/v3/",
+    ) -> None:
+        self.pinned_versions_path = pinned_versions_path
+        self.profile = profile
+        self.region = region
+        self.dry_run = dry_run
+        self.repo_prefix = repo_prefix
+
+    def load_pinned_versions(self) -> List[Dict[str, Any]]:
+        """Load and validate the pinned versions JSON file.
+
+        Reads the JSON file at self.pinned_versions_path, validates that it
+        contains a JSON array, and filters entries to only those with a
+        non-empty string 'ecr' field.
+
+        Returns:
+            List of valid pinned version entry dicts (each has at least
+            a non-empty string 'ecr' field).
+
+        Raises:
+            SystemExit: If the file is missing, contains invalid JSON,
+                or is not a JSON array.
+        """
+        # Check file exists
+        if not os.path.isfile(self.pinned_versions_path):
+            print(
+                f"Error: Pinned versions file not found: {self.pinned_versions_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Read and parse JSON
+        try:
+            with open(self.pinned_versions_path, "r") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(
+                f"Error: Invalid JSON in pinned versions file "
+                f"{self.pinned_versions_path}: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Validate structure is a list
+        if not isinstance(data, list):
+            print(
+                f"Error: Pinned versions file must contain a JSON array: "
+                f"{self.pinned_versions_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Filter to valid entries (dicts with non-empty string 'ecr' field)
+        valid_entries: List[Dict[str, Any]] = []
+        for index, entry in enumerate(data):
+            if not isinstance(entry, dict):
+                logger.warning(
+                    "Pinned entry at index %d is not an object, skipping", index
+                )
+                continue
+
+            ecr = entry.get("ecr")
+            if not isinstance(ecr, str) or not ecr.strip():
+                logger.warning(
+                    "Pinned entry at index %d has no valid 'ecr' field, skipping",
+                    index,
+                )
+                continue
+
+            valid_entries.append(entry)
+
+        return valid_entries
+
+    def discover_repositories(self, ecr_client: Any) -> List[str]:
+        """List all ECR repos matching the prefix via paginated describe_repositories.
+
+        Args:
+            ecr_client: A boto3 ECR client.
+
+        Returns:
+            Sorted list of repository names matching self.repo_prefix.
+
+        Raises:
+            SystemExit: If the ECR API call fails completely.
+        """
+        discovered: List[str] = []
+        try:
+            paginator = ecr_client.get_paginator("describe_repositories")
+            for page in paginator.paginate():
+                for repo in page["repositories"]:
+                    if repo["repositoryName"].startswith(self.repo_prefix):
+                        discovered.append(repo["repositoryName"])
+        except ClientError as e:
+            print(
+                f"Error: Failed to list ECR repositories: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        return sorted(discovered)
+
+    def resolve_latest_by_timestamp(
+        self, ecr_client: Any, repo_name: str
+    ) -> Optional[str]:
+        """Fallback resolution: find the most recent semver tag by imagePushedAt.
+
+        Queries all images in the repository, filters tags matching the strict
+        MAJOR.MINOR.PATCH semver pattern, sorts by imagePushedAt descending,
+        and returns the first matching tag.
+
+        This handles repositories where no 'latest' tag has been configured,
+        falling back to a timestamp-based selection strategy as specified in
+        Requirement 2.2.
+
+        Args:
+            ecr_client: A boto3 ECR client.
+            repo_name: The ECR repository name.
+
+        Returns:
+            The most recent semver tag string, or None if no semver tags exist.
+        """
+        try:
+            paginator = ecr_client.get_paginator("describe_images")
+            image_details: List[Dict[str, Any]] = []
+
+            for page in paginator.paginate(repositoryName=repo_name):
+                for image in page.get("imageDetails", []):
+                    image_details.append(image)
+
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            if error_code == "RepositoryNotFoundException":
+                logger.warning("Repository not found: %s", repo_name)
+                return None
+            logger.error("ECR error for %s: %s", repo_name, e)
+            return None
+
+        # Filter to images that have at least one semver tag, collect (tag, pushedAt) pairs
+        semver_images: List[tuple] = []
+        for image in image_details:
+            pushed_at = image.get("imagePushedAt")
+            if not pushed_at:
+                continue
+            for tag in image.get("imageTags", []):
+                if SEMVER_RE.match(tag):
+                    semver_images.append((tag, pushed_at))
+
+        if not semver_images:
+            logger.warning(
+                "No semver tags found in %s (checked %d images)",
+                repo_name,
+                len(image_details),
+            )
+            return None
+
+        # Sort by imagePushedAt descending, return the most recent
+        semver_images.sort(key=lambda x: x[1], reverse=True)
+        return semver_images[0][0]
+
+    def write_pinned_versions(
+        self,
+        path: str,
+        entries: List[Dict[str, Any]],
+    ) -> None:
+        """Write entries as JSON with 4-space indent and trailing newline.
+
+        Args:
+            path: Path to write the pinned versions file.
+            entries: List of pinned version entry dicts to write.
+
+        Raises:
+            SystemExit: If writing to the file fails due to a filesystem error.
+        """
+        try:
+            with open(path, "w") as f:
+                json.dump(entries, f, indent=4)
+                f.write("\n")
+        except OSError as e:
+            print(
+                f"Error: Failed to write pinned versions file {path}: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    def resolve_entry_tags(
+        self,
+        ecr_client: Any,
+        entries: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """Resolve latest tags for non-auto entries.
+
+        For each entry where tag != "auto", attempts to resolve the latest
+        semver tag from ECR. Auto entries pass through unchanged.
+
+        Resolution strategy:
+        1. Try DockerVersionLocker.resolve_latest_version (finds semver tag
+           sharing digest with 'latest' tag)
+        2. If that returns None, fall back to resolve_latest_by_timestamp
+           (most recent semver tag by imagePushedAt)
+
+        Args:
+            ecr_client: A boto3 ECR client.
+            entries: List of pinned version entry dicts.
+
+        Returns:
+            Tuple of (updated_entries, failed_repos):
+            - updated_entries: The full list with resolved tags applied
+            - failed_repos: List of repo names that couldn't be resolved
+        """
+        failed_repos: List[str] = []
+
+        # Create a DockerVersionLocker instance to call resolve_latest_version
+        locker = DockerVersionLocker(
+            locked_versions_path="",
+            profile=self.profile,
+            region=self.region,
+        )
+
+        # Identify non-auto entries for resolution
+        pinned_indices = [
+            i for i, entry in enumerate(entries) if entry.get("tag") != "auto"
+        ]
+
+        total = len(pinned_indices)
+        for position, idx in enumerate(pinned_indices, start=1):
+            entry = entries[idx]
+            repo_name = entry.get("ecr", "")
+
+            print(f"  {repo_name} ({position} of {total})...", end=" ")
+
+            # Try primary resolution: resolve_latest_version (via 'latest' tag digest)
+            resolved_tag = locker.resolve_latest_version(ecr_client, repo_name)
+
+            # Fallback: resolve by most recent imagePushedAt timestamp
+            if resolved_tag is None:
+                resolved_tag = self.resolve_latest_by_timestamp(ecr_client, repo_name)
+
+            if resolved_tag is not None:
+                entries[idx]["tag"] = resolved_tag
+                print(f"\u2192 {resolved_tag}")
+            else:
+                # Retain existing tag on failure
+                failed_repos.append(repo_name)
+                logger.warning(
+                    "Failed to resolve tag for %s, retaining existing tag '%s'",
+                    repo_name,
+                    entry.get("tag", ""),
+                )
+                print("\u2192 SKIPPED")
+
+        return entries, failed_repos
+
+    def find_new_repositories(
+        self,
+        discovered: List[str],
+        existing_ecrs: Set[str],
+    ) -> List[str]:
+        """Return repos in discovered that are not in existing_ecrs.
+
+        Computes the set difference between all discovered ECR repositories
+        and those already present in the pinned versions file, returning a
+        sorted list of newly found repository names.
+
+        Args:
+            discovered: All ECR repos found via describe_repositories.
+            existing_ecrs: Set of ECR names already in the pinned file.
+
+        Returns:
+            Sorted list of new repository names (set difference).
+        """
+        return sorted([r for r in discovered if r not in existing_ecrs])
+
+    def resolve_new_entries(
+        self,
+        ecr_client: Any,
+        new_repos: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Create new entries for discovered repos with resolved tags.
+
+        For each new repo:
+        - Try resolve_latest_version first, then resolve_latest_by_timestamp
+          fallback
+        - If no semver tag found, set tag to "auto" and log warning
+        - Print progress for each new repo
+
+        Args:
+            ecr_client: A boto3 ECR client.
+            new_repos: List of newly discovered repository names.
+
+        Returns:
+            List of new entry dicts (each with 'ecr' and 'tag' fields).
+        """
+        new_entries: List[Dict[str, Any]] = []
+
+        # Create a DockerVersionLocker instance to call resolve_latest_version
+        locker = DockerVersionLocker(
+            locked_versions_path="",
+            profile=self.profile,
+            region=self.region,
+        )
+
+        for repo_name in new_repos:
+            print(f"  [NEW] {repo_name}...", end=" ")
+
+            # Try primary resolution: resolve_latest_version (via 'latest' tag digest)
+            resolved_tag = locker.resolve_latest_version(ecr_client, repo_name)
+
+            # Fallback: resolve by most recent imagePushedAt timestamp
+            if resolved_tag is None:
+                resolved_tag = self.resolve_latest_by_timestamp(ecr_client, repo_name)
+
+            if resolved_tag is not None:
+                new_entries.append({"ecr": repo_name, "tag": resolved_tag})
+                print(f"→ {resolved_tag}")
+            else:
+                new_entries.append({"ecr": repo_name, "tag": "auto"})
+                logger.warning(
+                    "No semver tag found for new repository %s, setting tag to 'auto'",
+                    repo_name,
+                )
+                print("→ auto (no semver tag)")
+
+        return new_entries
+
+    def print_summary(
+        self,
+        total: int,
+        updated: int,
+        skipped: int,
+        failed: int,
+        new_count: int,
+    ) -> None:
+        """Print final summary counts.
+
+        Displays a one-line summary of the update run, plus additional lines
+        for failures and newly discovered repositories when applicable.
+
+        Args:
+            total: Total number of existing entries processed.
+            updated: Number of entries whose tag changed.
+            skipped: Number of entries skipped (auto + unchanged).
+            failed: Number of entries that failed ECR resolution.
+            new_count: Number of newly discovered repositories appended.
+        """
+        print(
+            f"\U0001f4cb Summary: {total} entries processed, "
+            f"{updated} updated, {skipped} skipped, "
+            f"{failed} failed, {new_count} new repositories discovered"
+        )
+
+        if failed > 0:
+            print(f"\u26a0 {failed} repo(s) failed resolution (existing tags retained)")
+
+        if new_count > 0:
+            print(f"\U0001f195 {new_count} new repositories discovered and added")
+
+    def print_dry_run_report(
+        self,
+        original: List[Dict[str, Any]],
+        updated: List[Dict[str, Any]],
+        new_entries: List[Dict[str, Any]],
+    ) -> None:
+        """Print a tabular diff showing changes, unchanged, auto, and new repos.
+
+        Compares original[i]["tag"] vs updated[i]["tag"] for each index and
+        groups entries into: changed (old → new), unchanged (same tag),
+        auto (tag == "auto"). New entries are displayed in a separate section.
+
+        If no changes at all (no updates, no new entries), prints a simple
+        "No changes detected" message.
+
+        Args:
+            original: The original entries as loaded from file.
+            updated: The entries after tag resolution (same length as original).
+            new_entries: Newly discovered repositories to be appended.
+        """
+        changed: List[tuple] = []
+        unchanged: List[tuple] = []
+        auto: List[tuple] = []
+
+        for i in range(len(original)):
+            ecr_name = original[i].get("ecr", "")
+            old_tag = original[i].get("tag", "")
+            new_tag = updated[i].get("tag", "")
+
+            if old_tag == "auto":
+                auto.append((ecr_name, old_tag))
+            elif old_tag != new_tag:
+                changed.append((ecr_name, old_tag, new_tag))
+            else:
+                unchanged.append((ecr_name, old_tag))
+
+        # If nothing changed at all, print short message
+        if not changed and not new_entries:
+            print("\n[DRY RUN] No changes detected.")
+            return
+
+        print("\n[DRY RUN] Changes that would be made:\n")
+
+        if changed:
+            print("Updated:")
+            for ecr_name, old_tag, new_tag in changed:
+                print(f"  {ecr_name}: {old_tag} → {new_tag}")
+            print()
+
+        if unchanged:
+            print("Unchanged:")
+            for ecr_name, tag in unchanged:
+                print(f"  {ecr_name}: {tag}")
+            print()
+
+        if auto:
+            print("Auto (skipped):")
+            for ecr_name, tag in auto:
+                print(f"  {ecr_name}: {tag}")
+            print()
+
+        if new_entries:
+            print("New repositories:")
+            for entry in new_entries:
+                ecr_name = entry.get("ecr", "")
+                tag = entry.get("tag", "")
+                print(f"  {ecr_name}: {tag}")
+            print()
+
+    def run(self) -> int:
+        """Main entry point. Returns exit code (0=success, non-zero=error).
+
+        Orchestrates the full update-pinned flow:
+        1. Load and validate the pinned versions file
+        2. Create boto3 session and ECR client with credential validation
+        3. Discover ECR repositories matching the prefix
+        4. Keep a deep copy of original entries for comparison
+        5. Resolve latest tags for pinned entries
+        6. Find and resolve newly discovered repositories
+        7. Write updated file (or print dry-run report)
+        8. Print summary
+
+        Returns:
+            0 on success, 1 on critical failure, 2 on credential errors.
+        """
+        from botocore.config import Config
+
+        # 1. Load pinned versions file
+        entries = self.load_pinned_versions()
+
+        # 2. Create boto3 session and ECR client (with credential validation)
+        ecr_config = Config(
+            read_timeout=30, connect_timeout=10, retries={"max_attempts": 2}
+        )
+
+        try:
+            session = boto3.Session(profile_name=self.profile, region_name=self.region)
+            ecr_client = session.client("ecr", config=ecr_config)
+            ecr_client.describe_registry()  # validate credentials
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            if error_code in ("ExpiredTokenException", "UnrecognizedClientException"):
+                print(
+                    f"\n❌ AWS credentials expired or invalid for profile '{self.profile}'.",
+                    file=sys.stderr,
+                )
+                print(
+                    f"   Run: aws sso login --profile {self.profile}",
+                    file=sys.stderr,
+                )
+                return 2
+            raise
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "token" in error_msg and (
+                "expired" in error_msg or "refresh failed" in error_msg
+            ):
+                print(
+                    f"\n❌ SSO token expired for profile '{self.profile}'.",
+                    file=sys.stderr,
+                )
+                print(
+                    f"   Run: aws sso login --profile {self.profile}",
+                    file=sys.stderr,
+                )
+                return 2
+            print(f"\n❌ Failed to create AWS session: {e}", file=sys.stderr)
+            return 2
+
+        # 3. Discover all ECR repos matching the prefix
+        print(f"\nDiscovering ECR repositories with prefix '{self.repo_prefix}'...")
+        discovered = self.discover_repositories(ecr_client)
+        print(f"Found {len(discovered)} repositories.\n")
+
+        # 4. Keep a deep copy of original entries for comparison
+        original_entries = copy.deepcopy(entries)
+
+        # 5. Resolve entry tags for non-auto entries
+        print("Resolving tags for existing entries...")
+        entries, failed_repos = self.resolve_entry_tags(ecr_client, entries)
+
+        # 6. Find new repos (set difference)
+        existing_ecrs: Set[str] = {e.get("ecr", "") for e in entries if e.get("ecr")}
+        new_repos = self.find_new_repositories(discovered, existing_ecrs)
+
+        # 7. Resolve new entries (if any new repos discovered)
+        new_entries: List[Dict[str, Any]] = []
+        if new_repos:
+            print(f"\nResolving tags for {len(new_repos)} new repositories...")
+            new_entries = self.resolve_new_entries(ecr_client, new_repos)
+
+        # 8. Calculate counts
+        updated_count = 0
+        skipped_count = 0
+        for i, entry in enumerate(entries):
+            if entry.get("tag") == "auto":
+                skipped_count += 1
+            elif i < len(original_entries) and entry.get("tag") == original_entries[
+                i
+            ].get("tag"):
+                skipped_count += 1
+            else:
+                updated_count += 1
+
+        failed_count = len(failed_repos)
+        total = len(entries)
+        new_count = len(new_entries)
+
+        # 9. Dry-run or write
+        if self.dry_run:
+            self.print_dry_run_report(original_entries, entries, new_entries)
+        else:
+            combined = entries + new_entries
+            self.write_pinned_versions(self.pinned_versions_path, combined)
+            print(f"\n✅ Written to {self.pinned_versions_path}")
+
+        # 10. Print summary
+        print()
+        self.print_summary(total, updated_count, skipped_count, failed_count, new_count)
+
+        # 11. Return exit code
+        return 0
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     """
     CLI entry point: parse args, create DockerVersionLocker, call run(),
@@ -692,13 +1252,24 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     parser.add_argument(
         "--locked-versions",
-        required=True,
+        default=None,
         help="Path to the locked versions JSON file.",
     )
     parser.add_argument(
         "--profile",
         required=True,
         help="AWS profile name for ECR access.",
+    )
+    parser.add_argument(
+        "--update-pinned",
+        action="store_true",
+        default=False,
+        help="Update the .docker-pinned-versions.json file with latest ECR tags.",
+    )
+    parser.add_argument(
+        "--pinned-versions",
+        default=None,
+        help="Path to the pinned versions JSON file (required with --update-pinned).",
     )
     parser.add_argument(
         "--region",
@@ -738,9 +1309,26 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     args = parser.parse_args(argv)
 
+    # Validate --locked-versions is required when NOT using --update-pinned
+    if not args.update_pinned and not args.locked_versions:
+        parser.error("--locked-versions is required when not using --update-pinned")
+
     # Validate --config-dir is provided when --seed is set
     if args.seed and not args.config_dir:
         parser.error("--config-dir is required when --seed is set")
+
+    # --- Update pinned mode: resolve latest ECR tags into pinned versions file ---
+    if args.update_pinned:
+        if not args.pinned_versions:
+            parser.error("--pinned-versions is required when using --update-pinned")
+        updater = PinnedVersionUpdater(
+            pinned_versions_path=args.pinned_versions,
+            profile=args.profile,
+            region=args.region,
+            dry_run=args.dry_run,
+        )
+        exit_code = updater.run()
+        sys.exit(exit_code)
 
     # --- List mode: print mappings and exit ---
     if args.list_mode:
