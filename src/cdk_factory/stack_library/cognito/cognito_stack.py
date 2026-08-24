@@ -59,14 +59,20 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         self.deployment = deployment
         self.cognito_config = CognitoConfig(stack_config.dictionary.get("cognito", {}))
 
-        # Create user pool with configuration
+        # Create or import user pool
         self._create_user_pool_with_config()
 
-        # Create app clients if configured
+        # Add domain for Hosted UI / OAuth flows (must exist before IdPs for redirect URI)
+        self._create_user_pool_domain()
+
+        # Register external identity providers (must exist before app clients reference them)
+        self._create_identity_providers()
+
+        # Create app clients (may reference IdPs in supported_identity_providers)
         if self.cognito_config.app_clients:
             self._create_app_clients()
 
-        # Export SSM parameters after both pool and clients are created
+        # Export SSM parameters after all resources are created
         self._export_ssm_parameters(self.user_pool)
 
     def _setup_custom_attributes(self):
@@ -204,6 +210,353 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         )
         logger.info(f"Created Cognito User Pool: {self.user_pool.user_pool_id}")
 
+    def _create_user_pool_domain(self):
+        """Create a Cognito User Pool domain for the Hosted UI and OAuth flows.
+
+        Supports two modes:
+        - Prefix domain: Simple, no DNS needed. Creates {prefix}.auth.{region}.amazoncognito.com
+        - Custom domain: Branded URL (e.g. auth.example.com). Requires ACM cert + Route53 records.
+        """
+        domain_config = self.cognito_config.domain
+        if not domain_config or not isinstance(domain_config, dict):
+            return
+
+        if not self.user_pool:
+            raise ValueError("User pool must be created before domain")
+
+        if "prefix" in domain_config:
+            # Simple prefix domain — no certificate or DNS needed
+            domain = self.user_pool.add_domain(
+                "CognitoDomain",
+                cognito_domain=cognito.CognitoDomainOptions(
+                    domain_prefix=domain_config["prefix"]
+                ),
+            )
+            logger.info(
+                f"Created Cognito prefix domain: "
+                f"{domain_config['prefix']}.auth.{cdk.Stack.of(self).region}.amazoncognito.com"
+            )
+
+        elif "custom_domain" in domain_config:
+            # Custom domain — requires ACM certificate (must be in us-east-1 for Cognito)
+            from aws_cdk import aws_certificatemanager as acm
+            from aws_cdk import aws_route53 as route53
+            from aws_cdk import aws_route53_targets
+
+            custom_domain_name = domain_config["custom_domain"]
+            cert_arn = domain_config.get("certificate_arn")
+            hosted_zone_name = domain_config.get("hosted_zone_name")
+            hosted_zone_id = domain_config.get("hosted_zone_id")
+
+            # Skip if custom_domain or cert_arn resolved to empty (template param not set)
+            if not custom_domain_name or not custom_domain_name.strip():
+                logger.info("Custom domain name is empty — skipping domain creation")
+                return
+
+            if not cert_arn or not cert_arn.strip():
+                # Auto-create certificate via DNS validation (same pattern as API Gateway)
+                if not hosted_zone_name:
+                    raise ValueError(
+                        "certificate_arn is empty and hosted_zone_name is required "
+                        "to auto-create a certificate for the custom Cognito domain. "
+                        "Either provide certificate_arn or hosted_zone_name for DNS validation."
+                    )
+
+                # Need hosted zone for DNS validation — resolve it now
+                hz_id = hosted_zone_id
+                if not hz_id:
+                    ssm_imports = self.stack_config.ssm_config.get("imports", {})
+                    route53_ns = ssm_imports.get("route53_namespace")
+                    if route53_ns:
+                        ssm_path = f"/{route53_ns}/hosted-zone-id"
+                        param = ssm.StringParameter.from_string_parameter_name(
+                            self, "cognito-domain-hz-id-for-cert", ssm_path
+                        )
+                        hz_id = param.string_value
+
+                if not hz_id:
+                    raise ValueError(
+                        "Cannot auto-create certificate: no hosted_zone_id available. "
+                        "Provide certificate_arn, hosted_zone_id, or configure "
+                        "ssm.imports.route53_namespace."
+                    )
+
+                validation_zone = route53.HostedZone.from_hosted_zone_attributes(
+                    self,
+                    "CognitoDomainCertValidationZone",
+                    hosted_zone_id=hz_id,
+                    zone_name=hosted_zone_name,
+                )
+
+                certificate = acm.Certificate(
+                    self,
+                    "CognitoDomainCert",
+                    domain_name=custom_domain_name,
+                    validation=acm.CertificateValidation.from_dns(validation_zone),
+                )
+                logger.info(
+                    f"Auto-creating ACM certificate for '{custom_domain_name}' "
+                    f"with DNS validation in zone '{hosted_zone_name}'"
+                )
+            else:
+                certificate = acm.Certificate.from_certificate_arn(
+                    self, "CognitoDomainCert", cert_arn
+                )
+
+            domain = self.user_pool.add_domain(
+                "CognitoDomain",
+                custom_domain=cognito.CustomDomainOptions(
+                    domain_name=custom_domain_name,
+                    certificate=certificate,
+                ),
+            )
+
+            # Create Route53 alias records if hosted zone info is provided
+            if hosted_zone_name:
+                # Auto-discover hosted zone ID from SSM if not provided directly
+                if not hosted_zone_id:
+                    ssm_imports = self.stack_config.ssm_config.get("imports", {})
+                    route53_ns = ssm_imports.get("route53_namespace")
+                    if route53_ns:
+                        ssm_path = f"/{route53_ns}/hosted-zone-id"
+                        param = ssm.StringParameter.from_string_parameter_name(
+                            self, "cognito-domain-hosted-zone-id-param", ssm_path
+                        )
+                        hosted_zone_id = param.string_value
+
+                if hosted_zone_id:
+                    hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
+                        self,
+                        "CognitoDomainHostedZone",
+                        hosted_zone_id=hosted_zone_id,
+                        zone_name=hosted_zone_name,
+                    )
+
+                    # Create A record pointing to the Cognito domain's CloudFront distribution
+                    route53.ARecord(
+                        self,
+                        "CognitoDomainARecord",
+                        zone=hosted_zone,
+                        record_name=custom_domain_name,
+                        target=route53.RecordTarget.from_alias(
+                            aws_route53_targets.UserPoolDomainTarget(domain)
+                        ),
+                    )
+
+                    # Create AAAA record for IPv6
+                    route53.AaaaRecord(
+                        self,
+                        "CognitoDomainAAAARecord",
+                        zone=hosted_zone,
+                        record_name=custom_domain_name,
+                        target=route53.RecordTarget.from_alias(
+                            aws_route53_targets.UserPoolDomainTarget(domain)
+                        ),
+                    )
+
+                    logger.info(
+                        f"Created Cognito custom domain '{custom_domain_name}' "
+                        f"with Route53 alias records in zone '{hosted_zone_name}'"
+                    )
+                else:
+                    logger.warning(
+                        f"Created Cognito custom domain '{custom_domain_name}' but could not "
+                        f"create Route53 records — no hosted_zone_id available. "
+                        f"Set hosted_zone_id in the domain config or configure "
+                        f"ssm.imports.route53_namespace for auto-discovery."
+                    )
+            else:
+                logger.info(
+                    f"Created Cognito custom domain '{custom_domain_name}' "
+                    f"(no Route53 records — hosted_zone_name not provided)"
+                )
+
+        # Store the domain reference for SSM export
+        self._cognito_domain = domain_config.get(
+            "custom_domain", domain_config.get("prefix")
+        )
+
+    def _create_identity_providers(self):
+        """Register external identity providers (OIDC, SAML) on the user pool.
+
+        Each identity provider is created as a child resource of the user pool.
+        App clients that reference these providers in `supported_identity_providers`
+        must be created AFTER this method runs.
+        """
+        providers_config = self.cognito_config.identity_providers
+        if not providers_config or not isinstance(providers_config, list):
+            return
+
+        if not self.user_pool:
+            raise ValueError("User pool must be created before identity providers")
+
+        self._identity_provider_resources = {}
+
+        for idp_config in providers_config:
+            idp_name = idp_config.get("name")
+            idp_type = idp_config.get("type", "").lower()
+
+            if not idp_name:
+                raise ValueError(
+                    "Identity provider 'name' is required. "
+                    "This name is referenced in app client 'supported_identity_providers'."
+                )
+
+            if idp_type == "oidc":
+                provider = self._create_oidc_provider(
+                    idp_name, idp_config.get("oidc", {})
+                )
+                self._identity_provider_resources[idp_name] = provider
+            elif idp_type == "saml":
+                logger.warning(
+                    f"SAML identity provider '{idp_name}' configured but SAML support "
+                    f"is not yet implemented. Skipping."
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported identity provider type '{idp_type}' for '{idp_name}'. "
+                    f"Supported types: 'oidc', 'saml'."
+                )
+
+    def _create_oidc_provider(
+        self, name: str, oidc_config: dict
+    ) -> cognito.UserPoolIdentityProviderOidc:
+        """Create an OIDC identity provider (e.g., Azure AD, Google Workspace).
+
+        Args:
+            name: The provider name (e.g., 'AzureAD-CustomerX'). Must match the
+                  value used in app client `supported_identity_providers`.
+            oidc_config: OIDC-specific configuration dict.
+
+        Returns:
+            The created UserPoolIdentityProviderOidc construct.
+        """
+        client_id = oidc_config.get("client_id")
+        if not client_id:
+            raise ValueError(f"OIDC provider '{name}': 'client_id' is required")
+
+        issuer_url = oidc_config.get("issuer_url")
+        if not issuer_url:
+            raise ValueError(f"OIDC provider '{name}': 'issuer_url' is required")
+
+        # Resolve client secret (priority: plaintext > Secrets Manager > SSM)
+        client_secret = self._resolve_oidc_client_secret(name, oidc_config)
+
+        # Build attribute mapping
+        attribute_mapping = self._build_oidc_attribute_mapping(
+            oidc_config.get("attribute_mapping", {})
+        )
+
+        # Determine scopes
+        scopes = oidc_config.get("scopes", ["openid", "profile", "email"])
+
+        # Create the OIDC identity provider
+        provider = cognito.UserPoolIdentityProviderOidc(
+            self,
+            id=self._build_resource_name(f"idp-{name}"),
+            user_pool=self.user_pool,
+            name=name,
+            client_id=client_id,
+            client_secret=client_secret,
+            issuer_url=issuer_url,
+            scopes=scopes,
+            attribute_request_method=cognito.OidcAttributeRequestMethod.GET,
+            attribute_mapping=attribute_mapping,
+        )
+
+        logger.info(f"Created OIDC identity provider: {name} (issuer: {issuer_url})")
+        return provider
+
+    def _resolve_oidc_client_secret(self, provider_name: str, oidc_config: dict) -> str:
+        """Resolve the OIDC client secret from one of three sources.
+
+        Priority:
+            1. client_secret — plain text (testing only)
+            2. client_secret_secrets_manager — Secrets Manager secret name/ARN
+            3. client_secret_ssm — SSM SecureString parameter path
+
+        Returns:
+            The resolved client secret string (may be a CloudFormation token).
+        """
+        # 1. Plain text (for dev/testing — NOT recommended for production)
+        plain_secret = oidc_config.get("client_secret")
+        if plain_secret:
+            logger.warning(
+                f"OIDC provider '{provider_name}': using plain-text client_secret. "
+                f"Use 'client_secret_secrets_manager' or 'client_secret_ssm' in production."
+            )
+            return plain_secret
+
+        # 2. Secrets Manager
+        sm_ref = oidc_config.get("client_secret_secrets_manager")
+        if sm_ref:
+            secret = secretsmanager.Secret.from_secret_name_v2(
+                self,
+                f"{provider_name}-oidc-secret",
+                secret_name=sm_ref,
+            )
+            return secret.secret_value.unsafe_unwrap()
+
+        # 3. SSM SecureString
+        ssm_path = oidc_config.get("client_secret_ssm")
+        if ssm_path:
+            return ssm.StringParameter.value_for_string_parameter(self, ssm_path)
+
+        raise ValueError(
+            f"OIDC provider '{provider_name}': No client secret configured. "
+            f"Provide one of: 'client_secret', 'client_secret_secrets_manager', "
+            f"or 'client_secret_ssm'."
+        )
+
+    def _build_oidc_attribute_mapping(
+        self, mapping_config: dict
+    ) -> cognito.AttributeMapping:
+        """Build a Cognito AttributeMapping from the config dict.
+
+        Maps OIDC token claim names to Cognito user pool attributes.
+        Standard mappings (email, given_name, family_name) are handled specially.
+        Custom mappings use ProviderAttribute.other().
+        """
+        if not mapping_config:
+            # Default mapping for Azure AD / standard OIDC providers
+            return cognito.AttributeMapping(
+                email=cognito.ProviderAttribute.other("email"),
+                given_name=cognito.ProviderAttribute.other("given_name"),
+                family_name=cognito.ProviderAttribute.other("family_name"),
+            )
+
+        kwargs = {}
+        custom = {}
+
+        # Standard Cognito attribute mappings
+        standard_map = {
+            "email": "email",
+            "given_name": "given_name",
+            "family_name": "family_name",
+            "name": "name",
+            "phone_number": "phone_number",
+            "preferred_username": "preferred_username",
+            "birthdate": "birthdate",
+            "gender": "gender",
+            "locale": "locale",
+            "nickname": "nickname",
+            "picture": "picture",
+            "profile_page": "profile_page",
+            "website": "website",
+        }
+
+        for cognito_attr, oidc_claim in mapping_config.items():
+            if cognito_attr in standard_map:
+                kwargs[cognito_attr] = cognito.ProviderAttribute.other(oidc_claim)
+            else:
+                # Custom attribute mapping
+                custom[cognito_attr] = cognito.ProviderAttribute.other(oidc_claim)
+
+        if custom:
+            kwargs["custom"] = custom
+
+        return cognito.AttributeMapping(**kwargs)
+
     def _create_app_clients(self):
         """Create app clients for the user pool based on configuration"""
         if not self.user_pool:
@@ -262,6 +615,19 @@ class CognitoStack(IStack, StandardizedSsmMixin):
 
             # Store reference
             self.app_clients[client_name] = app_client
+
+            # Ensure app client waits for any referenced identity providers to be created
+            if hasattr(self, "_identity_provider_resources"):
+                providers_list = client_config.get("supported_identity_providers", [])
+                for provider_name in providers_list:
+                    if (
+                        isinstance(provider_name, str)
+                        and provider_name in self._identity_provider_resources
+                    ):
+                        app_client.node.add_dependency(
+                            self._identity_provider_resources[provider_name]
+                        )
+
             logger.info(f"Created Cognito App Client: {client_name}")
 
             # Validate ssm_namespace early — raise on empty/whitespace strings
@@ -672,6 +1038,16 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             "user-pool-name": self.cognito_config.user_pool_name,
             "user-pool-arn": user_pool.user_pool_arn,
         }
+
+        # Include domain in exports if configured
+        if hasattr(self, "_cognito_domain") and self._cognito_domain:
+            domain_config = self.cognito_config.domain or {}
+            if "custom_domain" in domain_config:
+                pool_resource_values["domain"] = domain_config["custom_domain"]
+            elif "prefix" in domain_config:
+                pool_resource_values["domain"] = (
+                    f"{domain_config['prefix']}.auth.{cdk.Stack.of(self).region}.amazoncognito.com"
+                )
 
         if auto_export:
             # Path pattern: /{namespace}/{attribute}

@@ -266,6 +266,65 @@ class CognitoConfig(EnhancedBaseConfig):
         return self.__config.get("ssm", {})
 
     @property
+    def domain(self) -> dict | None:
+        """User pool domain configuration for enabling the Hosted UI and OAuth flows.
+
+        Supports two modes:
+
+        Prefix domain (simple, no DNS required):
+            {"prefix": "my-app-dev"}
+            → Creates: my-app-dev.auth.{region}.amazoncognito.com
+
+        Custom domain (branded, requires ACM certificate + Route53):
+            {
+                "custom_domain": "auth.example.com",
+                "certificate_arn": "arn:aws:acm:us-east-1:...:certificate/...",
+                "hosted_zone_name": "example.com",
+                "hosted_zone_id": "Z0123..."  # optional — auto-discovered from SSM if omitted
+            }
+
+        Returns:
+            dict or None if no domain is configured.
+        """
+        return self.__config.get("domain")
+
+    @property
+    def identity_providers(self) -> list | None:
+        """External identity providers (OIDC, SAML) to register on the user pool.
+
+        Each entry registers a federated identity provider that users can
+        authenticate through via the Cognito Hosted UI.
+
+        Structure:
+            [{
+                "name": "AzureAD-CustomerX",
+                "type": "oidc",
+                "oidc": {
+                    "client_id": "azure-app-client-id",
+                    "client_secret": "plaintext-secret-value",
+                    "client_secret_ssm": "/path/to/ssm/param",
+                    "client_secret_secrets_manager": "secret-name-or-arn",
+                    "issuer_url": "https://login.microsoftonline.com/{tenant-id}/v2.0",
+                    "scopes": ["openid", "profile", "email"],
+                    "attribute_mapping": {
+                        "email": "email",
+                        "given_name": "given_name",
+                        "family_name": "family_name"
+                    }
+                }
+            }]
+
+        Client secret resolution priority:
+            1. client_secret — plain text (use only for testing)
+            2. client_secret_secrets_manager — resolved from Secrets Manager at deploy time
+            3. client_secret_ssm — resolved from SSM SecureString at deploy time
+
+        Returns:
+            list or None if no identity providers are configured.
+        """
+        return self.__config.get("identity_providers")
+
+    @property
     def app_clients(self) -> list | None:
         """
         App clients for the user pool.
