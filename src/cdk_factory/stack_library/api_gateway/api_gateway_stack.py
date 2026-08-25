@@ -1687,7 +1687,9 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
             route53_ns = ssm_imports_config.get("route53_namespace")
             if route53_ns:
-                ssm_path = f"/{route53_ns}/hosted-zone-id"
+                from cdk_factory.utilities.ssm_path_utils import normalize_ssm_path
+
+                ssm_path = normalize_ssm_path(f"/{route53_ns}/hosted-zone-id")
                 logger.info(f"Auto-discovering hosted zone ID from SSM: {ssm_path}")
                 param = ssm.StringParameter.from_string_parameter_name(
                     self, f"hosted-zone-id-param{suffix}", ssm_path

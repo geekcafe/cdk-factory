@@ -573,7 +573,13 @@ class ApiGatewayIntegrationUtility:
                                 f"'ssm.imports.cognito_namespace' is required when cognito ssm_path is 'auto'. "
                                 f"Add 'ssm.imports.cognito_namespace' to your stack config."
                             )
-                        cognito_ssm_path = f"/{ssm_imports_ns}/cognito/user-pool/arn"
+                        from cdk_factory.utilities.ssm_path_utils import (
+                            normalize_ssm_path,
+                        )
+
+                        cognito_ssm_path = normalize_ssm_path(
+                            f"/{ssm_imports_ns}/cognito/user-pool/arn"
+                        )
 
                         api_gateway_config["ssm"]["imports"][
                             "user_pool_arn"

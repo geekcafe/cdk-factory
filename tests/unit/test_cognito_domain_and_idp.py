@@ -54,7 +54,7 @@ class TestCognitoDomain:
                 "name": "test-cognito-stack",
                 "cognito": {
                     "user_pool_name": "test-pool",
-                    "domain": {"prefix": "aplos-nca-dev"},
+                    "domain": {"prefix": "my-app-dev"},
                 },
             },
             workload_config,
@@ -68,7 +68,7 @@ class TestCognitoDomain:
         # Verify User Pool Domain created with prefix
         template.has_resource_properties(
             "AWS::Cognito::UserPoolDomain",
-            {"Domain": "aplos-nca-dev"},
+            {"Domain": "my-app-dev"},
         )
 
     def test_no_domain_when_not_configured(
@@ -426,10 +426,10 @@ class TestCognitoDomainWithIdpAndClient:
                 "name": "test-cognito-stack",
                 "cognito": {
                     "user_pool_name": "test-pool",
-                    "domain": {"prefix": "aplos-nca-test"},
+                    "domain": {"prefix": "my-app-test"},
                     "identity_providers": [
                         {
-                            "name": "AzureAD-Aplos",
+                            "name": "AzureAD-TestTenant",
                             "type": "oidc",
                             "oidc": {
                                 "client_id": "azure-client-id",
@@ -463,7 +463,7 @@ class TestCognitoDomainWithIdpAndClient:
                             },
                             "supported_identity_providers": [
                                 "COGNITO",
-                                "AzureAD-Aplos",
+                                "AzureAD-TestTenant",
                             ],
                         }
                     ],
@@ -480,14 +480,14 @@ class TestCognitoDomainWithIdpAndClient:
         # Domain exists
         template.has_resource_properties(
             "AWS::Cognito::UserPoolDomain",
-            {"Domain": "aplos-nca-test"},
+            {"Domain": "my-app-test"},
         )
 
         # IdP exists
         template.has_resource_properties(
             "AWS::Cognito::UserPoolIdentityProvider",
             {
-                "ProviderName": "AzureAD-Aplos",
+                "ProviderName": "AzureAD-TestTenant",
                 "ProviderType": "OIDC",
             },
         )
@@ -503,7 +503,7 @@ class TestCognitoDomainWithIdpAndClient:
                     ["https://app.example.com/", "http://localhost:5173/"]
                 ),
                 "SupportedIdentityProviders": Match.array_with(
-                    ["COGNITO", "AzureAD-Aplos"]
+                    ["COGNITO", "AzureAD-TestTenant"]
                 ),
             },
         )

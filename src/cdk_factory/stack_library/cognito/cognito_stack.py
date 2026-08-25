@@ -24,29 +24,9 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
-def _normalize_ssm_path(path: str) -> str:
-    """Normalize an SSM parameter path.
-
-    Ensures the path:
-    - Starts with exactly one leading /
-    - Contains no consecutive // segments
-    - Has no trailing /
-
-    Examples:
-        _normalize_ssm_path("aplos/dev/route53/id")   → "/aplos/dev/route53/id"
-        _normalize_ssm_path("/aplos/dev/route53/id")  → "/aplos/dev/route53/id"
-        _normalize_ssm_path("//aplos/dev//route53/id") → "/aplos/dev/route53/id"
-    """
-    import re
-
-    # Collapse any consecutive slashes into a single slash
-    path = re.sub(r"/+", "/", path)
-    # Ensure leading slash
-    if not path.startswith("/"):
-        path = "/" + path
-    # Remove trailing slash
-    path = path.rstrip("/")
-    return path
+from cdk_factory.utilities.ssm_path_utils import (
+    normalize_ssm_path as _normalize_ssm_path,
+)
 
 
 @register_stack("cognito_library_module")
@@ -84,6 +64,10 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         self.deployment = deployment
         self.cognito_config = CognitoConfig(stack_config.dictionary.get("cognito", {}))
 
+        # Resolve SSO config from environment (complex types can't pass through
+        # the template engine's string substitution without mangling)
+        self._resolve_sso_config_from_env()
+
         # Create or import user pool
         self._create_user_pool_with_config()
 
@@ -99,6 +83,38 @@ class CognitoStack(IStack, StandardizedSsmMixin):
 
         # Export SSM parameters after all resources are created
         self._export_ssm_parameters(self.user_pool)
+
+    def _resolve_sso_config_from_env(self):
+        """Resolve SSO configuration from environment variables.
+
+        Complex types (arrays, objects) cannot pass through the cdk-factory
+        template engine's string substitution without being mangled. Instead,
+        they are set as environment variables by the deployment config and
+        read directly here at synth time.
+
+        Environment variables:
+            SSO_IDENTITY_PROVIDERS: JSON array of IdP configs (or empty)
+            SSO_SUPPORTED_IDENTITY_PROVIDERS: Comma-separated list (e.g., "COGNITO,AzureAD-CustomerX")
+        """
+        import json
+        import os
+
+        # Override identity_providers from env if the config has an empty/placeholder value
+        idp_env = os.environ.get("SSO_IDENTITY_PROVIDERS", "")
+        if idp_env and idp_env.strip():
+            try:
+                parsed = json.loads(idp_env) if isinstance(idp_env, str) else idp_env
+                if isinstance(parsed, list) and parsed:
+                    # Inject into the cognito config's underlying dict so
+                    # CognitoConfig.identity_providers picks it up
+                    cognito_dict = self.stack_config.dictionary.get("cognito", {})
+                    cognito_dict["identity_providers"] = parsed
+                    # Re-create config to pick up the override
+                    self.cognito_config = CognitoConfig(cognito_dict)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "SSO_IDENTITY_PROVIDERS env var is not valid JSON — ignoring"
+                )
 
     def _setup_custom_attributes(self):
         attributes = {}
@@ -890,9 +906,31 @@ class CognitoStack(IStack, StandardizedSsmMixin):
 
         return attrs
 
-    def _build_identity_providers(self, providers: list) -> list:
-        """Build identity provider list from configuration"""
-        if not providers:
+    def _build_identity_providers(self, providers) -> list:
+        """Build identity provider list from configuration.
+
+        Handles:
+        - Native list: ["COGNITO", "AzureAD-CustomerX"]
+        - JSON-encoded string: '["COGNITO", "AzureAD-CustomerX"]'
+        - Comma-separated string: "COGNITO,AzureAD-CustomerX"
+        """
+        if isinstance(providers, str):
+            providers = providers.strip()
+            if not providers:
+                return None
+            # Try JSON parse first (handles '["COGNITO"]' format)
+            if providers.startswith("["):
+                try:
+                    import json
+
+                    providers = json.loads(providers)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+            else:
+                # Comma-separated string: "COGNITO,AzureAD-CustomerX"
+                providers = [p.strip() for p in providers.split(",") if p.strip()]
+
+        if not providers or not isinstance(providers, list):
             return None
 
         result = []

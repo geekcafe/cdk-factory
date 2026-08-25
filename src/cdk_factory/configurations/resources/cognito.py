@@ -322,7 +322,35 @@ class CognitoConfig(EnhancedBaseConfig):
         Returns:
             list or None if no identity providers are configured.
         """
-        return self.__config.get("identity_providers")
+        return self._parse_json_or_native(self.__config.get("identity_providers"))
+
+    def _parse_json_or_native(self, value) -> list | None:
+        """Parse a value that may be a native list or a JSON-encoded string.
+
+        Template parameters that pass complex types (arrays, objects) through
+        string-replacement engines may arrive as JSON strings rather than native
+        Python types. This handles both transparently.
+
+        Returns:
+            Parsed list, or None if empty/falsy.
+        """
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return value if value else None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+            try:
+                import json
+
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed if parsed else None
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return None
 
     @property
     def app_clients(self) -> list | None:
