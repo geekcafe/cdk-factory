@@ -24,6 +24,31 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(__name__)
 
 
+def _normalize_ssm_path(path: str) -> str:
+    """Normalize an SSM parameter path.
+
+    Ensures the path:
+    - Starts with exactly one leading /
+    - Contains no consecutive // segments
+    - Has no trailing /
+
+    Examples:
+        _normalize_ssm_path("aplos/dev/route53/id")   → "/aplos/dev/route53/id"
+        _normalize_ssm_path("/aplos/dev/route53/id")  → "/aplos/dev/route53/id"
+        _normalize_ssm_path("//aplos/dev//route53/id") → "/aplos/dev/route53/id"
+    """
+    import re
+
+    # Collapse any consecutive slashes into a single slash
+    path = re.sub(r"/+", "/", path)
+    # Ensure leading slash
+    if not path.startswith("/"):
+        path = "/" + path
+    # Remove trailing slash
+    path = path.rstrip("/")
+    return path
+
+
 @register_stack("cognito_library_module")
 @register_stack("cognito_stack")
 class CognitoStack(IStack, StandardizedSsmMixin):
@@ -268,7 +293,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                     ssm_imports = self.stack_config.ssm_config.get("imports", {})
                     route53_ns = ssm_imports.get("route53_namespace")
                     if route53_ns:
-                        ssm_path = f"/{route53_ns}/hosted-zone-id"
+                        ssm_path = _normalize_ssm_path(f"/{route53_ns}/hosted-zone-id")
                         param = ssm.StringParameter.from_string_parameter_name(
                             self, "cognito-domain-hz-id-for-cert", ssm_path
                         )
@@ -318,7 +343,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                     ssm_imports = self.stack_config.ssm_config.get("imports", {})
                     route53_ns = ssm_imports.get("route53_namespace")
                     if route53_ns:
-                        ssm_path = f"/{route53_ns}/hosted-zone-id"
+                        ssm_path = _normalize_ssm_path(f"/{route53_ns}/hosted-zone-id")
                         param = ssm.StringParameter.from_string_parameter_name(
                             self, "cognito-domain-hosted-zone-id-param", ssm_path
                         )
