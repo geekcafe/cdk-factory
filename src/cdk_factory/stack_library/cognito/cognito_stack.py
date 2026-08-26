@@ -531,12 +531,10 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # 2. Secrets Manager
         sm_ref = oidc_config.get("client_secret_secrets_manager")
         if sm_ref:
-            secret = secretsmanager.Secret.from_secret_name_v2(
-                self,
-                f"{provider_name}-oidc-secret",
-                secret_name=sm_ref,
-            )
-            return secret.secret_value.unsafe_unwrap()
+            # Use SecretValue.secrets_manager() which generates a proper
+            # CloudFormation dynamic reference: {{resolve:secretsmanager:name}}
+            # This is resolved by CF at deploy time, not synth time.
+            return cdk.SecretValue.secrets_manager(sm_ref).unsafe_unwrap()
 
         # 3. SSM SecureString
         ssm_path = oidc_config.get("client_secret_ssm")
