@@ -502,9 +502,7 @@ class TestCognitoDomainWithIdpAndClient:
                 "CallbackURLs": Match.array_with(
                     ["https://app.example.com/", "http://localhost:5173/"]
                 ),
-                "SupportedIdentityProviders": Match.array_with(
-                    ["COGNITO", "AzureAD-TestTenant"]
-                ),
+                "SupportedIdentityProviders": Match.array_with(["COGNITO"]),
             },
         )
 

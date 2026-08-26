@@ -639,7 +639,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                 "write_attributes": self._build_attributes(
                     client_config.get("write_attributes")
                 ),
-                "supported_identity_providers": self._build_identity_providers(
+                "supported_identity_providers": self._build_identity_providers_with_dependencies(
                     client_config.get("supported_identity_providers")
                 ),
             }
@@ -656,18 +656,6 @@ class CognitoStack(IStack, StandardizedSsmMixin):
 
             # Store reference
             self.app_clients[client_name] = app_client
-
-            # Ensure app client waits for any referenced identity providers to be created
-            if hasattr(self, "_identity_provider_resources"):
-                providers_list = client_config.get("supported_identity_providers", [])
-                for provider_name in providers_list:
-                    if (
-                        isinstance(provider_name, str)
-                        and provider_name in self._identity_provider_resources
-                    ):
-                        app_client.node.add_dependency(
-                            self._identity_provider_resources[provider_name]
-                        )
 
             logger.info(f"Created Cognito App Client: {client_name}")
 
@@ -953,6 +941,69 @@ class CognitoStack(IStack, StandardizedSsmMixin):
                     )
 
         return result if result else None
+
+    def _build_identity_providers_with_dependencies(self, providers) -> list:
+        """Build identity provider list, using CDK construct references for proper ordering.
+
+        For providers that are being created in this same stack (registered in
+        self._identity_provider_resources), uses the construct's provider_name token
+        instead of a raw string. This creates an implicit CloudFormation dependency,
+        ensuring the IdP resource is fully created before the app client references it.
+
+        This solves the first-deploy ordering problem where CF would try to update the
+        app client with a provider that doesn't exist yet.
+        """
+        # Parse the raw providers value (handles string, JSON, comma-separated)
+        parsed = self._build_identity_providers(providers)
+        if not parsed:
+            return None
+
+        # If no custom IdPs were created in this stack, return as-is
+        if (
+            not hasattr(self, "_identity_provider_resources")
+            or not self._identity_provider_resources
+        ):
+            return parsed
+
+        # Rebuild the list, substituting CDK construct references for custom providers
+        # that were created in this stack. This forces CF dependency ordering.
+        result = []
+        # Re-parse the raw provider names to check against our registry
+        raw_names = self._get_raw_provider_names(providers)
+
+        for i, cdk_provider in enumerate(parsed):
+            raw_name = raw_names[i] if i < len(raw_names) else None
+            if raw_name and raw_name in self._identity_provider_resources:
+                # Use the construct reference — CDK will create DependsOn automatically
+                idp_construct = self._identity_provider_resources[raw_name]
+                result.append(
+                    cognito.UserPoolClientIdentityProvider.custom(
+                        idp_construct.provider_name
+                    )
+                )
+            else:
+                result.append(cdk_provider)
+
+        return result if result else None
+
+    def _get_raw_provider_names(self, providers) -> list:
+        """Extract raw string provider names from the input (before CDK enum mapping)."""
+        if isinstance(providers, str):
+            providers = providers.strip()
+            if not providers:
+                return []
+            if providers.startswith("["):
+                try:
+                    import json
+
+                    providers = json.loads(providers)
+                except (json.JSONDecodeError, TypeError):
+                    return []
+            else:
+                providers = [p.strip() for p in providers.split(",") if p.strip()]
+        if not providers or not isinstance(providers, list):
+            return []
+        return [p if isinstance(p, str) else "" for p in providers]
 
     def _store_client_secret_in_secrets_manager(
         self,
