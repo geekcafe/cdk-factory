@@ -44,6 +44,11 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         self.cognito_config: CognitoConfig | None = None
         self.user_pool: cognito.IUserPool | None = None
         self.app_clients: dict = {}  # Store created app clients by name
+        # OIDC client secrets created by this stack (keyed by provider name).
+        # Populated when an IdP opts into secret creation via
+        # 'client_secret_secrets_manager_create'. Used to add a construct
+        # dependency so the secret exists before the IdP references it.
+        self._created_oidc_secrets: dict = {}
 
     def _build_resource_name(self, name: str) -> str:
         """Build resource name using deployment configuration"""
@@ -505,6 +510,12 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             attribute_mapping=attribute_mapping,
         )
 
+        # If this stack created the backing secret, ensure it exists before the
+        # IdP resolves the {{resolve:secretsmanager}} reference at deploy time.
+        created_secret = self._created_oidc_secrets.get(name)
+        if created_secret is not None:
+            provider.node.add_dependency(created_secret)
+
         logger.info(f"Created OIDC identity provider: {name} (issuer: {issuer_url})")
         return provider
 
@@ -531,9 +542,40 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # 2. Secrets Manager
         sm_ref = oidc_config.get("client_secret_secrets_manager")
         if sm_ref:
-            # Use SecretValue.secrets_manager() which generates a proper
-            # CloudFormation dynamic reference: {{resolve:secretsmanager:name}}
-            # This is resolved by CF at deploy time, not synth time.
+            # Opt-in: create the Secrets Manager secret as part of this stack
+            # instead of expecting it to already exist. This makes the deploy
+            # self-sufficient (no manual pre-provisioning) and avoids the
+            # ResourceNotFoundException that occurs when the secret is missing.
+            #
+            # The secret is created with:
+            #   - secret_name = sm_ref (so the IdP reference resolves to it)
+            #   - an initial value from 'client_secret_value' (real or placeholder)
+            #   - RemovalPolicy.RETAIN (never delete a credential on stack changes)
+            #
+            # NOTE: Cognito resolves this value at DEPLOY time and stores it on the
+            # provider. Updating the secret value later (out-of-band) does NOT update
+            # the IdP automatically — a redeploy of this stack is required to
+            # re-resolve the reference. This is a Cognito/CloudFormation limitation.
+            create_secret = (
+                str(
+                    oidc_config.get("client_secret_secrets_manager_create", False)
+                ).lower()
+                == "true"
+            )
+
+            if create_secret:
+                created = self._create_oidc_client_secret(
+                    provider_name, sm_ref, oidc_config
+                )
+                # Reference the created secret's value for the IdP. Using the
+                # construct's secret_value keeps a construct-level relationship so
+                # CDK understands the ordering; we also record the construct so
+                # _create_oidc_provider can add an explicit dependency.
+                self._created_oidc_secrets[provider_name] = created
+                return created.secret_value.unsafe_unwrap()
+
+            # Reference-only (default, unchanged): resolve an existing secret via a
+            # CloudFormation dynamic reference {{resolve:secretsmanager:name}}.
             return cdk.SecretValue.secrets_manager(sm_ref).unsafe_unwrap()
 
         # 3. SSM SecureString
@@ -546,6 +588,66 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             f"Provide one of: 'client_secret', 'client_secret_secrets_manager', "
             f"or 'client_secret_ssm'."
         )
+
+    # Placeholder used when an OIDC secret is created without an initial value.
+    # It is intentionally recognizable so it is easy to spot an un-populated
+    # credential in the console. Replace it with the real value out-of-band
+    # (then redeploy this stack so Cognito re-resolves the reference).
+    _OIDC_SECRET_PLACEHOLDER = "PLACEHOLDER_UPDATE_ME"
+
+    def _create_oidc_client_secret(
+        self, provider_name: str, secret_name: str, oidc_config: dict
+    ) -> secretsmanager.Secret:
+        """Create the Secrets Manager secret backing an OIDC client secret.
+
+        Opt-in via ``client_secret_secrets_manager_create: true`` on the OIDC
+        config. The secret is created at ``secret_name`` (the same path the IdP
+        references) with an initial value taken from ``client_secret_value`` when
+        provided, otherwise a recognizable placeholder.
+
+        The secret is created with ``RemovalPolicy.RETAIN`` so it is never deleted
+        when the stack is updated or a resource is replaced — a client credential
+        should outlive stack churn.
+
+        Args:
+            provider_name: The IdP name (used only for construct IDs / logging).
+            secret_name: The Secrets Manager secret name (matches the IdP reference).
+            oidc_config: The OIDC config dict (source of ``client_secret_value``).
+
+        Returns:
+            The created ``secretsmanager.Secret`` construct.
+        """
+        initial_value = oidc_config.get("client_secret_value")
+        used_placeholder = False
+        if initial_value is None or str(initial_value).strip() == "":
+            initial_value = self._OIDC_SECRET_PLACEHOLDER
+            used_placeholder = True
+
+        secret = secretsmanager.Secret(
+            self,
+            self._build_resource_name(f"oidc-secret-{provider_name}"),
+            secret_name=secret_name,
+            description=(
+                f"OIDC client secret for identity provider '{provider_name}'. "
+                f"Managed by the Cognito stack."
+            ),
+            secret_string_value=cdk.SecretValue.unsafe_plain_text(str(initial_value)),
+            removal_policy=cdk.RemovalPolicy.RETAIN,
+        )
+
+        if used_placeholder:
+            logger.warning(
+                f"OIDC provider '{provider_name}': created Secrets Manager secret "
+                f"'{secret_name}' with a PLACEHOLDER value. Update it with the real "
+                f"client secret, then redeploy this stack so Cognito picks it up."
+            )
+        else:
+            logger.info(
+                f"OIDC provider '{provider_name}': created Secrets Manager secret "
+                f"'{secret_name}' with a provided initial value."
+            )
+
+        return secret
 
     def _build_oidc_attribute_mapping(
         self, mapping_config: dict

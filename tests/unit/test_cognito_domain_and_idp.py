@@ -371,6 +371,125 @@ class TestCognitoIdentityProviders:
         with pytest.raises(ValueError, match="Unsupported identity provider type"):
             stack.build(stack_config, deployment_config, workload_config)
 
+    def test_oidc_secret_created_with_placeholder(
+        self, app, deployment_config, workload_config
+    ):
+        """When create flag is set with no value, a placeholder secret is created."""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_name": "test-pool",
+                    "identity_providers": [
+                        {
+                            "name": "AzureAD-Create",
+                            "type": "oidc",
+                            "oidc": {
+                                "client_id": "azure-client-id",
+                                "client_secret_secrets_manager": "app/prod/sso/azure/client-secret",
+                                "client_secret_secrets_manager_create": True,
+                                "issuer_url": "https://login.microsoftonline.com/tid/v2.0",
+                            },
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # A Secrets Manager secret is created at the referenced name
+        template.has_resource_properties(
+            "AWS::SecretsManager::Secret",
+            {"Name": "app/prod/sso/azure/client-secret"},
+        )
+        # It is retained (never auto-deleted on stack changes)
+        template.has_resource(
+            "AWS::SecretsManager::Secret",
+            {"DeletionPolicy": "Retain"},
+        )
+        # The IdP is still created
+        template.has_resource_properties(
+            "AWS::Cognito::UserPoolIdentityProvider",
+            {"ProviderName": "AzureAD-Create", "ProviderType": "OIDC"},
+        )
+
+    def test_oidc_secret_created_with_provided_value(
+        self, app, deployment_config, workload_config
+    ):
+        """When create flag is set with a value, the secret is created with it."""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_name": "test-pool",
+                    "identity_providers": [
+                        {
+                            "name": "AzureAD-CreateVal",
+                            "type": "oidc",
+                            "oidc": {
+                                "client_id": "azure-client-id",
+                                "client_secret_secrets_manager": "app/prod/sso/azure/client-secret",
+                                "client_secret_secrets_manager_create": True,
+                                "client_secret_value": "real-secret-abc",
+                                "issuer_url": "https://login.microsoftonline.com/tid/v2.0",
+                            },
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        template.has_resource_properties(
+            "AWS::SecretsManager::Secret",
+            {"Name": "app/prod/sso/azure/client-secret"},
+        )
+        template.resource_count_is("AWS::Cognito::UserPoolIdentityProvider", 1)
+
+    def test_oidc_secret_reference_only_does_not_create(
+        self, app, deployment_config, workload_config
+    ):
+        """Without the create flag, no secret is created (reference-only, unchanged)."""
+        stack_config = self._create_stack_config(
+            {
+                "name": "test-cognito-stack",
+                "cognito": {
+                    "user_pool_name": "test-pool",
+                    "identity_providers": [
+                        {
+                            "name": "AzureAD-RefOnly",
+                            "type": "oidc",
+                            "oidc": {
+                                "client_id": "azure-client-id",
+                                "client_secret_secrets_manager": "app/prod/sso/azure/client-secret",
+                                "issuer_url": "https://login.microsoftonline.com/tid/v2.0",
+                            },
+                        }
+                    ],
+                },
+            },
+            workload_config,
+        )
+
+        stack = CognitoStack(app, "TestStack")
+        stack.build(stack_config, deployment_config, workload_config)
+
+        template = Template.from_stack(stack)
+
+        # No secret resource created — the reference points at a pre-existing secret
+        template.resource_count_is("AWS::SecretsManager::Secret", 0)
+        template.resource_count_is("AWS::Cognito::UserPoolIdentityProvider", 1)
+
     def test_multiple_providers(self, app, deployment_config, workload_config):
         """Test creating multiple OIDC identity providers"""
         stack_config = self._create_stack_config(
