@@ -1,0 +1,45 @@
+{
+  "python_paths": [
+    "#!/Users/eric.wilson/Projects/geek-cafe/cdk-factory/.venv/bin/python",
+    "#!/Users/eric.wilson/Projects/geek-cafe/cdk-factory/.venv/bin/python3",
+    "#!/Users/eric.wilson/Projects/geek-cafe/cdk-factory/.venv/bin/python3.11"
+  ],
+  "setup_prompted": {
+    "gitignore": false,
+    "pysetup_json_gitignore": true
+  },
+  "repositories": {
+    "pypi": {
+      "type": "pypi",
+      "enabled": true,
+      "url": "https://pypi.org/simple",
+      "trusted": true
+    },
+    "codeartifact": {
+      "type": "codeartifact",
+      "enabled": false
+    },
+    "artifactory": {
+      "type": "artifactory",
+      "enabled": false
+    },
+    "nexus": {
+      "type": "nexus",
+      "enabled": false
+    },
+    "github": {
+      "type": "github",
+      "enabled": false
+    },
+    "azure": {
+      "type": "azure",
+      "enabled": false
+    },
+    "google": {
+      "type": "google",
+      "enabled": false
+    }
+  },
+  "setup_sh_update_preference": "interactive",
+  "env_action_preference": "clean"
+}

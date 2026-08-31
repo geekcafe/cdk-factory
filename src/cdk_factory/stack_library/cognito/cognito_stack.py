@@ -6,13 +6,12 @@ MIT License.  See Project Root for the license information.
 
 import aws_cdk as cdk
 from aws_cdk import aws_cognito as cognito
-from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as _lambda
-from aws_cdk import custom_resources as cr
-from constructs import Construct
-from aws_lambda_powertools import Logger
+from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_ssm as ssm
+from aws_cdk import custom_resources as cr
+from aws_lambda_powertools import Logger
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.resources.cognito import CognitoConfig
 from cdk_factory.configurations.stack import StackConfig
@@ -20,6 +19,7 @@ from cdk_factory.interfaces.istack import IStack
 from cdk_factory.interfaces.standardized_ssm_mixin import StandardizedSsmMixin
 from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
+from constructs import Construct
 
 logger = Logger(__name__)
 
@@ -89,6 +89,38 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         # Export SSM parameters after all resources are created
         self._export_ssm_parameters(self.user_pool)
 
+    def _is_sso_enabled(self) -> bool:
+        """Master gate for all SSO / custom-domain / external-IdP setup.
+
+        Controlled by the ``DEPLOY_SSO`` environment variable (set from the
+        deployment config). This is an explicit, single switch so that emptying
+        or half-populating individual SSO variables (e.g. blanking a client id
+        while leaving ``SSO_AUTH_DOMAIN`` set) can never produce a broken,
+        partially-configured provider or an orphaned custom domain.
+
+        When disabled, the stack:
+          - ignores ``SSO_IDENTITY_PROVIDERS`` (no external IdPs registered)
+          - skips the custom-domain branch of the user-pool domain setup
+          - strips any non-``COGNITO`` entries from an app client's
+            ``supported_identity_providers``
+
+        Resolution:
+          - ``DEPLOY_SSO`` explicitly set → ``true``/``false`` honored.
+          - ``DEPLOY_SSO`` unset → defaults to ``True`` to preserve the prior
+            implicit behavior (build whatever SSO config is present). Callers
+            that want SSO off must set ``DEPLOY_SSO=false``.
+
+        Returns:
+            bool: whether SSO-related resources should be created.
+        """
+        import os
+
+        raw = os.environ.get("DEPLOY_SSO")
+        if raw is None or str(raw).strip() == "":
+            # Unset → preserve legacy implicit behavior (enabled).
+            return True
+        return str(raw).strip().lower() == "true"
+
     def _resolve_sso_config_from_env(self):
         """Resolve SSO configuration from environment variables.
 
@@ -98,11 +130,20 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         read directly here at synth time.
 
         Environment variables:
+            DEPLOY_SSO: Master gate (see ``_is_sso_enabled``). When not "true",
+                SSO config is not resolved and no external IdPs are registered.
             SSO_IDENTITY_PROVIDERS: JSON array of IdP configs (or empty)
             SSO_SUPPORTED_IDENTITY_PROVIDERS: Comma-separated list (e.g., "COGNITO,AzureAD-CustomerX")
         """
         import json
         import os
+
+        # Master gate: when SSO is disabled, do not resolve or inject any IdPs.
+        if not self._is_sso_enabled():
+            logger.info(
+                "DEPLOY_SSO is not enabled — skipping SSO identity provider resolution."
+            )
+            return
 
         # Override identity_providers from env if the config has an empty/placeholder value
         idp_env = os.environ.get("SSO_IDENTITY_PROVIDERS", "")
@@ -284,6 +325,17 @@ class CognitoStack(IStack, StandardizedSsmMixin):
             )
 
         elif "custom_domain" in domain_config:
+            # Custom domain is part of the SSO/branded-auth surface. Skip entirely
+            # when SSO is disabled, so a lingering SSO_AUTH_DOMAIN value can't
+            # trigger a custom-domain (and its apex-A / cert dependency) on a
+            # non-SSO deploy.
+            if not self._is_sso_enabled():
+                logger.info(
+                    "DEPLOY_SSO is not enabled — skipping Cognito custom domain "
+                    f"'{domain_config.get('custom_domain')}'."
+                )
+                return
+
             # Custom domain — requires ACM certificate (must be in us-east-1 for Cognito)
             from aws_cdk import aws_certificatemanager as acm
             from aws_cdk import aws_route53 as route53
@@ -429,6 +481,12 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         App clients that reference these providers in `supported_identity_providers`
         must be created AFTER this method runs.
         """
+        if not self._is_sso_enabled():
+            logger.info(
+                "DEPLOY_SSO is not enabled — skipping external identity provider creation."
+            )
+            return
+
         providers_config = self.cognito_config.identity_providers
         if not providers_config or not isinstance(providers_config, list):
             return
@@ -1053,6 +1111,19 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         This solves the first-deploy ordering problem where CF would try to update the
         app client with a provider that doesn't exist yet.
         """
+        # When SSO is disabled, an app client must not reference any external IdP
+        # (those IdPs are not created). Collapse to COGNITO-only so the client is
+        # still valid. If the config listed only external providers, fall back to
+        # the CDK default (None → COGNITO).
+        if not self._is_sso_enabled():
+            raw_names = self._get_raw_provider_names(providers)
+            if any(name.upper() != "COGNITO" for name in raw_names if name):
+                logger.info(
+                    "DEPLOY_SSO is not enabled — restricting app client "
+                    "supported_identity_providers to COGNITO."
+                )
+            providers = "COGNITO" if raw_names else providers
+
         # Parse the raw providers value (handles string, JSON, comma-separated)
         parsed = self._build_identity_providers(providers)
         if not parsed:
