@@ -34,6 +34,7 @@ class StackFactory:
         "cloudfront_stack": "CloudFront CDN distribution",
         "monitoring_stack": "CloudWatch monitoring, alarms, and dashboards",
         "ecr_stack": "Elastic Container Registry for Docker images",
+        "sns_stack": "SNS topics and subscriptions for notifications",
     }
 
     def __init__(self):

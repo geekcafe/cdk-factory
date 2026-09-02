@@ -115,7 +115,7 @@ class CognitoStack(IStack, StandardizedSsmMixin):
         """
         import os
 
-        raw = os.environ.get("DEPLOY_SSO")
+        raw = os.environ.get("DEPLOY_SSO") or os.environ.get("SSO_DEPLOY_ENABLED")
         if raw is None or str(raw).strip() == "":
             # Unset → preserve legacy implicit behavior (enabled).
             return True
