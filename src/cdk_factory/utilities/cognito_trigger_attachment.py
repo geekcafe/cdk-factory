@@ -15,7 +15,13 @@ and:
 
 Usage as a CLI (called from pipeline post_steps):
 
+    # Provide the pool id directly (existing/imported pool)...
     export COGNITO_USER_POOL_ID="us-east-1_XXXXXXXXX"
+    # ...OR resolve it from SSM when the pool is created during this deploy
+    # (the Cognito stack exports the id, so its value isn't known ahead of time
+    # and can't be hardcoded in the deployment config). If COGNITO_USER_POOL_ID
+    # is empty, this SSM path is read as a fallback.
+    export COGNITO_USER_POOL_ID_SSM_PATH="/my-app/dev/cognito/user-pool-id"
     export SSM_LAMBDA_NAMESPACE="my-app/dev/lambda"
     export COGNITO_TRIGGERS="PreTokenGeneration=cognito-pre-token-trigger,PostAuthentication=cognito-post-auth-trigger"
     export AWS_ACCOUNT_NUMBER="123456789012"
@@ -143,9 +149,7 @@ class CognitoTriggerAttachment:
             else:
                 raise
 
-    def build_user_pool_arn(
-        self, user_pool_id: str, account: str, region: str
-    ) -> str:
+    def build_user_pool_arn(self, user_pool_id: str, account: str, region: str) -> str:
         """Construct the user pool ARN from its ID."""
         return f"arn:aws:cognito-idp:{region}:{account}:userpool/{user_pool_id}"
 
@@ -248,7 +252,10 @@ class CognitoTriggerAttachment:
 
 
 def _parse_triggers_spec(
-    spec: str, ssm_namespace: str, attacher: CognitoTriggerAttachment, role_arn: Optional[str]
+    spec: str,
+    ssm_namespace: str,
+    attacher: CognitoTriggerAttachment,
+    role_arn: Optional[str],
 ) -> Dict[str, str]:
     """Parse the COGNITO_TRIGGERS spec and resolve each Lambda ARN from SSM.
 
@@ -273,7 +280,9 @@ def _parse_triggers_spec(
             )
             continue
 
-        arn = attacher.resolve_trigger_arn(ssm_namespace, lambda_name, role_arn=role_arn)
+        arn = attacher.resolve_trigger_arn(
+            ssm_namespace, lambda_name, role_arn=role_arn
+        )
         if arn:
             triggers[trigger_key] = arn
         else:
@@ -291,6 +300,10 @@ def main():
     user_pool_id = os.getenv("COGNITO_USER_POOL_ID") or os.getenv(
         "COGNITO_PRIMARY_USER_POOL_ID"
     )
+    # SSM path where the Cognito stack publishes a newly-created pool's ID.
+    # Used when COGNITO_USER_POOL_ID is empty (e.g. the pool is created during
+    # this deploy rather than imported, so its ID isn't known ahead of time).
+    user_pool_id_ssm_path = os.getenv("COGNITO_USER_POOL_ID_SSM_PATH")
     ssm_namespace = os.getenv("SSM_LAMBDA_NAMESPACE")
     triggers_spec = os.getenv("COGNITO_TRIGGERS")
     account = os.getenv("AWS_ACCOUNT_NUMBER") or os.getenv("AWS_ACCOUNT")
@@ -307,15 +320,33 @@ def main():
         return v
 
     user_pool_id = _norm(user_pool_id)
+    user_pool_id_ssm_path = _norm(user_pool_id_ssm_path)
     ssm_namespace = _norm(ssm_namespace)
     triggers_spec = _norm(triggers_spec)
     account = _norm(account)
     role_arn = _norm(role_arn)
 
+    attacher = CognitoTriggerAttachment()
+
+    # Fall back to SSM for the pool ID when it wasn't supplied directly. This is
+    # the normal path for a brand-new customer account where the pool is created
+    # during the deploy — the Cognito stack exports the id to SSM, and we resolve
+    # it here rather than relying on a template param that is only populated when
+    # importing an existing pool.
+    if not user_pool_id and user_pool_id_ssm_path:
+        logger.info(
+            f"COGNITO_USER_POOL_ID not set — resolving pool id from SSM: "
+            f"{user_pool_id_ssm_path}"
+        )
+        user_pool_id = _norm(
+            attacher.get_ssm_parameter(user_pool_id_ssm_path, role_arn=role_arn)
+        )
+
     # If no user pool is configured, this is a no-op (e.g., deployments without SSO)
     if not user_pool_id:
         logger.info(
-            "COGNITO_USER_POOL_ID not set — skipping trigger attachment (no-op)"
+            "COGNITO_USER_POOL_ID not set (and not resolvable via "
+            "COGNITO_USER_POOL_ID_SSM_PATH) — skipping trigger attachment (no-op)"
         )
         sys.exit(0)
 
@@ -330,8 +361,6 @@ def main():
     if not account:
         print("ERROR: AWS_ACCOUNT_NUMBER (or AWS_ACCOUNT) is required", file=sys.stderr)
         sys.exit(1)
-
-    attacher = CognitoTriggerAttachment()
 
     triggers = _parse_triggers_spec(triggers_spec, ssm_namespace, attacher, role_arn)
 
