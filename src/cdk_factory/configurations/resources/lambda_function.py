@@ -196,15 +196,39 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
 
     @property
     def description(self) -> str:
-        """Description"""
+        """Description.
+
+        AWS Lambda limits the function description to 256 characters. Longer
+        values are truncated (with a trailing ellipsis) so a slightly-too-long
+        description never fails a deployment; a warning is logged so the source
+        config can be shortened.
+        """
         if self.__config and isinstance(self.__config, dict):
             description = self.__config.get("description")
             if description:
-                return description
+                return self._truncate_description(str(description))
             else:
                 return f"Lambda Function for {self.name}"
 
         return ""
+
+    @staticmethod
+    def _truncate_description(description: str) -> str:
+        """Truncate a Lambda description to the AWS 256-character limit."""
+        max_length = 256
+        if len(description) <= max_length:
+            return description
+
+        ellipsis = "..."
+        truncated = description[: max_length - len(ellipsis)] + ellipsis
+        logger.warning(
+            "Lambda description exceeds the AWS %d-character limit "
+            "(%d chars); truncating. Original: %r",
+            max_length,
+            len(description),
+            description,
+        )
+        return truncated
 
     @property
     def memory_size(self) -> int:
