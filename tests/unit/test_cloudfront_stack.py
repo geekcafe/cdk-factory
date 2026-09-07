@@ -593,6 +593,190 @@ class TestCloudFrontStack:
             },
         )
 
+    def test_cloudfront_with_managed_cors_response_headers_policy(
+        self, app, deployment_config, workload_config
+    ):
+        """Test an additional behavior referencing an AWS-managed CORS response headers policy"""
+        stack_config = StackConfig(
+            {
+                "cloudfront": {
+                    "name": "managed-cors-distribution",
+                    "origins": [
+                        {
+                            "id": "alb-origin",
+                            "type": "custom",
+                            "domain_name": "app.example.com",
+                        },
+                        {
+                            "id": "cdn-s3-origin",
+                            "type": "s3",
+                            "bucket_name": "example-cdn-bucket",
+                        },
+                    ],
+                    "default_cache_behavior": {
+                        "target_origin_id": "alb-origin",
+                    },
+                    "cache_behaviors": [
+                        {
+                            "path_pattern": "/lib/*",
+                            "target_origin_id": "cdn-s3-origin",
+                            "response_headers_policy": "CORS-With-Preflight",
+                        }
+                    ],
+                }
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = CloudFrontStack(
+            app,
+            "TestManagedCors",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
+        template = Template.from_stack(stack)
+
+        # The additional behavior should carry a ResponseHeadersPolicyId.
+        template.has_resource_properties(
+            "AWS::CloudFront::Distribution",
+            {
+                "DistributionConfig": Match.object_like(
+                    {
+                        "CacheBehaviors": Match.array_with(
+                            [
+                                Match.object_like(
+                                    {
+                                        "PathPattern": "/lib/*",
+                                        "ResponseHeadersPolicyId": Match.any_value(),
+                                    }
+                                )
+                            ]
+                        )
+                    }
+                )
+            },
+        )
+
+    def test_cloudfront_with_custom_cors_response_headers_policy(
+        self, app, deployment_config, workload_config
+    ):
+        """Test an additional behavior with a custom CORS response headers policy"""
+        stack_config = StackConfig(
+            {
+                "cloudfront": {
+                    "name": "custom-cors-distribution",
+                    "origins": [
+                        {
+                            "id": "alb-origin",
+                            "type": "custom",
+                            "domain_name": "app.example.com",
+                        },
+                        {
+                            "id": "cdn-s3-origin",
+                            "type": "s3",
+                            "bucket_name": "example-cdn-bucket",
+                        },
+                    ],
+                    "default_cache_behavior": {
+                        "target_origin_id": "alb-origin",
+                    },
+                    "cache_behaviors": [
+                        {
+                            "path_pattern": "/lib/*",
+                            "target_origin_id": "cdn-s3-origin",
+                            "allowed_methods": ["GET", "HEAD", "OPTIONS"],
+                            "cached_methods": ["GET", "HEAD", "OPTIONS"],
+                            "response_headers_policy": {
+                                "name": "test-cdn-assets-cors",
+                                "comment": "CORS for static assets",
+                                "cors": {
+                                    "access_control_allow_origins": [
+                                        "https://example.com",
+                                        "https://*.example.com",
+                                    ],
+                                    "access_control_allow_headers": ["*"],
+                                    "access_control_allow_methods": [
+                                        "GET",
+                                        "HEAD",
+                                        "OPTIONS",
+                                    ],
+                                    "access_control_allow_credentials": False,
+                                    "access_control_max_age_seconds": 600,
+                                    "origin_override": True,
+                                },
+                            },
+                        }
+                    ],
+                }
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = CloudFrontStack(
+            app,
+            "TestCustomCors",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+        stack.build(
+            stack_config=stack_config,
+            deployment=deployment_config,
+            workload=workload_config,
+        )
+        template = Template.from_stack(stack)
+
+        # A custom ResponseHeadersPolicy resource should be synthesized with our CORS config.
+        template.has_resource_properties(
+            "AWS::CloudFront::ResponseHeadersPolicy",
+            {
+                "ResponseHeadersPolicyConfig": Match.object_like(
+                    {
+                        "CorsConfig": Match.object_like(
+                            {
+                                "AccessControlAllowCredentials": False,
+                                "AccessControlAllowMethods": Match.object_like(
+                                    {"Items": ["GET", "HEAD", "OPTIONS"]}
+                                ),
+                                "AccessControlAllowOrigins": Match.object_like(
+                                    {
+                                        "Items": [
+                                            "https://example.com",
+                                            "https://*.example.com",
+                                        ]
+                                    }
+                                ),
+                                "OriginOverride": True,
+                            }
+                        )
+                    }
+                )
+            },
+        )
+
+        # And the behavior should reference a response headers policy id.
+        template.has_resource_properties(
+            "AWS::CloudFront::Distribution",
+            {
+                "DistributionConfig": Match.object_like(
+                    {
+                        "CacheBehaviors": Match.array_with(
+                            [
+                                Match.object_like(
+                                    {
+                                        "PathPattern": "/lib/*",
+                                        "ResponseHeadersPolicyId": Match.any_value(),
+                                    }
+                                )
+                            ]
+                        )
+                    }
+                )
+            },
+        )
+
     def test_cloudfront_with_http_version(
         self, app, deployment_config, workload_config
     ):

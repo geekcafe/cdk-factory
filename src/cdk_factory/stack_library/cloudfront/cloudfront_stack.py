@@ -145,7 +145,9 @@ class CloudFrontStack(IStack):
             return
 
         # Check if certificate ARN is provided
-        cert_arn = self.resolve_ssm_value(self, cert_config.get("arn"), "CertificateARN")
+        cert_arn = self.resolve_ssm_value(
+            self, cert_config.get("arn"), "CertificateARN"
+        )
         if cert_arn:
             self.certificate = acm.Certificate.from_certificate_arn(
                 self, "Certificate", certificate_arn=cert_arn
@@ -301,14 +303,17 @@ class CloudFrontStack(IStack):
         """Create S3 origin"""
         # Support both 'bucket_name' and 'domain_name' for S3 origins
         bucket_name = self.resolve_ssm_value(
-            self, config.get("bucket_name") or config.get("domain_name"), 
-            config.get("bucket_name") or config.get("domain_name")
+            self,
+            config.get("bucket_name") or config.get("domain_name"),
+            config.get("bucket_name") or config.get("domain_name"),
         )
 
         origin_path = config.get("origin_path", "")
 
         if not bucket_name:
-            raise ValueError("S3 origin requires 'bucket_name' or 'domain_name' configuration")
+            raise ValueError(
+                "S3 origin requires 'bucket_name' or 'domain_name' configuration"
+            )
 
         # For S3 origins, we need to import the bucket by name
         bucket = s3.Bucket.from_bucket_name(
@@ -474,6 +479,11 @@ class CloudFrontStack(IStack):
             config.get("lambda_edge_associations", [])
         )
 
+        # Response headers policy (e.g. CORS for cross-origin fonts/assets)
+        response_headers_policy = self._build_response_headers_policy(
+            config.get("response_headers_policy")
+        )
+
         return cloudfront.BehaviorOptions(
             origin=origin,
             viewer_protocol_policy=viewer_protocol_policy,
@@ -481,19 +491,24 @@ class CloudFrontStack(IStack):
             cached_methods=cached_methods,
             cache_policy=cache_policy,
             origin_request_policy=origin_request_policy,
+            response_headers_policy=response_headers_policy,
             compress=config.get("compress", True),
             edge_lambdas=edge_lambdas if edge_lambdas else None,
         )
 
-    def _build_cache_behavior_options(self, config: Dict[str, Any]) -> cloudfront.BehaviorOptions:
+    def _build_cache_behavior_options(
+        self, config: Dict[str, Any]
+    ) -> cloudfront.BehaviorOptions:
         """Build cache behavior options for additional behaviors"""
         # Get the origin for this behavior
         origin_id = config.get("target_origin_id")
         if not origin_id or origin_id not in self.origins_map:
-            raise ValueError(f"Invalid target_origin_id for cache behavior: {origin_id}")
-        
+            raise ValueError(
+                f"Invalid target_origin_id for cache behavior: {origin_id}"
+            )
+
         origin = self.origins_map[origin_id]
-        
+
         # Reuse the main cache behavior building logic
         return self._build_cache_behavior(config, origin)
 
@@ -578,6 +593,105 @@ class CloudFrontStack(IStack):
             cookie_behavior=self._build_origin_cookie_behavior(
                 config.get("cookies_config", {})
             ),
+        )
+
+    def _build_response_headers_policy(
+        self, config: Optional[Any]
+    ) -> Optional[cloudfront.IResponseHeadersPolicy]:
+        """
+        Build or reference a response headers policy for a cache behavior.
+
+        Supports three forms in the behavior config under "response_headers_policy":
+
+        1. A string naming an AWS-managed policy, e.g.:
+             "response_headers_policy": "CORS-With-Preflight"
+           Supported managed names: CORS-With-Preflight,
+           CORS-And-SecurityHeaders (a.k.a. CORS-With-Preflight-And-SecurityHeaders),
+           SecurityHeaders.
+
+        2. An object referencing a managed policy by name:
+             "response_headers_policy": {"name": "CORS-With-Preflight"}
+
+        3. An object defining a custom CORS policy:
+             "response_headers_policy": {
+                 "name": "my-cors-policy",
+                 "cors": {
+                     "access_control_allow_origins": ["*"],
+                     "access_control_allow_headers": ["*"],
+                     "access_control_allow_methods": ["GET", "HEAD", "OPTIONS"],
+                     "access_control_allow_credentials": false,
+                     "access_control_max_age_seconds": 600,
+                     "origin_override": true
+                 }
+             }
+
+        Returns None when no policy is configured (leaves the behavior unchanged).
+        """
+        if not config:
+            return None
+
+        managed_policies = {
+            "CORS-With-Preflight": cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT,
+            "CORS-And-SecurityHeaders": cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS,
+            "CORS-With-Preflight-And-SecurityHeaders": cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS,
+            "SecurityHeaders": cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
+        }
+
+        # Form 1: plain string naming a managed policy
+        if isinstance(config, str):
+            if config in managed_policies:
+                return managed_policies[config]
+            raise ValueError(
+                f"Unknown managed response headers policy '{config}'. "
+                f"Supported: {', '.join(managed_policies.keys())}, or provide a "
+                f"custom policy object with a 'cors' block."
+            )
+
+        if not isinstance(config, dict):
+            raise ValueError(
+                "response_headers_policy must be a string (managed policy name) or an object"
+            )
+
+        policy_name = config.get("name")
+
+        # Form 2: object referencing a managed policy (no custom cors block)
+        cors_config = config.get("cors")
+        if not cors_config:
+            if policy_name in managed_policies:
+                return managed_policies[policy_name]
+            raise ValueError(
+                f"response_headers_policy object '{policy_name}' has no 'cors' block "
+                f"and is not a known managed policy. "
+                f"Supported managed names: {', '.join(managed_policies.keys())}"
+            )
+
+        # Form 3: custom CORS policy
+        allow_origins = cors_config.get("access_control_allow_origins", ["*"])
+        allow_headers = cors_config.get("access_control_allow_headers", ["*"])
+        allow_methods = cors_config.get(
+            "access_control_allow_methods", ["GET", "HEAD", "OPTIONS"]
+        )
+        expose_headers = cors_config.get("access_control_expose_headers")
+        allow_credentials = cors_config.get("access_control_allow_credentials", False)
+        max_age_seconds = cors_config.get("access_control_max_age_seconds", 600)
+        origin_override = cors_config.get("origin_override", True)
+
+        cors_behavior = cloudfront.ResponseHeadersCorsBehavior(
+            access_control_allow_origins=allow_origins,
+            access_control_allow_headers=allow_headers,
+            access_control_allow_methods=allow_methods,
+            access_control_allow_credentials=allow_credentials,
+            access_control_expose_headers=expose_headers if expose_headers else [],
+            access_control_max_age=Duration.seconds(max_age_seconds),
+            origin_override=origin_override,
+        )
+
+        return cloudfront.ResponseHeadersPolicy(
+            self,
+            f"ResponseHeadersPolicy-{policy_name or 'cors'}",
+            response_headers_policy_name=policy_name,
+            comment=config.get("comment", "Custom CORS response headers policy"),
+            cors_behavior=cors_behavior,
         )
 
     def _build_cache_header_behavior(
