@@ -228,6 +228,10 @@ class CloudFrontDistributionConstruct(Construct):
 
         self.__update_bucket_policy(distribution)
 
+        # Grant OAC read access to any additional (cross-stack) distributions that
+        # need to serve content from this bucket.
+        self.__grant_read_to_additional_distributions()
+
         self.distribution = distribution
 
         return distribution
@@ -573,6 +577,85 @@ class CloudFrontDistributionConstruct(Construct):
             bucket=self.source_bucket,
         )
         bucket_policy.document.add_statements(self.__get_policy_statement_for_oai())
+
+    def __grant_read_to_additional_distributions(self) -> None:
+        """
+        Grant OAC read access on this (owned) bucket to additional CloudFront
+        distributions that live in other stacks.
+
+        This solves the cross-stack case: a distribution defined elsewhere (e.g.
+        the app/maintenance distribution) imports this bucket as an S3 origin.
+        Because that stack imports the bucket, CDK cannot mutate this bucket's
+        policy from there — the owning stack (this one) must author the grant.
+
+        Config (under the stack's "cloudfront" block):
+
+            "cloudfront": {
+                "grant_read_to_distribution_arns": [
+                    "{{ssm:/prod/trav-talks/cloudfront/arn}}",
+                    "arn:aws:cloudfront::123456789012:distribution/E2EEJ9M0E5PJ12"
+                ]
+            }
+
+        Each ARN may be a literal or an SSM reference ({{ssm:/path}}). SSM
+        references are resolved to CloudFormation dynamic tokens at deploy time
+        (no live AWS calls during synth).
+
+        The statement mirrors what OAC auto-generates: the CloudFront service
+        principal may s3:GetObject when AWS:SourceArn matches the distribution.
+        """
+        if not self.stack_config or not isinstance(self.stack_config, StackConfig):
+            return
+
+        cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+        distribution_arns = cloudfront_config.get("grant_read_to_distribution_arns", [])
+
+        if not distribution_arns:
+            return
+
+        if not isinstance(distribution_arns, list):
+            raise ValueError(
+                "cloudfront.grant_read_to_distribution_arns must be a list of "
+                "CloudFront distribution ARNs (literals or {{ssm:/path}} references)"
+            )
+
+        for index, arn in enumerate(distribution_arns):
+            if not arn:
+                continue
+
+            resolved_arn = self.__resolve_ssm_reference(arn, unique_id=f"grant-{index}")
+
+            self.source_bucket.add_to_resource_policy(
+                iam.PolicyStatement(
+                    sid=None,
+                    actions=["s3:GetObject"],
+                    resources=[self.source_bucket.arn_for_objects("*")],
+                    principals=[iam.ServicePrincipal("cloudfront.amazonaws.com")],
+                    conditions={"StringEquals": {"AWS:SourceArn": resolved_arn}},
+                )
+            )
+            logger.info(
+                "Granted OAC s3:GetObject on bucket to additional CloudFront "
+                "distribution (index %s)",
+                index,
+            )
+
+    def __resolve_ssm_reference(self, value: str, unique_id: str) -> str:
+        """
+        Resolve a {{ssm:/path}} reference to a CloudFormation dynamic token.
+
+        Uses value_for_string_parameter so the value is resolved by CloudFormation
+        at deploy time rather than via a live AWS call during synth. Non-SSM values
+        are returned unchanged.
+        """
+        if not isinstance(value, str):
+            return value
+
+        if value.startswith("{{ssm:") and value.endswith("}}"):
+            param_path = value[len("{{ssm:") : -2]
+            return ssm.StringParameter.value_for_string_parameter(self, param_path)
+
+        return value
 
     def __get_policy_statement_for_oai(self) -> iam.PolicyStatement:
         """
