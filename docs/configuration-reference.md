@@ -362,6 +362,13 @@ The `ssm` block is always a top-level peer of `name`, `module`, and `enabled`. N
 
 > **Removed key:** `ssm.enabled` is no longer accepted — use `ssm.auto_export` instead.
 
+> **Deterministic import logical IDs (1.11.0+):** the CloudFormation logical IDs
+> for imported SSM parameters are derived from a stable content hash of the path,
+> so they are reproducible across synths. Upgrading a deployed stack from an
+> earlier version produces a one-time logical-ID diff for these parameters — run
+> `cdk diff` first and see `MIGRATION.md` ("Deterministic SSM Logical IDs") and
+> `docs/naming-and-ssm.md`.
+
 ### SSM Namespace Precedence
 
 1. `ssm.namespace` (from the stack config) — highest priority

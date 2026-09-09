@@ -312,3 +312,119 @@ Follow these steps to migrate your consumer configs:
 | `CognitoStack` | `stack_library/cognito/` | Reads SSM from `stack_config.ssm_config` instead of `cognito.ssm`. |
 | `Route53Stack` | `stack_library/route53/` | Reads SSM from `stack_config.ssm_config` instead of `route53.ssm`. |
 | `MonitoringStack` | `stack_library/monitoring/` | Reads SSM from `stack_config.ssm_config` instead of `monitoring.ssm`. |
+
+
+---
+
+# Migration Guide — Deterministic SSM Logical IDs (1.11.0)
+
+This release changes how CloudFormation **logical IDs** are generated for
+imported SSM parameters. It does not change any real resource configuration, but
+because logical IDs change, **upgrading produces a one-time CloudFormation diff**
+on any stack that imports SSM parameters. Read this before upgrading a stack that
+is already deployed.
+
+## What changed and why
+
+Construct IDs for imported SSM parameters were built with Python's builtin
+`hash(path)`. Builtin `hash()` is seeded per process (`PYTHONHASHSEED`), so the
+same SSM path produced a **different** logical ID on every `cdk synth`. Any
+resource that referenced such a parameter therefore looked "changed" on every
+deploy. In most cases that is a harmless cosmetic diff, but where the reference
+sits in a **replacement-sensitive** property it can cascade into a resource
+replacement.
+
+Real-world example that motivated the fix: an ECS service references its capacity
+provider and target group through imported SSM parameters. The churning parameter
+logical IDs made the `AWS::ECS::Service` look changed, which cascaded into
+re-creating its Application Auto Scaling target-tracking policies and failed the
+deploy with:
+
+```
+Only one TargetTrackingScaling policy for a given metric specification is allowed.
+```
+
+1.11.0 replaces `hash(path)` with a stable content hash
+(`int(hashlib.sha1(path.encode()).hexdigest(), 16) % 10000`), so the logical IDs
+are identical across synths, processes, and machines going forward.
+
+## Impact when you upgrade an already-deployed stack
+
+- **First deploy after upgrading:** the imported-SSM CfnParameter logical IDs
+  change once (from the old random value to the new stable value), then never
+  again.
+- **Most stacks:** cosmetic — only the parameter's logical ID is renamed; the
+  resolved value and every real resource are unchanged.
+- **Replacement risk (rare):** only when an SSM-imported value is referenced by
+  an **immutable / replacement-forcing** property AND the consuming resource has
+  a **fixed physical name** or a service-side singleton constraint. Known
+  categories to check:
+  - `AWS::ECS::Service` `CapacityProviderStrategy` / `LoadBalancers`
+  - `AWS::ECS::CapacityProvider` (fixed `Name`) referencing an ASG
+  - `AWS::ApplicationAutoScaling::ScalingPolicy` (one target-tracking policy per
+    metric per scalable target)
+  - Any resource with a fixed physical name (e.g. an S3 `BucketName`) whose
+    changed reference forces replacement
+  Auto-named resources (no fixed physical name) are safe — CloudFormation
+  create-then-deletes with a new name and repoints references.
+
+## Required pre-flight: `cdk diff` before deploying
+
+For any already-deployed stack, run `cdk diff` before deploying the upgrade and
+inspect it:
+
+1. If the only differences are `AWS::SSM::Parameter` / CfnParameter logical-ID
+   renames and no real resource is listed as **replace** → safe to deploy.
+2. If a fixed-name resource or an Application Auto Scaling policy shows
+   **replacement**, reconcile it first. For the ECS Application Auto Scaling case,
+   delete the pre-existing target-tracking policies before the deploy so
+   CloudFormation can recreate them cleanly:
+   ```
+   aws application-autoscaling delete-scaling-policy \
+     --service-namespace ecs \
+     --resource-id service/<cluster>/<service> \
+     --scalable-dimension ecs:service:DesiredCount \
+     --policy-name <existing CPU policy name>
+   # repeat for the Memory policy
+   ```
+   The task count holds during the brief window (the capacity provider still
+   manages EC2 instances), and the deploy recreates the policies. After this
+   one-time reconcile, the stable logical IDs prevent recurrence.
+
+---
+
+# Migration Guide — RDS Credentials Secret Pinning (1.11.0)
+
+`RdsConfig` adds `secret_logical_id_override`. This is **opt-in** and only needed
+when an already-deployed RDS stack's generated credentials secret would otherwise
+be replaced by a construct-path change (e.g. this naming refactor, or moving the
+stack in/out of a pipeline Stage).
+
+## Symptom without the override
+
+`cdk diff` shows the generated `AWS::SecretsManager::Secret` being **destroyed and
+recreated** (its logical ID changed) even though the DB instance itself is stable.
+Deploying would rotate the master password and can fail because the new secret
+reuses the same name while the old one is pending deletion.
+
+## Fix
+
+1. Find the deployed secret's logical ID in the live template:
+   ```
+   aws cloudformation get-template --stack-name <rds-stack> \
+     --query TemplateBody --output json \
+     | grep -o '"[A-Za-z0-9]*Secret[A-Za-z0-9]*"'
+   ```
+2. Set it in the RDS config so CloudFormation sees no change:
+   ```json
+   {
+     "rds": {
+       "secret_name": "/my-namespace/rds/credentials",
+       "secret_logical_id_override": "<deployed secret logical id>"
+     }
+   }
+   ```
+3. Re-run `cdk diff` and confirm the secret shows **no change** (identical logical
+   ID) before deploying.
+
+Leave `secret_logical_id_override` unset for brand-new stacks.

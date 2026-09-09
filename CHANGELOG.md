@@ -2,6 +2,66 @@
 
 All notable changes to cdk-factory are documented here.
 
+## [1.11.0] — 2026-09-09
+
+> ⚠️ **Upgrade impact:** This release makes SSM-import CloudFormation logical IDs
+> deterministic. Upgrading from any earlier 1.10.x will produce a **one-time**
+> CloudFormation diff on stacks that import SSM parameters. Most changes are
+> cosmetic (a parameter's logical ID is renamed, resolved value unchanged), but
+> where an SSM-imported value feeds a **replacement-sensitive** property the
+> update can cascade into a resource replacement. **Run `cdk diff` before
+> deploying** and see `MIGRATION.md` → "Deterministic SSM logical IDs (1.11.0)".
+
+### Added
+- **RDS `secret_logical_id_override`** (`rds` config): pins the generated
+  credentials secret's (`AWS::SecretsManager::Secret`) CloudFormation logical ID
+  to an explicit value. Use it to preserve an already-deployed credentials secret
+  when a construct-path change (naming refactor, or moving a stack in/out of a
+  pipeline Stage) would otherwise change the auto-generated logical ID and force
+  CloudFormation to REPLACE the secret (destroy + recreate with a new password).
+  Unset for new stacks. See `MIGRATION.md`.
+- **CloudFront `response_headers_policy`** support in `CloudFrontDistributionConstruct`
+  (the `cdn_stack` / `website_library_module` path) — matches the existing support
+  in `cloudfront_library_module`. Accepts a managed policy name
+  (`CORS-With-Preflight`, `CORS-And-SecurityHeaders`, `SecurityHeaders`) or a
+  custom `cors` block. Attached to the default behavior; enables CDN-only S3
+  distributions to serve cross-origin assets (fonts, etc.) with CORS.
+- **CloudFront cross-stack OAC grant** in `CloudFrontDistributionConstruct`:
+  `grant_read` block (`distribution_arns` + `fallback_to_account`) and legacy
+  `grant_read_to_account` / `grant_read_to_distribution_arns`. Lets the S3 bucket
+  owner stack grant OAC `s3:GetObject` to distributions defined in OTHER stacks
+  (which import the bucket and therefore cannot author its policy). Account-scoped
+  grant is greenfield-safe (no cross-stack ordering dependency).
+
+### Changed
+- **Deterministic SSM import logical IDs (upgrade-impacting).** All construct IDs
+  for imported SSM parameters previously used Python's builtin `hash(path)`, which
+  is randomized per process via `PYTHONHASHSEED`. That produced a DIFFERENT
+  CloudFormation logical ID for the same SSM parameter on every `cdk synth`,
+  causing resources that reference those parameters (e.g. an ECS service's
+  `CapacityProviderStrategy` / `LoadBalancers`) to appear changed on every deploy —
+  triggering spurious updates and, in the ECS case, a cascade that recreated the
+  service's Application Auto Scaling target-tracking policies and failed with
+  "Only one TargetTrackingScaling policy for a given metric specification is
+  allowed." Replaced with a stable content hash
+  (`int(hashlib.sha1(path.encode()).hexdigest(), 16) % 10000`) across:
+  `interfaces/standardized_ssm_mixin.py` (`resolve_ssm_value`),
+  `stack_library/ecs/ecs_service_stack.py`,
+  `stack_library/cloudfront/cloudfront_stack.py`,
+  `stack_library/security_group/security_group_full_stack.py`,
+  `constructs/cloudfront/cloudfront_distribution_construct.py`,
+  `stack_library/route53/route53_stack.py`,
+  `stack_library/api_gateway/api_gateway_stack.py`,
+  `stack_library/api_gateway/api_gateway_route_group_nested_stack.py`,
+  `utilities/api_gateway_integration_utility.py`.
+
+### Removed
+- None
+
+### Fixed
+- **RDS credentials secret no longer silently at risk of replacement** on
+  construct-path changes when `secret_logical_id_override` is set (see Added).
+
 ## [1.0.5] — 2026-04-21
 
 ### Added

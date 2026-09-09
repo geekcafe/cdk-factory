@@ -133,3 +133,33 @@ For direct SSM path references (bypassing namespace):
   "lambda_arn_ssm_path": "/acme-saas/dev/lambda/callback-handler/arn"
 }
 ```
+
+
+## SSM Import Logical IDs (Determinism)
+
+When a stack imports an SSM parameter (e.g. via `imports`, `{{ssm:/path}}`
+references, or a `lambda_arn_ssm_path`), cdk-factory creates a lookup construct
+whose CloudFormation **logical ID** is derived from the parameter path.
+
+As of **1.11.0**, that logical ID is **deterministic** — it is derived from a
+stable content hash of the path (`sha1`), so the same SSM path always produces the
+same logical ID across `cdk synth` runs, processes, and machines.
+
+Before 1.11.0 these logical IDs used Python's builtin `hash()`, which is seeded
+per process (`PYTHONHASHSEED`). That produced a different logical ID on every
+synth, so resources referencing an imported SSM value appeared "changed" on every
+deploy — a source of spurious CloudFormation diffs and, for
+replacement-sensitive references (notably ECS `CapacityProviderStrategy` and
+Application Auto Scaling policies), deploy failures.
+
+Practical implications:
+
+- **New stacks:** nothing to do — logical IDs are stable from the start.
+- **Existing stacks upgrading to 1.11.0:** expect a **one-time** diff as the
+  imported-SSM logical IDs move from their old random value to the new stable
+  value. Run `cdk diff` first. Most changes are cosmetic; see `MIGRATION.md`
+  ("Deterministic SSM Logical IDs") for the replacement-risk checklist and the
+  Application Auto Scaling reconcile procedure.
+
+Do not reintroduce Python's builtin `hash()` for construct IDs anywhere — always
+use a content hash (`hashlib`) so logical IDs stay reproducible.
