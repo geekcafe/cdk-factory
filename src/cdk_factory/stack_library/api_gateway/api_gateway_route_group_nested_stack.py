@@ -10,6 +10,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import hashlib
 from typing import Any, Dict, List, Set
 
 from aws_cdk import aws_apigateway as apigateway
@@ -842,7 +843,7 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
             try:
                 param = ssm.StringParameter.from_string_parameter_name(
                     self,
-                    f"{group_name}-lambda-arn-param-{hash(lambda_arn_ssm_path) % 10000}",
+                    f"{group_name}-lambda-arn-param-{int(hashlib.sha1(lambda_arn_ssm_path.encode()).hexdigest(), 16) % 10000}",
                     lambda_arn_ssm_path,
                 )
                 self._lambda_arn_cache[lambda_arn_ssm_path] = param.string_value

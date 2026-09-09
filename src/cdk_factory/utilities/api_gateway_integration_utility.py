@@ -5,6 +5,7 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
+import hashlib
 import os
 from typing import Optional
 import aws_cdk as cdk
@@ -802,7 +803,9 @@ class ApiGatewayIntegrationUtility:
             # Use CfnResource to reference existing resource
             # This creates a reference without trying to create the resource
             imported_resource = apigateway.Resource.from_resource_id(
-                self.scope, f"imported-resource-{hash(full_path) % 10000}", resource_id
+                self.scope,
+                f"imported-resource-{int(hashlib.sha1(full_path.encode()).hexdigest(), 16) % 10000}",
+                resource_id,
             )
 
             logger.info(
@@ -864,7 +867,7 @@ class ApiGatewayIntegrationUtility:
             try:
                 api_gateway_id = ssm.StringParameter.from_string_parameter_name(
                     self.scope,
-                    f"api-gateway-id-param-{hash(ssm_path) % 10000}",
+                    f"api-gateway-id-param-{int(hashlib.sha1(ssm_path.encode()).hexdigest(), 16) % 10000}",
                     ssm_path,
                 ).string_value
                 logger.info(f"Found API Gateway ID from SSM: {api_gateway_id}")
@@ -980,7 +983,7 @@ class ApiGatewayIntegrationUtility:
             try:
                 authorizer_id = ssm.StringParameter.from_string_parameter_name(
                     self.scope,
-                    f"authorizer-id-param-{hash(ssm_path) % 10000}",
+                    f"authorizer-id-param-{int(hashlib.sha1(ssm_path.encode()).hexdigest(), 16) % 10000}",
                     ssm_path,
                 ).string_value
                 logger.info(f"Found authorizer ID from SSM: {authorizer_id}")
@@ -1042,7 +1045,7 @@ class ApiGatewayIntegrationUtility:
             try:
                 root_resource_id = ssm.StringParameter.from_string_parameter_name(
                     self.scope,
-                    f"root-resource-id-param-{hash(ssm_path) % 10000}",
+                    f"root-resource-id-param-{int(hashlib.sha1(ssm_path.encode()).hexdigest(), 16) % 10000}",
                     ssm_path,
                 ).string_value
                 logger.info(f"Found root resource ID from SSM: {root_resource_id}")

@@ -4,6 +4,7 @@ Maintainers: Eric Wilson
 MIT License.  See Project Root for the license information.
 """
 
+import hashlib
 from typing import Dict, Any, List, Optional
 
 import aws_cdk as cdk
@@ -146,7 +147,7 @@ class Route53Stack(IStack, StandardizedSsmMixin):
 
         if cache_key not in self._local_cache:
             # Create the distribution construct with a unique ID
-            unique_id = f"CF-{distribution_domain.replace('.', '-').replace('*', 'wildcard')}-{hash(cache_key) % 10000}"
+            unique_id = f"CF-{distribution_domain.replace('.', '-').replace('*', 'wildcard')}-{int(hashlib.sha1(cache_key.encode()).hexdigest(), 16) % 10000}"
             distribution = cloudfront.Distribution.from_distribution_attributes(
                 self,
                 unique_id,

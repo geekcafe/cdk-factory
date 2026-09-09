@@ -20,6 +20,7 @@ Key Features:
 - Backward compatibility support
 """
 
+import hashlib
 import os
 import re
 from typing import Dict, Any, Optional, List, Union
@@ -358,7 +359,16 @@ class StandardizedSsmMixin:
                 "extract_path": lambda v: v[6:-2],  # Remove {{ssm: and }}
                 "resolve": lambda path: ssm.StringParameter.from_string_parameter_name(
                     scope=scope,
-                    id=f"{unique_id}-env-{hash(path) % 10000}",
+                    # Deterministic suffix: Python's builtin hash() is seeded per
+                    # process (PYTHONHASHSEED), so it produced a DIFFERENT construct
+                    # id — and therefore a different CloudFormation logical ID for
+                    # this imported SSM parameter — on every `cdk synth`. That churn
+                    # made resources that Ref this parameter (e.g. an ECS service's
+                    # CapacityProviderStrategy / LoadBalancers) appear changed on
+                    # every deploy, forcing spurious updates/replacements. Use a
+                    # stable content hash so the logical ID is identical across
+                    # synths, processes, and machines.
+                    id=f"{unique_id}-env-{int(hashlib.sha1(path.encode()).hexdigest(), 16) % 10000}",
                     string_parameter_name=path,
                 ).string_value,
             },

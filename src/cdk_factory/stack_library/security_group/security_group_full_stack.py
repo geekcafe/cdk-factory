@@ -1,3 +1,4 @@
+import hashlib
 from typing import Dict, Any, List, Optional
 
 import aws_cdk as cdk
@@ -194,8 +195,6 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
                 description="Uptime Robot",
             )
 
-       
-
         # =========================================================
         # SSM Parameter Store Exports
         # =========================================================
@@ -214,33 +213,38 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
         Follows the same pattern as API Gateway and CloudFront stacks.
         """
         ssm_imports = self.sg_config.ssm_imports
-        
+
         if not ssm_imports:
             logger.debug("No SSM imports configured for Security Groups")
             return
-        
+
         logger.info(f"Processing {len(ssm_imports)} SSM imports for Security Groups")
-        
+
         for param_key, param_path in ssm_imports.items():
             try:
                 # Ensure parameter path starts with /
-                if not param_path.startswith('/'):
+                if not param_path.startswith("/"):
                     param_path = f"/{param_path}"
-                
+
                 # Create unique construct ID from parameter path
-                construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
-                
+                construct_id = (
+                    f"ssm-import-{param_key}-"
+                    f"{int(hashlib.sha1(param_path.encode()).hexdigest(), 16) % 10000}"
+                )
+
                 # Import SSM parameter - this creates a CDK token that resolves at deployment time
                 param = ssm.StringParameter.from_string_parameter_name(
                     self, construct_id, param_path
                 )
-                
+
                 # Store the token value for use in configuration
                 self.ssm_imported_values[param_key] = param.string_value
                 logger.info(f"Imported SSM parameter: {param_key} from {param_path}")
-                
+
             except Exception as e:
-                logger.error(f"Failed to import SSM parameter {param_key} from {param_path}: {e}")
+                logger.error(
+                    f"Failed to import SSM parameter {param_key} from {param_path}: {e}"
+                )
                 raise
 
     @property
@@ -248,47 +252,49 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
         """Get the VPC for the Security Group using centralized VPC provider mixin."""
         if self._vpc:
             return self._vpc
-        
+
         # Use the centralized VPC resolution from VPCProviderMixin
         self._vpc = self.resolve_vpc(
-            config=self.sg_config,
-            deployment=self.deployment,
-            workload=self.workload
+            config=self.sg_config, deployment=self.deployment, workload=self.workload
         )
         return self._vpc
 
-    def _export_ssm_parameters(self, security_groups_map: Dict[str, ec2.CfnSecurityGroup]) -> None:
+    def _export_ssm_parameters(
+        self, security_groups_map: Dict[str, ec2.CfnSecurityGroup]
+    ) -> None:
         """
         Export security group IDs to SSM Parameter Store based on configuration.
-        
+
         Args:
             security_groups_map: Dictionary mapping security group types to their CDK resources
         """
         # Get the security groups configuration list from the config
         security_groups_config = self.sg_config.security_groups
-        
+
         if not security_groups_config:
             logger.debug("No security groups configuration found for SSM exports")
             return
-        
-        logger.info(f"Processing SSM exports for {len(security_groups_config)} security groups")
-        
+
+        logger.info(
+            f"Processing SSM exports for {len(security_groups_config)} security groups"
+        )
+
         # Process each security group configuration
         for sg_config in security_groups_config:
             # Get the security group name and SSM exports
             sg_name = sg_config.get("name", "")
             ssm_config = sg_config.get("ssm", {})
             ssm_exports = ssm_config.get("exports", {})
-            
+
             if not ssm_exports:
                 logger.debug(f"No SSM exports configured for security group: {sg_name}")
                 continue
-            
+
             # Determine which security group this config refers to based on the name pattern
             # The config uses patterns like "{{ENVIRONMENT}}-{{WORKLOAD_NAME}}-rds-sg"
             sg_resource = None
             sg_type = None
-            
+
             if "-rds-sg" in sg_name or "-rds" in sg_name:
                 sg_resource = security_groups_map.get("rds")
                 sg_type = "rds"
@@ -301,11 +307,13 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
             elif "monitoring" in sg_name:
                 sg_resource = security_groups_map.get("monitoring")
                 sg_type = "monitoring"
-            
+
             if not sg_resource:
-                logger.warning(f"Could not map security group configuration to resource: {sg_name}")
+                logger.warning(
+                    f"Could not map security group configuration to resource: {sg_name}"
+                )
                 continue
-            
+
             # Export the security group ID if configured
             security_group_id_path = ssm_exports.get("security_group_id")
             if security_group_id_path:
@@ -316,4 +324,6 @@ class SecurityGroupsStack(IStack, VPCProviderMixin):
                     parameter_name=security_group_id_path,
                     description=f"Security Group ID for {sg_type} ({sg_name})",
                 )
-                logger.info(f"Exported SSM parameter: {security_group_id_path} for {sg_type} security group")
+                logger.info(
+                    f"Exported SSM parameter: {security_group_id_path} for {sg_type} security group"
+                )

@@ -1,3 +1,4 @@
+import hashlib
 from typing import Any, List, Mapping, Optional
 
 import aws_cdk as cdk
@@ -509,7 +510,7 @@ class CloudFrontDistributionConstruct(Construct):
                     # Create CloudFormation parameter that resolves SSM value
                     cfn_param = cdk.CfnParameter(
                         self,
-                        f"lambda-edge-arn-{hash(ssm_param_path) % 10000}-param",
+                        f"lambda-edge-arn-{int(hashlib.sha1(ssm_param_path.encode()).hexdigest(), 16) % 10000}-param",
                         type="AWS::SSM::Parameter::Value<String>",
                         default=ssm_param_path,
                         description=f"Lambda@Edge function ARN from SSM: {ssm_param_path}",

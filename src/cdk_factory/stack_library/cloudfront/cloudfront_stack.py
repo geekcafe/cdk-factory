@@ -5,6 +5,7 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
+import hashlib
 import logging
 from typing import Dict, List, Any, Optional
 
@@ -119,8 +120,14 @@ class CloudFrontStack(IStack):
                 if not param_path.startswith("/"):
                     param_path = f"/{param_path}"
 
-                # Create unique construct ID from parameter path
-                construct_id = f"ssm-import-{param_key}-{hash(param_path) % 10000}"
+                # Create unique construct ID from parameter path.
+                # Use a deterministic content hash (not Python's builtin hash(),
+                # which is randomized per process via PYTHONHASHSEED) so the
+                # CfnParameter logical ID is stable across synths.
+                construct_id = (
+                    f"ssm-import-{param_key}-"
+                    f"{int(hashlib.sha1(param_path.encode()).hexdigest(), 16) % 10000}"
+                )
 
                 # Import SSM parameter - this creates a CDK token that resolves at deployment time
                 param = ssm.StringParameter.from_string_parameter_name(
