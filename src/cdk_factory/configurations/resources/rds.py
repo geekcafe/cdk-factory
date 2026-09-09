@@ -170,6 +170,23 @@ class RdsConfig(EnhancedBaseConfig):
         )
 
     @property
+    def secret_logical_id_override(self) -> Optional[str]:
+        """
+        Optional CloudFormation logical ID to force on the generated credentials
+        secret (AWS::SecretsManager::Secret).
+
+        Use this ONLY to preserve a secret that already exists in a deployed
+        stack when a construct-path change (e.g. a cdk-factory naming refactor or
+        moving stacks in/out of a pipeline Stage) would otherwise change the
+        auto-generated logical ID and cause CloudFormation to REPLACE the secret
+        (destroy + recreate with a new password).
+
+        Set it to the EXACT logical ID currently in the deployed template so the
+        diff shows no change. Leave unset for new stacks.
+        """
+        return self.__config.get("secret_logical_id_override")
+
+    @property
     def allocated_storage(self) -> int:
         """Allocated storage in GB"""
         # Ensure we return an integer

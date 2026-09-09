@@ -78,9 +78,9 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             resource_type="rds",
             resource_name=instance_identifier,
             deployment=deployment,
-            workload=workload
+            workload=workload,
         )
-        
+
         # Process SSM imports
         self.process_ssm_imports()
 
@@ -95,28 +95,26 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
 
         # Add outputs
         self._add_outputs(instance_identifier)
-        
+
         # Export to SSM Parameter Store
         self._export_ssm_parameters(instance_identifier)
 
     @property
     def vpc(self) -> ec2.IVpc:
         """Get the VPC for the RDS instance using centralized VPC provider mixin."""
-        if hasattr(self, '_vpc') and self._vpc:
+        if hasattr(self, "_vpc") and self._vpc:
             return self._vpc
-        
+
         # Resolve VPC using the centralized VPC provider mixin
         self._vpc = self.resolve_vpc(
-            config=self.rds_config,
-            deployment=self.deployment,
-            workload=self.workload
+            config=self.rds_config, deployment=self.deployment, workload=self.workload
         )
         return self._vpc
 
     def _get_security_groups(self) -> List[ec2.ISecurityGroup]:
         """Get security groups for the RDS instance"""
         security_groups = []
-        
+
         # Check SSM imports first for security group ID
         ssm_imports = self.get_all_ssm_imports()
         if "security_group_rds_id" in ssm_imports:
@@ -126,7 +124,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     self, "RDSSecurityGroup", sg_id
                 )
             )
-        
+
         # Also check config for any additional security group IDs
         for idx, sg_id in enumerate(self.rds_config.security_group_ids):
             security_groups.append(
@@ -134,33 +132,35 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                     self, f"SecurityGroup-{idx}", sg_id
                 )
             )
-        
+
         return security_groups
 
     def _get_subnet_selection(self) -> ec2.SubnetSelection:
         """
         Get subnet selection based on available subnet types in the VPC.
-        
+
         RDS instances require private subnets for security, but we'll fall back
         to available subnets if the preferred types aren't available.
         """
         vpc = self.vpc
-        
+
         # Check for isolated subnets first (most secure for RDS)
         if vpc.isolated_subnets:
             logger.info("Using isolated subnets for RDS instance")
             return ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED)
-        
+
         # Check for private subnets next
         elif vpc.private_subnets:
             logger.info("Using private subnets for RDS instance")
             return ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS)
-        
+
         # Fall back to public subnets (not recommended for production)
         elif vpc.public_subnets:
-            logger.warning("Using public subnets for RDS instance - not recommended for production")
+            logger.warning(
+                "Using public subnets for RDS instance - not recommended for production"
+            )
             return ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC)
-        
+
         else:
             raise ValueError("No subnets available in VPC for RDS instance")
 
@@ -172,7 +172,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # If we have subnet IDs from SSM, create a DB subnet group explicitly
         db_subnet_group = None
         subnet_ids = self.get_subnet_ids(self.rds_config)
-        
+
         if subnet_ids:
             # For CloudFormation token resolution, we need to get the raw SSM value
             # Use the standardized SSM imports
@@ -181,16 +181,16 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 subnet_ids_str = ssm_imports["subnet_ids"]
                 # Split the comma-separated token into a list for CloudFormation
                 subnet_ids_list = cdk.Fn.split(",", subnet_ids_str)
-                
+
                 # Create DB subnet group with the token-based subnet list
                 db_subnet_group = rds.CfnDBSubnetGroup(
                     self,
                     "DBSubnetGroup",
                     db_subnet_group_description=f"Subnet group for {db_name}",
                     subnet_ids=subnet_ids_list,
-                    db_subnet_group_name=f"{db_name}-subnet-group"
+                    db_subnet_group_name=f"{db_name}-subnet-group",
                 )
-        
+
         # Configure subnet selection for VPC (when not using SSM imports)
         subnets = None if db_subnet_group else self._get_subnet_selection()
 
@@ -217,7 +217,11 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
         # Configure instance type
         # Strip 'db.' prefix if present since ec2.InstanceType expects just the instance family/size
         instance_class = self.rds_config.instance_class
-        instance_class_name = instance_class.replace("db.", "") if instance_class.startswith("db.") else instance_class
+        instance_class_name = (
+            instance_class.replace("db.", "")
+            if instance_class.startswith("db.")
+            else instance_class
+        )
         instance_type = ec2.InstanceType(instance_class_name)
 
         # Configure removal policy
@@ -252,7 +256,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             "allow_major_version_upgrade": self.rds_config.allow_major_version_upgrade,
             "removal_policy": removal_policy,
         }
-        
+
         # Add storage auto-scaling if max_allocated_storage is configured
         if self.rds_config.max_allocated_storage:
             db_props["max_allocated_storage"] = self.rds_config.max_allocated_storage
@@ -260,7 +264,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 f"Storage auto-scaling enabled: {self.rds_config.allocated_storage}GB "
                 f"-> {self.rds_config.max_allocated_storage}GB"
             )
-        
+
         # Use either subnet group or vpc_subnets depending on what's available
         if db_subnet_group:
             db_props["subnet_group"] = rds.SubnetGroup.from_subnet_group_name(
@@ -268,8 +272,37 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
             )
         else:
             db_props["vpc_subnets"] = subnets
-        
+
         db_instance = rds.DatabaseInstance(self, stable_db_id, **db_props)
+
+        # Optionally pin the generated credentials secret's CloudFormation logical
+        # ID. The L2 DatabaseInstance creates the secret as a nested child
+        # (DatabaseInstance -> "Secret" (DatabaseSecret) -> CfnSecret), so its
+        # logical ID is derived from the construct path. If that path changes
+        # (e.g. a naming refactor, or moving the stack in/out of a pipeline
+        # Stage), the logical ID changes and CloudFormation REPLACES the secret
+        # (destroy + recreate with a new password). Setting
+        # rds.secret_logical_id_override to the already-deployed logical ID keeps
+        # the existing secret in place. See RdsConfig.secret_logical_id_override.
+        secret_logical_id = self.rds_config.secret_logical_id_override
+        if secret_logical_id:
+            try:
+                secret_node = db_instance.node.find_child("Secret")
+                cfn_secret = secret_node.node.default_child
+                cfn_secret.override_logical_id(secret_logical_id)
+                logger.info(
+                    "Pinned RDS credentials secret logical ID to '%s' "
+                    "(prevents secret replacement)",
+                    secret_logical_id,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                raise ValueError(
+                    "rds.secret_logical_id_override was set but the generated "
+                    "credentials secret construct could not be located to apply "
+                    "the override. This can happen if the RDS credentials are not "
+                    "created via from_generated_secret. Remove the override or "
+                    f"verify the RDS credential configuration. Underlying error: {exc}"
+                ) from exc
 
         # Add tags
         for key, value in self.rds_config.tags.items():
@@ -295,13 +328,13 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
     def _export_ssm_parameters(self, db_name: str) -> None:
         """Export RDS connection info and credentials to SSM Parameter Store"""
         ssm_exports = self.rds_config.ssm_exports
-        
+
         if not ssm_exports:
             logger.debug("No SSM exports configured for RDS")
             return
-        
+
         logger.info(f"Exporting {len(ssm_exports)} SSM parameters for RDS")
-        
+
         # Export database endpoint
         if "db_endpoint" in ssm_exports:
             self.export_ssm_parameter(
@@ -312,7 +345,7 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 description=f"RDS endpoint for {db_name}",
             )
             logger.info(f"Exported SSM parameter: {ssm_exports['db_endpoint']}")
-        
+
         # Export database port
         if "db_port" in ssm_exports:
             self.export_ssm_parameter(
@@ -323,9 +356,12 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 description=f"RDS port for {db_name}",
             )
             logger.info(f"Exported SSM parameter: {ssm_exports['db_port']}")
-        
+
         # Export database name
-        if "db_instance_identifier" in ssm_exports and self.rds_config.instance_identifier:
+        if (
+            "db_instance_identifier" in ssm_exports
+            and self.rds_config.instance_identifier
+        ):
             self.export_ssm_parameter(
                 scope=self,
                 id="SsmExportDbName",
@@ -333,8 +369,10 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 parameter_name=ssm_exports["db_instance_identifier"],
                 description=f"RDS database name for {db_name}",
             )
-            logger.info(f"Exported SSM parameter: {ssm_exports['db_instance_identifier']}")
-        
+            logger.info(
+                f"Exported SSM parameter: {ssm_exports['db_instance_identifier']}"
+            )
+
         # Export secret ARN (contains username and password)
         if "db_secret_arn" in ssm_exports:
             if hasattr(self.db_instance, "secret") and self.db_instance.secret:
@@ -347,4 +385,6 @@ class RdsStack(IStack, VPCProviderMixin, StandardizedSsmMixin):
                 )
                 logger.info(f"Exported SSM parameter: {ssm_exports['db_secret_arn']}")
             else:
-                logger.warning(f"Secret not found for RDS instance {db_name}, skipping secret ARN export")
+                logger.warning(
+                    f"Secret not found for RDS instance {db_name}, skipping secret ARN export"
+                )
