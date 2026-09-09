@@ -42,6 +42,55 @@ class TestS3BucketStack:
             deployment={"name": "test", "environment": "test"},
         )
 
+    def test_nested_bucket_ssm_raises(self, app, deployment_config, workload_config):
+        """A nested `bucket.ssm` block must raise (exports would be silently skipped)."""
+        stack_config = StackConfig(
+            {
+                "name": "my-bucket-stack",
+                "bucket": {
+                    "name": "my-test-bucket",
+                    "ssm": {
+                        "exports": {
+                            "bucket_name": "/test/bucket/name",
+                        }
+                    },
+                },
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = S3BucketStack(
+            app,
+            "TestNestedBucketSsmRaises",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+        with pytest.raises(ValueError, match="must be a TOP-LEVEL block"):
+            stack.build(stack_config, deployment_config, workload_config)
+
+    def test_top_level_ssm_ok(self, app, deployment_config, workload_config):
+        """A top-level `ssm` block builds without error (the correct placement)."""
+        stack_config = StackConfig(
+            {
+                "name": "my-bucket-stack",
+                "bucket": {"name": "my-test-bucket"},
+                "ssm": {
+                    "exports": {
+                        "bucket_name": "/test/bucket/name",
+                    }
+                },
+            },
+            workload=workload_config.dictionary,
+        )
+
+        stack = S3BucketStack(
+            app,
+            "TestTopLevelSsmOk",
+            env=cdk.Environment(account="123456789012", region="us-east-1"),
+        )
+        # Should not raise.
+        stack.build(stack_config, deployment_config, workload_config)
+        Template.from_stack(stack).has_resource("AWS::S3::Bucket", {})
+
     def test_minimal_s3_bucket(self, app, deployment_config, workload_config):
         """Test S3 Bucket stack with minimal configuration"""
         stack_config = StackConfig(
@@ -111,9 +160,7 @@ class TestS3BucketStack:
         # Verify versioning is enabled
         template.has_resource_properties(
             "AWS::S3::Bucket",
-            {
-                "VersioningConfiguration": {"Status": "Enabled"}
-            },
+            {"VersioningConfiguration": {"Status": "Enabled"}},
         )
 
     def test_s3_bucket_with_ssl_enforcement(
@@ -231,9 +278,7 @@ class TestS3BucketStack:
     def test_s3_bucket_requires_config(self, app, deployment_config, workload_config):
         """Test that S3 Bucket requires configuration"""
         stack_config = StackConfig(
-            {
-                "bucket": {}
-            },
+            {"bucket": {}},
             workload=workload_config.dictionary,
         )
 
@@ -283,6 +328,7 @@ class TestS3BucketStack:
         assert len(s3_buckets) >= 1
         # Auto-delete buckets should have Delete policy
         assert any(
-            b.get("DeletionPolicy") == "Delete" or b.get("UpdateReplacePolicy") == "Delete"
+            b.get("DeletionPolicy") == "Delete"
+            or b.get("UpdateReplacePolicy") == "Delete"
             for b in s3_buckets
         )

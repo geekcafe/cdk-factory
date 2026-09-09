@@ -55,6 +55,25 @@ class S3BucketStack(IStack, StandardizedSsmMixin):
 
         self.bucket_config = S3BucketConfig(stack_config.dictionary.get("bucket", {}))
 
+        # Guard: SSM config must be a TOP-LEVEL peer of `name`/`module`/`enabled`,
+        # not nested under `bucket`. bucket_stack reads exports from
+        # stack_config.ssm_config; a nested `bucket.ssm` block is silently ignored
+        # (the parameters never get exported), which breaks downstream stacks that
+        # import those paths. Fail fast with a prescriptive message instead.
+        if isinstance(stack_config.dictionary.get("bucket"), dict) and (
+            "ssm" in stack_config.dictionary["bucket"]
+        ):
+            raise ValueError(
+                f"Stack '{stack_config.name}': 'ssm' must be a TOP-LEVEL block, not "
+                "nested under 'bucket'. A nested 'bucket.ssm' block is not read by "
+                "bucket_stack and its exports would be silently skipped. Move the "
+                "'ssm' block to be a peer of 'name'/'module'/'bucket'.\n\n"
+                "  Wrong:\n"
+                '    { "bucket": { "ssm": { "exports": { ... } } } }\n\n'
+                "  Correct:\n"
+                '    { "bucket": { ... }, "ssm": { "exports": { ... } } }'
+            )
+
         # Validate: if use_existing is true, name must be provided
         if self.bucket_config.use_existing:
             try:
