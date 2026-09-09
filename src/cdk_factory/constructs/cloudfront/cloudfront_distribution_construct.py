@@ -221,6 +221,7 @@ class CloudFrontDistributionConstruct(Construct):
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 function_associations=self.__get_function_associations(),
                 edge_lambdas=self.__get_lambda_edge_associations(),
+                response_headers_policy=self.__get_response_headers_policy(),
             ),
             default_root_object="index.html",
             error_responses=self._error_responses(),
@@ -276,6 +277,113 @@ class CloudFrontDistributionConstruct(Construct):
                 )
 
         return error_responses
+
+    def __get_response_headers_policy(
+        self,
+    ) -> Optional[cloudfront.IResponseHeadersPolicy]:
+        """
+        Build a response headers policy for the default behavior from config.
+
+        Read from the stack's "cloudfront.response_headers_policy" and supports
+        the same three forms as CloudFrontStack:
+
+        1. A string naming an AWS-managed policy:
+             "response_headers_policy": "CORS-With-Preflight"
+
+        2. An object referencing a managed policy:
+             "response_headers_policy": {"name": "CORS-With-Preflight"}
+
+        3. An object defining a custom CORS policy:
+             "response_headers_policy": {
+                 "name": "cdn-assets-cors",
+                 "cors": {
+                     "access_control_allow_origins": ["https://example.com", "http://localhost:5000"],
+                     "access_control_allow_headers": ["*"],
+                     "access_control_allow_methods": ["GET", "HEAD", "OPTIONS"],
+                     "access_control_allow_credentials": false,
+                     "access_control_max_age_seconds": 600,
+                     "origin_override": true
+                 }
+             }
+
+        This is what lets a CDN-only S3 distribution serve fonts/assets
+        cross-origin with proper CORS headers (and CloudFront varies on Origin
+        automatically for a CORS response headers policy). Returns None when no
+        policy is configured, leaving the behavior unchanged.
+        """
+        if not self.stack_config or not isinstance(self.stack_config, StackConfig):
+            return None
+
+        cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+        config = cloudfront_config.get("response_headers_policy")
+
+        if not config:
+            return None
+
+        managed_policies = {
+            "CORS-With-Preflight": cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT,
+            "CORS-And-SecurityHeaders": cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS,
+            "CORS-With-Preflight-And-SecurityHeaders": cloudfront.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT_AND_SECURITY_HEADERS,
+            "SecurityHeaders": cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
+        }
+
+        # Form 1: plain string naming a managed policy
+        if isinstance(config, str):
+            if config in managed_policies:
+                return managed_policies[config]
+            raise ValueError(
+                f"Unknown managed response headers policy '{config}'. "
+                f"Supported: {', '.join(managed_policies.keys())}, or provide a "
+                f"custom policy object with a 'cors' block."
+            )
+
+        if not isinstance(config, dict):
+            raise ValueError(
+                "cloudfront.response_headers_policy must be a string (managed policy "
+                "name) or an object"
+            )
+
+        policy_name = config.get("name")
+
+        # Form 2: object referencing a managed policy (no custom cors block)
+        cors_config = config.get("cors")
+        if not cors_config:
+            if policy_name in managed_policies:
+                return managed_policies[policy_name]
+            raise ValueError(
+                f"response_headers_policy object '{policy_name}' has no 'cors' block "
+                f"and is not a known managed policy. "
+                f"Supported managed names: {', '.join(managed_policies.keys())}"
+            )
+
+        # Form 3: custom CORS policy
+        allow_origins = cors_config.get("access_control_allow_origins", ["*"])
+        allow_headers = cors_config.get("access_control_allow_headers", ["*"])
+        allow_methods = cors_config.get(
+            "access_control_allow_methods", ["GET", "HEAD", "OPTIONS"]
+        )
+        expose_headers = cors_config.get("access_control_expose_headers")
+        allow_credentials = cors_config.get("access_control_allow_credentials", False)
+        max_age_seconds = cors_config.get("access_control_max_age_seconds", 600)
+        origin_override = cors_config.get("origin_override", True)
+
+        cors_behavior = cloudfront.ResponseHeadersCorsBehavior(
+            access_control_allow_origins=allow_origins,
+            access_control_allow_headers=allow_headers,
+            access_control_allow_methods=allow_methods,
+            access_control_allow_credentials=allow_credentials,
+            access_control_expose_headers=expose_headers if expose_headers else [],
+            access_control_max_age=Duration.seconds(max_age_seconds),
+            origin_override=origin_override,
+        )
+
+        return cloudfront.ResponseHeadersPolicy(
+            self,
+            f"ResponseHeadersPolicy-{policy_name or 'cors'}",
+            response_headers_policy_name=policy_name,
+            comment=config.get("comment", "Custom CORS response headers policy"),
+            cors_behavior=cors_behavior,
+        )
 
     def __get_function_associations(self) -> List[cloudfront.FunctionAssociation]:
         """
@@ -588,85 +696,132 @@ class CloudFrontDistributionConstruct(Construct):
         Because that stack imports the bucket, CDK cannot mutate this bucket's
         policy from there — the owning stack (this one) must author the grant.
 
-        Two mutually-compatible mechanisms are supported, both authored entirely
-        at this stack's synth time (no live AWS calls, no cross-stack runtime
-        dependency):
+        All decisions are made at THIS stack's synth time from static config
+        (no live AWS calls, no cross-stack runtime dependency, no deploy-time
+        SSM resolution required to choose which policy to write).
 
-        1. Account-scoped grant (recommended, greenfield-safe):
+        Preferred config — a single "grant_read" block that expresses intent and
+        lets the strict grant win whenever distribution ARNs are supplied:
 
-               "cloudfront": { "grant_read_to_account": true }
+            "cloudfront": {
+                "grant_read": {
+                    "distribution_arns": [
+                        "arn:aws:cloudfront::123456789012:distribution/E2EEJ9M0E5PJ12"
+                    ],
+                    "fallback_to_account": true
+                }
+            }
 
-           Emits a statement allowing the CloudFront service principal to
-           s3:GetObject when the request originates from a CloudFront
-           distribution in THIS account (AWS:SourceAccount = account id). The
-           account id is known at synth from the stack, so there is NO ordering
-           dependency on any other stack — a brand-new environment deploys in a
-           single pass regardless of which distribution is created first. This is
-           the AWS-recommended confused-deputy protection scoped by account, and
-           is safe for a private, single-tenant asset bucket.
+        Selection logic (strict replaces loose):
+          - If "distribution_arns" is non-empty  -> emit ONLY the strict per-ARN
+            grants (tightest lock-down). The account fallback is intentionally
+            NOT added, since supplying IDs means you no longer want to trust the
+            whole account.
+          - Else if "fallback_to_account" is true -> emit the account-scoped
+            grant (greenfield-safe bootstrap; no ordering dependency because the
+            account id is known at synth).
+          - "account_id" may be set inside grant_read to scope the fallback to a
+            specific account instead of this stack's account.
 
-           Optionally scope to a specific account id instead of the current one:
+        Backward-compatible top-level keys (still honored, additive to any
+        grant_read block):
+            "grant_read_to_account": true | "123456789012"
+            "grant_read_to_distribution_arns": ["arn:...", "{{ssm:/path}}"]
 
-               "cloudfront": { "grant_read_to_account": "123456789012" }
-
-        2. Explicit distribution ARNs (tightest lock-down):
-
-               "cloudfront": {
-                   "grant_read_to_distribution_arns": [
-                       "arn:aws:cloudfront::123456789012:distribution/E2EEJ9M0E5PJ12"
-                   ]
-               }
-
-           Use this once distribution IDs are stable and you want to restrict to
-           exact distributions. Literals or {{ssm:/path}} references are accepted;
-           note that an {{ssm:...}} reference to a value produced by a LATER stack
-           reintroduces an ordering dependency, so prefer literals here.
+        Note on SSM in distribution_arns: a literal ARN is safest. An
+        {{ssm:/path}} reference becomes a CloudFormation dynamic reference that
+        MUST already exist at deploy time — CloudFormation fails the stack if the
+        parameter is missing (there is no graceful fallback). And referencing a
+        value produced by a LATER stack reintroduces the ordering dependency we
+        are trying to avoid, so prefer literals here.
         """
         if not self.stack_config or not isinstance(self.stack_config, StackConfig):
             return
 
         cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
 
-        # --- Mechanism 1: account-scoped grant (no ordering dependency) ---
-        grant_account = cloudfront_config.get("grant_read_to_account", False)
-        if grant_account:
-            if isinstance(grant_account, str):
-                account_id = grant_account
-            else:
-                account_id = cdk.Stack.of(self).account
-
-            self.source_bucket.add_to_resource_policy(
-                iam.PolicyStatement(
-                    sid="AllowCloudFrontServicePrincipalReadOnlyAccount",
-                    actions=["s3:GetObject"],
-                    resources=[self.source_bucket.arn_for_objects("*")],
-                    principals=[iam.ServicePrincipal("cloudfront.amazonaws.com")],
-                    conditions={"StringEquals": {"AWS:SourceAccount": account_id}},
+        # --- Preferred: unified grant_read block (strict replaces loose) ---
+        grant_read = cloudfront_config.get("grant_read")
+        if grant_read is not None:
+            if not isinstance(grant_read, dict):
+                raise ValueError(
+                    "cloudfront.grant_read must be an object with optional keys "
+                    "'distribution_arns' (list), 'fallback_to_account' (bool), "
+                    "and 'account_id' (string)"
                 )
+
+            block_arns = grant_read.get("distribution_arns", []) or []
+            if not isinstance(block_arns, list):
+                raise ValueError(
+                    "cloudfront.grant_read.distribution_arns must be a list of "
+                    "CloudFront distribution ARNs (literals or {{ssm:/path}})"
+                )
+
+            if block_arns:
+                # Strict wins: emit per-ARN grants only, ignore the account fallback.
+                self.__emit_distribution_arn_grants(block_arns, id_prefix="grant-read")
+            elif grant_read.get("fallback_to_account", False):
+                self.__emit_account_grant(grant_read.get("account_id"))
+
+        # --- Backward-compatible top-level keys ---
+        legacy_account = cloudfront_config.get("grant_read_to_account", False)
+        if legacy_account:
+            account_id = legacy_account if isinstance(legacy_account, str) else None
+            self.__emit_account_grant(account_id)
+
+        legacy_arns = cloudfront_config.get("grant_read_to_distribution_arns", [])
+        if legacy_arns:
+            if not isinstance(legacy_arns, list):
+                raise ValueError(
+                    "cloudfront.grant_read_to_distribution_arns must be a list of "
+                    "CloudFront distribution ARNs (literals or {{ssm:/path}} references)"
+                )
+            self.__emit_distribution_arn_grants(legacy_arns, id_prefix="grant")
+
+    def __emit_account_grant(self, account_id: Optional[str] = None) -> None:
+        """
+        Add an account-scoped OAC read grant to the (owned) bucket.
+
+        Allows the CloudFront service principal to s3:GetObject when the request
+        originates from a CloudFront distribution in the given account (defaults
+        to this stack's account). Resolved entirely at synth — no SSM, no
+        ordering dependency.
+        """
+        resolved_account = account_id or cdk.Stack.of(self).account
+
+        self.source_bucket.add_to_resource_policy(
+            iam.PolicyStatement(
+                sid="AllowCloudFrontServicePrincipalReadOnlyAccount",
+                actions=["s3:GetObject"],
+                resources=[self.source_bucket.arn_for_objects("*")],
+                principals=[iam.ServicePrincipal("cloudfront.amazonaws.com")],
+                conditions={"StringEquals": {"AWS:SourceAccount": resolved_account}},
             )
-            logger.info(
-                "Granted OAC s3:GetObject on bucket to CloudFront distributions "
-                "in account %s (account-scoped grant)",
-                account_id,
-            )
+        )
+        logger.info(
+            "Granted OAC s3:GetObject on bucket to CloudFront distributions "
+            "in account %s (account-scoped grant)",
+            resolved_account,
+        )
 
-        # --- Mechanism 2: explicit distribution ARNs ---
-        distribution_arns = cloudfront_config.get("grant_read_to_distribution_arns", [])
+    def __emit_distribution_arn_grants(
+        self, distribution_arns: List[str], id_prefix: str
+    ) -> None:
+        """
+        Add strict per-distribution OAC read grants to the (owned) bucket.
 
-        if not distribution_arns:
-            return
-
-        if not isinstance(distribution_arns, list):
-            raise ValueError(
-                "cloudfront.grant_read_to_distribution_arns must be a list of "
-                "CloudFront distribution ARNs (literals or {{ssm:/path}} references)"
-            )
-
+        Each ARN may be a literal or an {{ssm:/path}} reference (resolved to a
+        CloudFormation dynamic reference at deploy time). The statement allows
+        the CloudFront service principal to s3:GetObject only when AWS:SourceArn
+        matches the given distribution.
+        """
         for index, arn in enumerate(distribution_arns):
             if not arn:
                 continue
 
-            resolved_arn = self.__resolve_ssm_reference(arn, unique_id=f"grant-{index}")
+            resolved_arn = self.__resolve_ssm_reference(
+                arn, unique_id=f"{id_prefix}-{index}"
+            )
 
             self.source_bucket.add_to_resource_policy(
                 iam.PolicyStatement(
@@ -678,8 +833,9 @@ class CloudFrontDistributionConstruct(Construct):
                 )
             )
             logger.info(
-                "Granted OAC s3:GetObject on bucket to additional CloudFront "
-                "distribution (index %s)",
+                "Granted OAC s3:GetObject on bucket to specific CloudFront "
+                "distribution (%s index %s)",
+                id_prefix,
                 index,
             )
 
