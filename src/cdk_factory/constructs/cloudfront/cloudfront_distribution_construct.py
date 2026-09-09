@@ -580,34 +580,77 @@ class CloudFrontDistributionConstruct(Construct):
 
     def __grant_read_to_additional_distributions(self) -> None:
         """
-        Grant OAC read access on this (owned) bucket to additional CloudFront
-        distributions that live in other stacks.
+        Grant OAC read access on this (owned) bucket to CloudFront distributions
+        that live in OTHER stacks.
 
         This solves the cross-stack case: a distribution defined elsewhere (e.g.
         the app/maintenance distribution) imports this bucket as an S3 origin.
         Because that stack imports the bucket, CDK cannot mutate this bucket's
         policy from there — the owning stack (this one) must author the grant.
 
-        Config (under the stack's "cloudfront" block):
+        Two mutually-compatible mechanisms are supported, both authored entirely
+        at this stack's synth time (no live AWS calls, no cross-stack runtime
+        dependency):
 
-            "cloudfront": {
-                "grant_read_to_distribution_arns": [
-                    "{{ssm:/prod/trav-talks/cloudfront/arn}}",
-                    "arn:aws:cloudfront::123456789012:distribution/E2EEJ9M0E5PJ12"
-                ]
-            }
+        1. Account-scoped grant (recommended, greenfield-safe):
 
-        Each ARN may be a literal or an SSM reference ({{ssm:/path}}). SSM
-        references are resolved to CloudFormation dynamic tokens at deploy time
-        (no live AWS calls during synth).
+               "cloudfront": { "grant_read_to_account": true }
 
-        The statement mirrors what OAC auto-generates: the CloudFront service
-        principal may s3:GetObject when AWS:SourceArn matches the distribution.
+           Emits a statement allowing the CloudFront service principal to
+           s3:GetObject when the request originates from a CloudFront
+           distribution in THIS account (AWS:SourceAccount = account id). The
+           account id is known at synth from the stack, so there is NO ordering
+           dependency on any other stack — a brand-new environment deploys in a
+           single pass regardless of which distribution is created first. This is
+           the AWS-recommended confused-deputy protection scoped by account, and
+           is safe for a private, single-tenant asset bucket.
+
+           Optionally scope to a specific account id instead of the current one:
+
+               "cloudfront": { "grant_read_to_account": "123456789012" }
+
+        2. Explicit distribution ARNs (tightest lock-down):
+
+               "cloudfront": {
+                   "grant_read_to_distribution_arns": [
+                       "arn:aws:cloudfront::123456789012:distribution/E2EEJ9M0E5PJ12"
+                   ]
+               }
+
+           Use this once distribution IDs are stable and you want to restrict to
+           exact distributions. Literals or {{ssm:/path}} references are accepted;
+           note that an {{ssm:...}} reference to a value produced by a LATER stack
+           reintroduces an ordering dependency, so prefer literals here.
         """
         if not self.stack_config or not isinstance(self.stack_config, StackConfig):
             return
 
         cloudfront_config = self.stack_config.dictionary.get("cloudfront", {})
+
+        # --- Mechanism 1: account-scoped grant (no ordering dependency) ---
+        grant_account = cloudfront_config.get("grant_read_to_account", False)
+        if grant_account:
+            if isinstance(grant_account, str):
+                account_id = grant_account
+            else:
+                account_id = cdk.Stack.of(self).account
+
+            self.source_bucket.add_to_resource_policy(
+                iam.PolicyStatement(
+                    sid="AllowCloudFrontServicePrincipalReadOnlyAccount",
+                    actions=["s3:GetObject"],
+                    resources=[self.source_bucket.arn_for_objects("*")],
+                    principals=[iam.ServicePrincipal("cloudfront.amazonaws.com")],
+                    conditions={"StringEquals": {"AWS:SourceAccount": account_id}},
+                )
+            )
+            logger.info(
+                "Granted OAC s3:GetObject on bucket to CloudFront distributions "
+                "in account %s (account-scoped grant)",
+                account_id,
+            )
+
+        # --- Mechanism 2: explicit distribution ARNs ---
         distribution_arns = cloudfront_config.get("grant_read_to_distribution_arns", [])
 
         if not distribution_arns:
