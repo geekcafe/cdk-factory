@@ -84,6 +84,7 @@ class StaticWebSiteStack(IStack):
                 hosted_zone_id=dns.get("hosted_zone_id", ""),
                 hosted_zone_name=dns.get("hosted_zone_name", ""),
                 deployment=deployment,
+                stack_config=stack_config,
             )
 
             cert_domain_name = cert.get("domain_name")
@@ -326,8 +327,33 @@ class StaticWebSiteStack(IStack):
             )
 
     def __get_hosted_zone(
-        self, hosted_zone_id: str, hosted_zone_name: str, deployment: DeploymentConfig
+        self,
+        hosted_zone_id: str,
+        hosted_zone_name: str,
+        deployment: DeploymentConfig,
+        stack_config: Optional[StackConfig] = None,
     ) -> route53.IHostedZone:
+        # If an explicit id wasn't provided, try to auto-discover it from SSM
+        # using the configured route53 namespace. This produces a deploy-time
+        # CloudFormation reference (AWS::SSM::Parameter::Value) rather than a
+        # synth-time literal, so it is resolved by CloudFormation at deploy time.
+        # Mirrors the api_gateway_stack custom-domain behavior.
+        if not hosted_zone_id and stack_config is not None:
+            ssm_imports_config = stack_config.ssm_config.get("imports", {})
+            route53_ns = ssm_imports_config.get("route53_namespace")
+            if route53_ns:
+                from aws_cdk import aws_ssm as ssm
+                from cdk_factory.utilities.ssm_path_utils import normalize_ssm_path
+
+                ssm_path = normalize_ssm_path(f"/{route53_ns}/hosted-zone-id")
+                logger.info(f"Auto-discovering hosted zone ID from SSM: {ssm_path}")
+                param = ssm.StringParameter.from_string_parameter_name(
+                    self,
+                    deployment.build_resource_name("hosted-zone-id-param"),
+                    ssm_path,
+                )
+                hosted_zone_id = param.string_value
+
         if hosted_zone_id and hosted_zone_name:
             return route53.HostedZone.from_hosted_zone_attributes(
                 self,
