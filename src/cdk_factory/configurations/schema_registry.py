@@ -25,6 +25,7 @@ _RESOURCE_KEY_TO_SCHEMA = {
     "monitoring": "monitoring",
     "state_machine": "state_machine",
     "resources": "lambda",
+    "event_bridge_rules": "event_bridge_rules",
 }
 
 

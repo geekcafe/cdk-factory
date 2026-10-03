@@ -1,0 +1,12 @@
+{
+  "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-chatops-slack",
+  "description": "Chat-ops Slack delivery queue (EventBridge target).",
+  "visibility_timeout_seconds": 120,
+  "message_retention_period_days": 4,
+  "delay_seconds": 0,
+  "dead_letter_queue": {
+    "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-chatops-slack-dlq",
+    "max_receive_count": 3,
+    "message_retention_period_days": 14
+  }
+}

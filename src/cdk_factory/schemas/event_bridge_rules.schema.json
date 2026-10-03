@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EventBridge Rules Stack Config",
+  "description": "Schema for the eventbridge_stack config carrying an event_bridge_rules list. Each rule routes matched events on a bus to an SQS queue resolved from SSM at deploy time. Template variables (e.g., {{WORKLOAD_NAME}}, {{DEPLOYMENT_NAMESPACE}}) are supported in string fields.",
+  "type": "object",
+  "required": ["event_bridge_rules"],
+  "properties": {
+    "event_bridge_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "event_pattern", "target_queue_ssm_path"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Rule name. Supports template variables."
+          },
+          "event_bus_name": {
+            "type": "string",
+            "default": "default",
+            "description": "Target event bus name. Defaults to 'default'."
+          },
+          "event_pattern": {
+            "type": "object",
+            "minProperties": 1,
+            "description": "EventBridge event pattern (source / detail-type / detail filters)."
+          },
+          "target_queue_ssm_path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SSM parameter path resolving to the target queue ARN at deploy time."
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,116 @@
+{
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "Chat-ops Slack notification infrastructure (ingress -> EventBridge -> SQS -> consumer -> Slack).",
+    "devops": {
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}"
+    },
+    "stacks": [
+      {
+        "name": "chatops-sqs",
+        "module": "sqs_stack",
+        "enabled": true,
+        "queue_config_dir": "configs/stacks/sqs",
+        "ssm": {
+          "namespace": "chatops/{{DEPLOYMENT_NAMESPACE}}/sqs"
+        }
+      },
+      {
+        "name": "chatops-lambdas",
+        "module": "lambda_stack",
+        "enabled": true,
+        "resources": [
+          {
+            "name": "chatops-ingress",
+            "handler": "geek_cafe_saas_sdk.modules.notifications.handlers.chatops_ingress.app.lambda_handler",
+            "api": {
+              "route": "/notifications/chatops",
+              "method": "POST",
+              "authorization_type": "NONE"
+            },
+            "permissions": [
+              {
+                "name": "ChatOpsPutEvents",
+                "sid": "ChatOpsEventBridgePutEvents",
+                "actions": ["events:PutEvents"],
+                "resources": [
+                  "arn:aws:events:{{AWS_REGION}}:{{AWS_ACCOUNT}}:event-bus/default"
+                ]
+              },
+              {
+                "name": "ChatOpsIngressSecret",
+                "sid": "ChatOpsSecretsReadIngress",
+                "actions": ["secretsmanager:GetSecretValue"],
+                "resources": [
+                  "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT}}:secret:chatops/ingress/shared-secret*"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "chatops-slack-consumer",
+            "handler": "geek_cafe_saas_sdk.modules.notifications.handlers.slack_consumer.app.lambda_handler",
+            "timeout": 20,
+            "triggers": [
+              {
+                "resource_type": "sqs",
+                "queue_ssm_path": "/chatops/{{DEPLOYMENT_NAMESPACE}}/sqs/{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-chatops-slack/arn",
+                "batch_size": 1,
+                "max_batching_window_seconds": 0
+              }
+            ],
+            "permissions": [
+              {
+                "name": "ChatOpsSsmTargets",
+                "sid": "ChatOpsSsmReadTargets",
+                "actions": ["ssm:GetParameter", "ssm:GetParametersByPath"],
+                "resources": [
+                  "arn:aws:ssm:{{AWS_REGION}}:{{AWS_ACCOUNT}}:parameter/{{WORKLOAD_NAME}}/{{DEPLOYMENT_NAMESPACE}}/chatops/slack/targets/*"
+                ]
+              },
+              {
+                "name": "ChatOpsSecretsBotTokens",
+                "sid": "ChatOpsSecretsReadBotTokens",
+                "actions": ["secretsmanager:GetSecretValue"],
+                "resources": [
+                  "arn:aws:secretsmanager:{{AWS_REGION}}:{{AWS_ACCOUNT}}:secret:chatops/slack/*"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "chatops-eventbridge",
+        "module": "eventbridge_stack",
+        "enabled": true,
+        "event_bridge_rules": [
+          {
+            "name": "{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-chatops-slack-rule",
+            "event_bus_name": "default",
+            "event_pattern": {
+              "source": ["geekcafe.chatops"],
+              "detail-type": ["ChatOpsMessage"],
+              "detail": {
+                "platform": ["slack"]
+              }
+            },
+            "target_queue_ssm_path": "/chatops/{{DEPLOYMENT_NAMESPACE}}/sqs/{{WORKLOAD_NAME}}-{{DEPLOYMENT_NAMESPACE}}-chatops-slack/arn"
+          }
+        ]
+      }
+    ],
+    "deployments": [
+      {
+        "name": "chatops-deployment",
+        "environment": "{{DEPLOYMENT_NAMESPACE}}",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "{{AWS_REGION}}",
+        "mode": "stack",
+        "stacks": ["chatops-sqs", "chatops-lambdas", "chatops-eventbridge"],
+        "enabled": true
+      }
+    ]
+  }
+}
