@@ -74,19 +74,54 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         self.deployment = deployment
         self.workload = workload
 
-        # Validate ssm.imports keys — fail fast on unrecognized keys
-        _KNOWN_IMPORT_KEYS = {
+        # Diagnose unexpected ssm.imports keys.
+        #
+        # These are the keys the engine actively CONSUMES for an api-gateway
+        # stack: the namespace fragments it composes into full paths
+        # (lambda/route53/cognito_namespace) and the direct-import values the
+        # authorizer path reads (user_pool_arn, authorizer_id).
+        #
+        # Real nested api_gateway.ssm.imports blocks also legitimately carry
+        # context keys that the engine does NOT consume here (e.g. workload,
+        # environment, organization, namespace — see geek-cafe-lambdas
+        # api-gateway.json and tests/unit/files/lambda/sample_config.json). This
+        # check used to HARD-FAIL on anything outside a tiny allowlist, but it
+        # only ever ran against the (empty) stack top-level ssm block, so it
+        # never actually fired for the real configs that nest ssm under
+        # api_gateway. Now that the ssm-location reconciliation makes every read
+        # site resolve the NESTED block, a hard allowlist would newly reject
+        # those legitimate context keys and break synth. Downgrade to a warning:
+        # it still surfaces a likely typo of a consumed key without fatally
+        # rejecting valid heterogeneous blocks.
+        _CONSUMED_IMPORT_KEYS = {
             "lambda_namespace",
             "route53_namespace",
             "cognito_namespace",
+            "user_pool_arn",
+            "authorizer_id",
         }
-        ssm_imports = stack_config.ssm_config.get("imports", {})
-        unknown_keys = set(ssm_imports.keys()) - _KNOWN_IMPORT_KEYS
+        _CONTEXT_IMPORT_KEYS = {
+            "workload",
+            "environment",
+            "organization",
+            "namespace",
+        }
+        _RECOGNIZED_IMPORT_KEYS = _CONSUMED_IMPORT_KEYS | _CONTEXT_IMPORT_KEYS
+        # Resolve the ssm block from the nested api_gateway.ssm (preferred for
+        # api-gateway configs) with a fallback to the stack top-level ssm, so a
+        # config written either way is inspected as the SAME block the authorizer
+        # lookup and lambda-route auto-discovery read.
+        ssm_imports = self._resolved_ssm_config().get("imports", {})
+        unknown_keys = set(ssm_imports.keys()) - _RECOGNIZED_IMPORT_KEYS
         if unknown_keys:
-            raise ValueError(
+            logger.warning(
                 f"Stack '{stack_config.name}': unrecognized key(s) in ssm.imports: "
                 f"{sorted(unknown_keys)}. "
-                f"Valid keys are: {sorted(_KNOWN_IMPORT_KEYS)}"
+                f"Keys consumed by the api-gateway stack are: "
+                f"{sorted(_CONSUMED_IMPORT_KEYS)} "
+                f"(plus context keys {sorted(_CONTEXT_IMPORT_KEYS)}). "
+                f"An unrecognized key is ignored — check for a typo if you "
+                f"expected it to take effect."
             )
 
         self.api_config = ApiGatewayConfig(
@@ -128,6 +163,20 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                 self.__setup_custom_domain(api)
         else:
             raise ValueError(f"Unsupported api_type: {api_type}")
+
+    def _resolved_ssm_config(self) -> Dict[str, Any]:
+        """Return this api-gateway stack's resolved ssm block.
+
+        api-gateway configs carry their ``ssm`` block nested inside the
+        ``api_gateway`` module block (``{"api_gateway": {"ssm": {...}}}``). This
+        delegates to :meth:`StackConfig.resolved_ssm_config` so every read site
+        (import-key validation, authorizer lookup, lambda-route auto-discovery,
+        route53 auto-discovery) resolves the SAME block — nested when populated,
+        top-level otherwise.
+        """
+        from cdk_factory.utilities.ssm_path_utils import resolve_nested_ssm_config
+
+        return resolve_nested_ssm_config(self.stack_config.dictionary, "api_gateway")
 
     def _build_with_nested_stacks(self, routes: List[Dict[str, Any]]) -> None:
         """Orchestrate nested stack creation for route groups.
@@ -1097,9 +1146,11 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
             if lambda_name in self._lambda_arn_cache:
                 return self._lambda_arn_cache[lambda_name]
 
-            # Build SSM path using convention from lambda_stack
-            # Read SSM imports from top-level ssm block via stack_config
-            ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
+            # Build SSM path using convention from lambda_stack.
+            # Read SSM imports from the RESOLVED ssm block (nested
+            # api_gateway.ssm preferred, top-level fallback) so this matches
+            # where the authorizer lookup reads and a nested-ssm config works.
+            ssm_imports_config = self._resolved_ssm_config().get("imports", {})
             namespace = ssm_imports_config.get("lambda_namespace")
             if not namespace:
                 raise ValueError(
@@ -1445,7 +1496,20 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
         return created_stage
 
     def _export_ssm_parameters(self, api_gateway, authorizer=None):
-        """Export API Gateway resources to SSM using top-level ssm config"""
+        """Export API Gateway resources to SSM using the top-level ssm config.
+
+        NOTE (ssm-location reconciliation scope): the nested-vs-top-level split
+        this change fixes is about ssm.*imports* (the namespace fragments and
+        import keys consumed by authorizer lookup and lambda-route
+        auto-discovery). EXPORT is deliberately left reading the stack top-level
+        ssm block. The nested ``api_gateway.ssm`` of real configs carries
+        ``auto_export: true`` but no ``namespace`` and is intended only to drive
+        imports (the lambda stacks are the exporters; the api-gateway stack is a
+        consumer). Resolving export against the nested block would newly honor
+        that ``auto_export`` and fatally require an ``ssm.namespace`` the config
+        never provided — an externally-observable behavior change out of scope
+        for this fix. Export therefore keeps its original top-level semantics.
+        """
 
         ssm_config = self.stack_config.ssm_config
         auto_export = self.stack_config.ssm_auto_export
@@ -1686,9 +1750,11 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
 
         hosted_zone_id = domain_config.get("hosted_zone_id")
 
-        # If hosted_zone_id is not provided, try SSM auto-discovery
+        # If hosted_zone_id is not provided, try SSM auto-discovery.
+        # Read from the RESOLVED ssm block (nested api_gateway.ssm preferred)
+        # for consistency with the other api-gateway ssm read sites.
         if not hosted_zone_id:
-            ssm_imports_config = self.stack_config.ssm_config.get("imports", {})
+            ssm_imports_config = self._resolved_ssm_config().get("imports", {})
             route53_ns = ssm_imports_config.get("route53_namespace")
             if route53_ns:
                 from cdk_factory.utilities.ssm_path_utils import normalize_ssm_path

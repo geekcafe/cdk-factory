@@ -28,6 +28,7 @@ from cdk_factory.configurations.resources.apigateway_route_config import (
 )
 from cdk_factory.configurations.resources.api_gateway import ApiGatewayConfig
 from cdk_factory.configurations.stack import StackConfig
+from cdk_factory.utilities.ssm_path_utils import resolve_nested_ssm_config
 
 logger = Logger(service="ApiGatewayIntegrationUtility")
 
@@ -534,9 +535,14 @@ class ApiGatewayIntegrationUtility:
 
             # If not found, try SSM parameter lookup using enhanced pattern
             if not user_pool_arn:
-                # Check for new ssm_imports pattern in API Gateway configuration
+                # Check for new ssm_imports pattern in API Gateway configuration.
+                # Read the RESOLVED ssm block (nested api_gateway.ssm preferred,
+                # top-level fallback) so this agrees with every other api-gateway
+                # ssm read site.
                 api_gateway_config = stack_config.dictionary.get("api_gateway", {})
-                ssm_config = api_gateway_config.get("ssm", {})
+                ssm_config = resolve_nested_ssm_config(
+                    stack_config.dictionary, "api_gateway"
+                )
                 ssm_imports = ssm_config.get("imports", {})
                 ssm_path = ssm_imports.get("user_pool_arn") or cognito_config.get(
                     "user-pool-arn"
@@ -565,8 +571,13 @@ class ApiGatewayIntegrationUtility:
                             api_gateway_config["ssm"]["imports"] = {}
 
                         # Build the SSM path from the stack's import namespace
-                        ssm_imports_ns = stack_config.ssm_config.get("imports", {}).get(
-                            "cognito_namespace"
+                        # (resolved: nested api_gateway.ssm preferred).
+                        ssm_imports_ns = (
+                            resolve_nested_ssm_config(
+                                stack_config.dictionary, "api_gateway"
+                            )
+                            .get("imports", {})
+                            .get("cognito_namespace")
                         )
                         if not ssm_imports_ns:
                             raise ValueError(
@@ -918,9 +929,11 @@ class ApiGatewayIntegrationUtility:
         if authorizer_id:
             return authorizer_id
 
-        # Try enhanced SSM parameter lookup with auto-discovery
+        # Try enhanced SSM parameter lookup with auto-discovery.
+        # Read the RESOLVED ssm block (nested api_gateway.ssm preferred,
+        # top-level fallback) so this agrees with every other read site.
         api_gateway_config = stack_config.dictionary.get("api_gateway", {})
-        ssm_config = api_gateway_config.get("ssm", {})
+        ssm_config = resolve_nested_ssm_config(stack_config.dictionary, "api_gateway")
 
         if ssm_config.get("enabled", False):
             try:
@@ -930,11 +943,15 @@ class ApiGatewayIntegrationUtility:
 
                 ssm_mixin = StandardizedSsmMixin()
 
-                # Setup enhanced SSM integration for auto-import
+                # Setup enhanced SSM integration for auto-import.
+                # Hand the mixin a config whose "ssm" key is the RESOLVED block
+                # so it reads the same block regardless of nested/top-level shape.
+                mixin_config = dict(api_gateway_config)
+                mixin_config["ssm"] = ssm_config
                 # Use consistent resource name for cross-stack compatibility
                 ssm_mixin.setup_ssm_integration(
                     scope=self.scope,
-                    config=api_gateway_config,
+                    config=mixin_config,
                     resource_type="api-gateway",
                     resource_name="cdk-factory-api-gw",  # Use descriptive name for cross-stack sharing
                 )

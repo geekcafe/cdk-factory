@@ -21,7 +21,10 @@ from aws_lambda_powertools import Logger
 
 from cdk_factory.stack_library.stack_base import NestedStackBase
 from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
-from cdk_factory.utilities.ssm_path_utils import join_ssm_path
+from cdk_factory.utilities.ssm_path_utils import (
+    join_ssm_path,
+    resolve_nested_ssm_config,
+)
 
 logger = Logger(service="ApiGatewayRouteGroupNestedStack")
 
@@ -815,7 +818,8 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
         multiple routes.
 
         The SSM path convention is: /{lambda_namespace}/{lambda_name}/arn
-        where lambda_namespace comes from stack_config.ssm_config["imports"]["lambda_namespace"].
+        where lambda_namespace comes from the resolved ssm block
+        (stack_config.resolved_ssm_config("api_gateway")["imports"]["lambda_namespace"]).
 
         Args:
             route: The route configuration dict containing lambda_name or
@@ -867,7 +871,12 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
                 return self._lambda_arn_cache[lambda_name]
 
             # Build SSM path using convention: /{lambda_namespace}/{lambda_name}/arn
-            ssm_imports_config = stack_config.ssm_config.get("imports", {})
+            # Read from the RESOLVED ssm block (nested api_gateway.ssm preferred,
+            # top-level fallback) so this matches where the parent stack and the
+            # authorizer lookup read and a nested-ssm config works everywhere.
+            ssm_imports_config = resolve_nested_ssm_config(
+                stack_config.dictionary, "api_gateway"
+            ).get("imports", {})
             namespace = ssm_imports_config.get("lambda_namespace")
             if not namespace:
                 raise ValueError(

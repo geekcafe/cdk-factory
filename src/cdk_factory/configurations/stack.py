@@ -92,6 +92,40 @@ class StackConfig:
         """
         return self.dictionary.get("ssm", {})
 
+    def resolved_ssm_config(self, nested_key: str) -> dict:
+        """
+        Resolve the SSM configuration block for a stack that may carry its
+        ``ssm`` block EITHER at the stack top level OR nested inside a module
+        block (e.g. ``api_gateway.ssm``).
+
+        Historically some stacks (notably ``api_gateway_stack``) nest the whole
+        ``ssm`` block inside their module config (``{"api_gateway": {"ssm": {...}}}``)
+        while the engine's generic reads looked at the stack top level
+        (``{"ssm": {...}}``). That split meant one code path (the authorizer
+        lookup, which read nested) worked while another (lambda-route
+        auto-discovery, which read top level) saw an empty block and failed.
+
+        This accessor is the single source of truth for that resolution: it
+        MERGES the top-level and nested blocks per-key (nested wins), so a config
+        written either way — or one that splits keys across both blocks — resolves
+        to the same correct result and every read site agrees. See
+        :func:`cdk_factory.utilities.ssm_path_utils.resolve_nested_ssm_config` for
+        the exact merge rule (including the per-key merge of the ``imports``
+        sub-dict).
+
+        Args:
+            nested_key: The module key to look under for a nested ``ssm`` block
+                (e.g. ``"api_gateway"``).
+
+        Returns:
+            The resolved ``ssm`` configuration dict (may be empty).
+        """
+        # Delegate to the shared helper so every config type resolves the ssm
+        # block by the SAME rule (see utilities.ssm_path_utils).
+        from cdk_factory.utilities.ssm_path_utils import resolve_nested_ssm_config
+
+        return resolve_nested_ssm_config(self.dictionary, nested_key)
+
     @property
     def ssm_namespace(self) -> str | None:
         """
