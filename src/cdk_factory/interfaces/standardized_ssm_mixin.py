@@ -31,6 +31,10 @@ from constructs import Construct
 from aws_lambda_powertools import Logger
 from cdk_factory.configurations.deployment import DeploymentConfig
 from cdk_factory.configurations.workload import WorkloadConfig
+from cdk_factory.utilities.ssm_path_utils import (
+    normalize_ssm_path,
+    _is_token_like,
+)
 
 logger = Logger(service="StandardizedSsmMixin")
 
@@ -427,8 +431,9 @@ class StandardizedSsmMixin:
         # Resolve template variables in path
         resolved_path = self._resolve_template_variables(ssm_path)
 
-        # Validate path format
-        self._validate_ssm_path(resolved_path, context)
+        # Validate + normalize path format (tolerant: a bare fragment is fixed,
+        # not rejected). Use the normalized form for the actual lookup.
+        resolved_path = self._validate_ssm_path(resolved_path, context)
 
         # Create CDK SSM parameter reference
         construct_id = (
@@ -504,29 +509,48 @@ class StandardizedSsmMixin:
 
         return resolved
 
-    def _validate_ssm_path(self, path: str, context: str) -> None:
+    def _validate_ssm_path(self, path: str, context: str) -> str:
         """
-        Validate SSM parameter path format.
+        Validate and normalize an SSM parameter path.
+
+        This is tolerant by design: a value that is a legitimate namespace
+        *fragment* (e.g. ``lambda_namespace: "geekcafe/prod"``) is normalized to a
+        canonical path (``/geekcafe/prod``) rather than fatally rejected for the
+        absence of a leading slash. The engine composes the remaining path segments
+        itself, so a bare fragment is correct input. See
+        ``cdk_factory.utilities.ssm_path_utils.normalize_ssm_path``.
+
+        True validation (empty / non-string / unresolved-placeholder-with-no-value)
+        still raises. CDK tokens and ``{{PLACEHOLDER}}`` values are left untouched.
 
         Args:
-            path: SSM parameter path to validate
-            context: Context for error reporting
+            path: SSM parameter path or namespace fragment to validate.
+            context: Context for error reporting.
+
+        Returns:
+            The normalized path (callers may use it, but existing callers can
+            ignore the return value).
 
         Raises:
-            ValueError: If path format is invalid
+            ValueError: If the value is genuinely invalid (empty or non-string).
         """
-        if not path:
+        if not isinstance(path, str) or not path.strip():
             raise ValueError(f"{context}: SSM path cannot be empty")
 
-        if not path.startswith("/"):
-            raise ValueError(f"{context}: SSM path must start with '/': {path}")
+        # Tolerant normalization: adds the leading slash, collapses "//", trims a
+        # trailing slash, and leaves CDK tokens / {{placeholders}} intact. This
+        # turns the former hard reject of a bare namespace fragment into a fix.
+        normalized = normalize_ssm_path(path)
 
-        segments = path.split("/")
-        if len(segments) < 4:
-            raise ValueError(
-                f"{context}: SSM path must have at least 4 segments: {path}"
+        # Shape heuristics are advisory only — a normalized namespace fragment such
+        # as "/geekcafe/prod" is legitimately short, so a short path is logged, not
+        # rejected.
+        if not _is_token_like(normalized) and len(normalized.split("/")) < 4:
+            logger.debug(
+                f"{context}: SSM path has fewer than 4 segments "
+                f"(namespace fragments are allowed): {normalized}"
             )
-        # No environment allowlist check — accept any valid string
+        return normalized
 
     def _validate_ssm_configuration(self) -> None:
         """
@@ -580,8 +604,8 @@ class StandardizedSsmMixin:
         # Resolve template variables in export path
         resolved_path = self._resolve_template_variables(export_path)
 
-        # Validate export path
-        self._validate_ssm_path(resolved_path, f"exports.{export_key}")
+        # Validate + normalize export path
+        resolved_path = self._validate_ssm_path(resolved_path, f"exports.{export_key}")
 
         # Generate unique construct ID
         construct_id = f"export-{export_key.replace('_', '-')}"
@@ -772,19 +796,21 @@ class SsmStandardValidator:
         return self._validate_ssm_path(value, f"exports.{key}")
 
     def _validate_ssm_path(self, path: str, context: str) -> List[str]:
-        """Validate SSM parameter path format."""
+        """Validate SSM parameter path format (tolerant/normalizing).
+
+        A bare namespace fragment (missing leading slash) is NOT an error — it is
+        normalized to a canonical path by the engine. Only genuinely invalid input
+        (empty / non-string) is reported. Mirrors the tolerant behavior of
+        ``StandardizedSsmMixin._validate_ssm_path``.
+        """
         errors = []
 
-        if not path:
+        if not isinstance(path, str) or not path.strip():
             errors.append(f"{context}: SSM path cannot be empty")
-        elif not path.startswith("/"):
-            errors.append(f"{context}: SSM path must start with '/': {path}")
-        else:
-            segments = path.split("/")
-            if len(segments) < 4:
-                errors.append(
-                    f"{context}: SSM path must have at least 4 segments: {path}"
-                )
-            # Removed: template variable requirement check
+            return errors
 
+        # Normalize tolerant input (adds leading slash, collapses "//", trims
+        # trailing slash; CDK tokens / {{placeholders}} untouched). A short
+        # fragment like "/geekcafe/prod" is allowed.
+        normalize_ssm_path(path)
         return errors

@@ -21,6 +21,7 @@ from aws_lambda_powertools import Logger
 
 from cdk_factory.stack_library.stack_base import NestedStackBase
 from cdk_factory.utils.api_gateway_utilities import ApiGatewayUtilities
+from cdk_factory.utilities.ssm_path_utils import join_ssm_path
 
 logger = Logger(service="ApiGatewayRouteGroupNestedStack")
 
@@ -876,7 +877,10 @@ class ApiGatewayRouteGroupNestedStack(NestedStackBase):
                     f"Add 'ssm.imports.lambda_namespace' to your stack config."
                 )
 
-            ssm_path = f"/{namespace}/{lambda_name}/arn"
+            # Compose via join_ssm_path so a lambda_namespace fragment that arrives
+            # with/without a leading or trailing slash still yields a single clean
+            # "/{namespace}/{lambda}/arn" (no "//").
+            ssm_path = join_ssm_path(namespace, lambda_name, "arn")
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
 
             try:

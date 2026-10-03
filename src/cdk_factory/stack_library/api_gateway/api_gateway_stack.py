@@ -37,6 +37,7 @@ from cdk_factory.configurations.resources.apigateway_route_config import (
     ApiGatewayConfigRouteConfig,
 )
 from cdk_factory.utilities.route_metadata_validator import RouteMetadataValidator
+from cdk_factory.utilities.ssm_path_utils import join_ssm_path
 from cdk_factory.utilities.synth_messages import synth_messages
 from cdk_factory.stack_library.api_gateway.api_gateway_route_group_nested_stack import (
     ApiGatewayRouteGroupNestedStack,
@@ -1107,7 +1108,10 @@ class ApiGatewayStack(IStack, StandardizedSsmMixin):
                     f"(route references lambda_name='{lambda_name}'). "
                     f"Add 'ssm.imports.lambda_namespace' to your stack config."
                 )
-            ssm_path = f"/{namespace}/{lambda_name}/arn"
+            # Compose via join_ssm_path so a lambda_namespace fragment that arrives
+            # as "geekcafe/prod", "/geekcafe/prod", or "geekcafe/prod/" all yield a
+            # single clean "/geekcafe/prod/<lambda>/arn" (no "//").
+            ssm_path = join_ssm_path(namespace, lambda_name, "arn")
             logger.info(f"Auto-discovering Lambda ARN from SSM: {ssm_path}")
 
             try:
