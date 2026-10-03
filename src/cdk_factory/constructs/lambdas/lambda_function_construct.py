@@ -80,6 +80,16 @@ class LambdaConstruct(Construct):
             role=role,
         )
 
+        # The function is wired to its role via ``role.without_policy_updates()``
+        # (see LambdaFunctionUtilities.create), which returns an immutable IRole
+        # view that SILENTLY DROPS any statements added through the function
+        # (e.g. ``function.add_to_role_policy(...)`` or resource grants that
+        # target the function's role).  Expose the real, mutable ``iam.Role``
+        # construct so callers that need to add permissions AFTER the function is
+        # built (e.g. SQS trigger consume grants) can attach them to the role
+        # that actually renders into the synthesized template.
+        setattr(function, "cdk_factory_execution_role", role)
+
         return function
 
     def __check_role(

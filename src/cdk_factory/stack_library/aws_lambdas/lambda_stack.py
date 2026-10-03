@@ -432,17 +432,28 @@ class LambdaStack(IStack):
             max_batching_window=max_batching_window,
         )
 
-        # Grant consume permissions
-        lambda_function.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "sqs:ReceiveMessage",
-                    "sqs:DeleteMessage",
-                    "sqs:GetQueueAttributes",
-                ],
-                resources=[queue.queue_arn],
-            )
-        )
+        # Grant the consumer the SQS permissions the EventSourceMapping needs to
+        # poll/drain the queue (ReceiveMessage, DeleteMessage, GetQueueAttributes,
+        # GetQueueUrl, ChangeMessageVisibility).
+        #
+        # NOTE: we must attach this to the REAL execution role construct, not to
+        # the Lambda function.  The function is wired to its role via
+        # ``role.without_policy_updates()`` (LambdaFunctionUtilities.create),
+        # which returns an immutable IRole view that silently DROPS any statement
+        # added through ``lambda_function.add_to_role_policy(...)``.  That is why
+        # the previous grant never rendered into the synthesized template and the
+        # consumer role ended up with no SQS consume permissions.  The real role
+        # is exposed by LambdaConstruct.create_function as
+        # ``cdk_factory_execution_role``; adding the statement there makes it
+        # render into the role's AWS::IAM::Policy resource.
+        receive_policy = SqsPolicies.get_receive_policy(queue=queue)
+        execution_role = getattr(lambda_function, "cdk_factory_execution_role", None)
+        if execution_role is not None:
+            execution_role.add_to_policy(receive_policy)
+        else:
+            # Fallback for functions created with an externally supplied role
+            # (none in the current code path); add directly to the function.
+            lambda_function.add_to_role_policy(receive_policy)
 
     def __setup_s3_trigger(
         self,
