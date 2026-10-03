@@ -203,3 +203,7 @@ activate.sh
 **/.dynamic/*
 
 .test_version.txt
+
+
+# Agent workflow scratch (requirements/design/plan/review/verification) — not source
+.agents/
