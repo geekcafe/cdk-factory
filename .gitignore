@@ -207,3 +207,4 @@ activate.sh
 
 # Agent workflow scratch (requirements/design/plan/review/verification) — not source
 .agents/
+.agents-review/
