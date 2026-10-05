@@ -39,6 +39,24 @@ from cdk_factory.utilities.ssm_path_utils import (
 logger = Logger(service="StandardizedSsmMixin")
 
 
+# Keys under `ssm.imports` that are name *components* used to BUILD SSM paths
+# (e.g. "/{lambda_namespace}/{lambda_name}/arn"), not SSM paths themselves.
+# These must be excluded from SSM path validation, which requires a leading "/".
+# Consumers read these directly and prefix a "/" when constructing the path, so
+# the stored value is intentionally slash-less (e.g. "my-app/prod/lambda").
+SSM_NAME_COMPONENT_KEYS = frozenset(
+    {
+        "workload",
+        "environment",
+        "organization",
+        "namespace",
+        "cognito_namespace",
+        "lambda_namespace",
+        "route53_namespace",
+    }
+)
+
+
 class StandardizedSsmMixin:
     """
     Standardized SSM parameter mixin for all CDK Factory modules.
@@ -572,10 +590,9 @@ class StandardizedSsmMixin:
         if exports is not None and not isinstance(exports, dict):
             raise ValueError("SSM exports must be a dictionary")
 
-        # Validate import paths (skip name-component keys like workload/environment/namespace)
-        name_component_keys = {"workload", "environment", "organization", "namespace"}
+        # Validate import paths (skip name-component keys — see SSM_NAME_COMPONENT_KEYS)
         for key, value in imports.items():
-            if key in name_component_keys:
+            if key in SSM_NAME_COMPONENT_KEYS:
                 continue
             if isinstance(value, list):
                 for i, item in enumerate(value):
@@ -778,8 +795,7 @@ class SsmStandardValidator:
         and should not be validated as such.
         """
         # These keys are name components, not SSM paths
-        name_component_keys = {"workload", "environment", "organization"}
-        if key in name_component_keys:
+        if key in SSM_NAME_COMPONENT_KEYS:
             return []
 
         errors = []
