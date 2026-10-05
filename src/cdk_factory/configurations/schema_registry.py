@@ -26,6 +26,7 @@ _RESOURCE_KEY_TO_SCHEMA = {
     "state_machine": "state_machine",
     "resources": "lambda",
     "event_bridge_rules": "event_bridge_rules",
+    "secrets": "secrets_manager",
 }
 
 

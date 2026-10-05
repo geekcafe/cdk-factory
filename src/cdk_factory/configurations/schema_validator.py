@@ -58,6 +58,26 @@ class SchemaValidator:
                                     error, prefix=f"resources[{idx}]"
                                 )
                             )
+                # For 'secrets', the module schema is itself an array schema;
+                # validate the whole block against it.
+                elif resource_key == "secrets" and isinstance(resource_block, list):
+                    item_schema = module_schema.get("items", {})
+                    item_props = (
+                        item_schema.get("properties")
+                        if isinstance(item_schema, dict)
+                        else None
+                    )
+                    preprocessed_block = [
+                        SchemaValidator._preprocess_for_placeholders(
+                            copy.deepcopy(item), item_props
+                        )
+                        for item in resource_block
+                    ]
+                    validator = Draft7Validator(module_schema)
+                    for error in validator.iter_errors(preprocessed_block):
+                        errors.append(
+                            SchemaValidator._format_error(error, prefix="secrets")
+                        )
                 elif isinstance(resource_block, dict):
                     preprocessed_block = SchemaValidator._preprocess_for_placeholders(
                         copy.deepcopy(resource_block), module_schema.get("properties")
