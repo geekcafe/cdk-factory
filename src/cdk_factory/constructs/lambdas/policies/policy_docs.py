@@ -18,6 +18,9 @@ from cdk_factory.configurations.deployment import DeploymentConfig as Deployment
 from cdk_factory.configurations.resources.lambda_function import (
     LambdaFunctionConfig,
 )
+from cdk_factory.stack_library.aws_lambdas.lambda_validation import (
+    KNOWN_PERMISSION_STRINGS,
+)
 
 
 class ResourceResolver:
@@ -88,6 +91,38 @@ class ResourceResolver:
         table_name = os.getenv(table_identifier)
 
         return table_name
+
+    def get_bucket_name(
+        self, bucket_identifier: str = "WORKLOAD_BUCKET_NAME"
+    ) -> Optional[str]:
+        """
+        Get an S3 bucket name from multiple sources with fallback priority:
+        1. Enhanced SSM parameter (if configured)
+        2. Environment variable (named by ``bucket_identifier``)
+        3. None (caller decides how to handle an unresolved bucket)
+
+        Mirrors :meth:`get_table_name` so the string-shorthand S3 permissions
+        resolve their bucket the same deferred, credential-free way DynamoDB
+        tables do. No live AWS calls are made during synth.
+        """
+        bucket_name = None
+
+        # Try enhanced SSM parameter lookup first
+        ssm_mixin = self._get_ssm_mixin()
+        if ssm_mixin:
+            try:
+                imported_values = ssm_mixin.auto_import_resources()
+                bucket_name = imported_values.get("bucket_name")
+                if bucket_name:
+                    return bucket_name
+            except Exception:
+                # SSM lookup failed, continue to environment variable fallback
+                pass
+
+        # Fallback to environment variable
+        bucket_name = os.getenv(bucket_identifier)
+
+        return bucket_name
 
     def get_aws_region(self) -> str:
         """Get AWS region from deployment config or environment"""
@@ -217,7 +252,30 @@ class PolicyDocuments:
                         "to generate permissions."
                     )
                 if not permission_details or "actions" not in permission_details:
-                    # Empty permission (e.g., optional feature not configured) — skip
+                    # A KNOWN permission STRING must never silently vanish: if it
+                    # validated but expanded to nothing, that is the exact
+                    # 9d158d68 regression (validated-but-dropped IAM grant →
+                    # runtime AccessDenied). Fail loudly. The intentional
+                    # optional-feature skip below is ONLY for the structured DICT
+                    # form with an empty table/bucket.
+                    if (
+                        isinstance(permission, str)
+                        and permission in KNOWN_PERMISSION_STRINGS
+                    ):
+                        raise ValueError(
+                            f"Permission '{permission}' is a known permission "
+                            f"string but resolved to no IAM statement. It was "
+                            f"validated and then silently dropped, which removes "
+                            f"the grant and causes runtime AccessDenied. Ensure "
+                            f"the backing resource (table/bucket) is resolvable at "
+                            f"synth (set the appropriate *_NAME env var or SSM "
+                            f"import), or use the structured dict form with an "
+                            f"explicit resource name. If this string has no "
+                            f"policy builder yet, add one in "
+                            f"PolicyDocuments.get_permission_details()."
+                        )
+                    # Empty permission from a structured DICT (e.g., optional
+                    # feature not configured — empty table/bucket) — skip quietly.
                     continue
                 statement = iam.PolicyStatement(
                     sid=permission_details.get("sid"),
@@ -387,8 +445,18 @@ class PolicyDocuments:
 
             {"name": "Custom", "sid": "X", "actions": [...], "resources": [...]}
         """
-        # --- String permissions (no resource target) ---
+        # --- String permissions ---
         if isinstance(permission, str):
+            # DynamoDB / S3 string shorthands expand to the same structured
+            # permission the dict form produces, resolving the table/bucket via
+            # ResourceResolver (SSM auto-import first, then an env var). These
+            # strings were dropped silently by the 9d158d68 refactor; re-adding
+            # the expansion here restores backward compatibility for every
+            # downstream repo using the string form.
+            resource_backed = self._get_resource_string_permission(permission)
+            if resource_backed is not None:
+                return resource_backed
+
             simple_permissions = {
                 "parameter_store_read": self.__get_parameter_store_read_permissions(),
                 "cognito_user_pool_read": {
@@ -450,6 +518,181 @@ class PolicyDocuments:
             return self.get_permission_details_from_dict(permission)
 
         return {}
+
+    # Map each resource-backed permission STRING to the structured dict it is
+    # shorthand for. The table/bucket value is a RESOLVER identifier (env var
+    # name / SSM lookup key), resolved at synth via ResourceResolver — never a
+    # live AWS call. ``kind`` picks the resolver (table vs bucket); ``env`` is
+    # the environment-variable fallback name the resolver reads.
+    _RESOURCE_STRING_PERMISSIONS: Dict[str, Dict[str, str]] = {
+        # DynamoDB — application (single) table
+        "dynamodb_read": {
+            "service": "dynamodb",
+            "action": "read",
+            "kind": "table",
+            "env": "APP_TABLE_NAME",
+        },
+        "dynamodb_write": {
+            "service": "dynamodb",
+            "action": "write",
+            "kind": "table",
+            "env": "APP_TABLE_NAME",
+        },
+        "dynamodb_delete": {
+            "service": "dynamodb",
+            "action": "delete",
+            "kind": "table",
+            "env": "APP_TABLE_NAME",
+        },
+        "dynamodb_app_read": {
+            "service": "dynamodb",
+            "action": "read",
+            "kind": "table",
+            "env": "APP_TABLE_NAME",
+        },
+        "dynamodb_app_write": {
+            "service": "dynamodb",
+            "action": "write",
+            "kind": "table",
+            "env": "APP_TABLE_NAME",
+        },
+        "dynamodb_app_delete": {
+            "service": "dynamodb",
+            "action": "delete",
+            "kind": "table",
+            "env": "APP_TABLE_NAME",
+        },
+        # DynamoDB — transient table
+        "dynamodb_read_transient": {
+            "service": "dynamodb",
+            "action": "read",
+            "kind": "table",
+            "env": "TRANSIENT_TABLE_NAME",
+        },
+        "dynamodb_write_transient": {
+            "service": "dynamodb",
+            "action": "write",
+            "kind": "table",
+            "env": "TRANSIENT_TABLE_NAME",
+        },
+        # S3 — workload bucket
+        "s3_read_workload": {
+            "service": "s3",
+            "action": "read",
+            "kind": "bucket",
+            "env": "WORKLOAD_BUCKET_NAME",
+        },
+        "s3_write_workload": {
+            "service": "s3",
+            "action": "write",
+            "kind": "bucket",
+            "env": "WORKLOAD_BUCKET_NAME",
+        },
+        "s3_delete_workload": {
+            "service": "s3",
+            "action": "delete",
+            "kind": "bucket",
+            "env": "WORKLOAD_BUCKET_NAME",
+        },
+        # S3 — transient bucket
+        "s3_read_transient": {
+            "service": "s3",
+            "action": "read",
+            "kind": "bucket",
+            "env": "TRANSIENT_BUCKET_NAME",
+        },
+        "s3_write_transient": {
+            "service": "s3",
+            "action": "write",
+            "kind": "bucket",
+            "env": "TRANSIENT_BUCKET_NAME",
+        },
+        # S3 — upload bucket
+        "s3_read_upload": {
+            "service": "s3",
+            "action": "read",
+            "kind": "bucket",
+            "env": "UPLOAD_BUCKET_NAME",
+        },
+        "s3_write_upload": {
+            "service": "s3",
+            "action": "write",
+            "kind": "bucket",
+            "env": "UPLOAD_BUCKET_NAME",
+        },
+        "s3_read_upload_v3": {
+            "service": "s3",
+            "action": "read",
+            "kind": "bucket",
+            "env": "UPLOAD_BUCKET_NAME_V3",
+        },
+        "s3_write_upload_v3": {
+            "service": "s3",
+            "action": "write",
+            "kind": "bucket",
+            "env": "UPLOAD_BUCKET_NAME_V3",
+        },
+    }
+
+    def _get_resource_string_permission(self, permission: str) -> dict | None:
+        """Expand a resource-backed permission STRING into a structured policy.
+
+        Handles the DynamoDB/S3 string shorthands (``dynamodb_read``,
+        ``s3_write_workload``, ...) by resolving the target table/bucket name
+        via :class:`ResourceResolver` and delegating to
+        :meth:`_get_structured_permission` so the string path and the dict path
+        converge on the exact same ARN/action construction.
+
+        Returns:
+            The structured permission dict on success.
+
+            ``None`` if ``permission`` is not a resource-backed string (the
+            caller then tries the simple-string / inline paths).
+
+        Raises:
+            ValueError: If this IS a known resource-backed string but the
+                table/bucket name cannot be resolved. We fail LOUDLY here —
+                the pre-9d158d68 builders raised the same way — because a
+                validated-but-dropped permission silently removes an IAM grant
+                and causes runtime AccessDenied. (Contrast the structured DICT
+                form with an empty table/bucket, which is intentionally an
+                optional-feature skip handled in ``_get_structured_permission``.)
+        """
+        spec = self._RESOURCE_STRING_PERMISSIONS.get(permission)
+        if spec is None:
+            return None
+
+        resolver = self._get_resource_resolver()
+        if spec["kind"] == "table":
+            resource_name = resolver.get_table_name(spec["env"])
+            resource_key = "table"
+        else:
+            resource_name = resolver.get_bucket_name(spec["env"])
+            resource_key = "bucket"
+
+        if not resource_name:
+            raise ValueError(
+                f"Permission '{permission}' resolved to no IAM statement — the "
+                f"{spec['kind']} name could not be resolved. Set the "
+                f"'{spec['env']}' environment variable (or configure the "
+                f"corresponding SSM auto-import) at synth time, or use the "
+                f"structured form "
+                f"{{'{spec['service']}': '{spec['action']}', "
+                f"'{resource_key}': '<name>'}} with an explicit value."
+            )
+
+        structured = self._get_structured_permission(
+            {spec["service"]: spec["action"], resource_key: resource_name}
+        )
+        if not structured or "actions" not in structured:
+            # A known string that still produced nothing (should not happen once
+            # the name resolved) — fail loudly rather than silently dropping it.
+            raise ValueError(
+                f"Permission '{permission}' resolved to no IAM statement even "
+                f"though the {spec['kind']} name '{resource_name}' was found. "
+                f"This indicates an internal expansion error."
+            )
+        return structured
 
     def _get_structured_permission(self, permission: dict) -> dict | None:
         """Handle structured permission format.
