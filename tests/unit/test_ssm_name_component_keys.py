@@ -51,15 +51,29 @@ class TestSsmNameComponentValidation:
         # Should not raise
         mixin._validate_ssm_configuration()
 
-    def test_real_ssm_path_import_still_validated(self):
-        """A genuine path-valued import is still validated (must start with '/')."""
+    def test_slashless_path_import_is_normalized_not_rejected(self):
+        """A path-valued import without a leading slash is tolerantly normalized
+        (not fatally rejected). The former hard reject of a bare fragment is now a
+        fix — see standardized_ssm_mixin._validate_ssm_path / normalize_ssm_path
+        (commit 369fc55d)."""
         mixin = _mixin_with_imports(
             {
                 "lambda_namespace": "geekcafe/prod/lambda",
                 "user_pool_arn": "no-leading-slash/path",
             }
         )
-        with pytest.raises(ValueError, match="must start with '/'"):
+        # Should not raise — the slash-less value is normalized to "/no-leading-slash/path".
+        mixin._validate_ssm_configuration()
+
+    def test_genuinely_invalid_path_import_still_rejected(self):
+        """A genuinely-invalid import value (empty / non-string) is still rejected."""
+        mixin = _mixin_with_imports(
+            {
+                "lambda_namespace": "geekcafe/prod/lambda",
+                "user_pool_arn": "",
+            }
+        )
+        with pytest.raises(ValueError, match="cannot be empty"):
             mixin._validate_ssm_configuration()
 
     def test_valid_full_path_import_passes(self):
@@ -88,7 +102,10 @@ class TestSsmNameComponentValidation:
         result = validator.validate_configuration(config)
         assert result.valid, result.errors
 
-    def test_standard_validator_still_flags_bad_paths(self):
+    def test_standard_validator_normalizes_slashless_paths(self):
+        """SsmStandardValidator is tolerant: a slash-less path value is normalized,
+        not flagged (mirrors StandardizedSsmMixin._validate_ssm_path, commit 369fc55d).
+        """
         validator = SsmStandardValidator()
         config = {
             "ssm": {
@@ -100,5 +117,20 @@ class TestSsmNameComponentValidation:
             }
         }
         result = validator.validate_configuration(config)
+        assert result.valid, result.errors
+
+    def test_standard_validator_still_flags_genuinely_invalid_paths(self):
+        """A genuinely-invalid import value (empty) is still reported."""
+        validator = SsmStandardValidator()
+        config = {
+            "ssm": {
+                "imports": {
+                    "lambda_namespace": "geekcafe/prod/lambda",
+                    "user_pool_arn": "",
+                },
+                "exports": {},
+            }
+        }
+        result = validator.validate_configuration(config)
         assert not result.valid
-        assert any("must start with '/'" in e for e in result.errors)
+        assert any("cannot be empty" in e for e in result.errors)
