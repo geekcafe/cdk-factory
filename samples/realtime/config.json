@@ -1,0 +1,42 @@
+{
+  "workload": {
+    "name": "{{WORKLOAD_NAME}}",
+    "description": "Realtime push transport infrastructure (AppSync Events API + channel namespaces).",
+    "devops": {
+      "account": "{{DEVOPS_AWS_ACCOUNT}}",
+      "region": "{{DEVOPS_REGION}}"
+    },
+    "stacks": [
+      {
+        "name": "realtime-appsync-events",
+        "module": "appsync_events_stack",
+        "enabled": true,
+        "appsync_events": {
+          "name": "realtime",
+          "user_pool_id_ssm_path": "/{{WORKLOAD_NAME}}/{{DEPLOYMENT_NAMESPACE}}/cognito/user-pool/id",
+          "authorizer_lambda_arn_ssm_path": "/{{WORKLOAD_NAME}}/{{DEPLOYMENT_NAMESPACE}}/realtime/authorizer/arn",
+          "authorizer_result_ttl_seconds": 300,
+          "api_key_publish": true,
+          "channel_namespaces": [
+            "notifications",
+            "inboxes"
+          ],
+          "ssm": {
+            "namespace": "{{WORKLOAD_NAME}}/{{DEPLOYMENT_NAMESPACE}}/appsync-events"
+          }
+        }
+      }
+    ],
+    "deployments": [
+      {
+        "name": "realtime-deployment",
+        "environment": "{{DEPLOYMENT_NAMESPACE}}",
+        "account": "{{AWS_ACCOUNT}}",
+        "region": "{{AWS_REGION}}",
+        "mode": "stack",
+        "stacks": ["realtime-appsync-events"],
+        "enabled": true
+      }
+    ]
+  }
+}
