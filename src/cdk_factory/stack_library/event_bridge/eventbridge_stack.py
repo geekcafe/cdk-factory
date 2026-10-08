@@ -25,6 +25,7 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
+import re
 from typing import List, Optional
 
 from aws_cdk import aws_events as events
@@ -98,12 +99,15 @@ class EventBridgeStack(IStack):
                 f"EventBridge rule '{rule_config.name}' requires 'event_pattern'"
             )
 
-        workload = self.deployment.workload_name
-        env = self.deployment.environment
-
-        # Stable, explicit construct IDs (never the builtin randomized hashing).
-        rule_id = f"{workload}-{env}-chatops-slack-rule"
-        queue_id = f"{workload}-{env}-chatops-slack-rule-target-queue"
+        # Stable, explicit construct IDs derived from the rule's configured name
+        # (never the builtin randomized-per-process hashing). Slugging the name
+        # keeps the id a safe construct-id segment while leaving each rule's ids
+        # unique within the stack, so a second rule cannot collide. The existing
+        # chatops config name already ends in "-rule" and slugs to itself, so the
+        # legacy literal ids are reproduced byte-identically (zero CF diff).
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", rule_config.name).strip("-").lower()
+        rule_id = slug
+        queue_id = f"{rule_id}-target-queue"
 
         # Import the target queue ARN from SSM at DEPLOY time (CF token).
         queue_arn = ssm.StringParameter.value_for_string_parameter(
