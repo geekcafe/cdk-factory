@@ -310,11 +310,48 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
 
     @property
     def dependencies_to_layer(self) -> bool:
-        """Dependencies to Layer"""
-        if self.__config and isinstance(self.__config, dict):
-            return str(self.__config.get("dependencies_to_layer")).lower() == "true"
+        """Dependencies to Layer.
 
-        return True
+        When ``true`` the function's pip dependencies are installed into a
+        shared Lambda layer; when ``false`` (the default) they are vendored
+        directly into the function's code asset.
+
+        Default is ``false`` to preserve the historical effective behavior: the
+        config key is absent in most consumer configs, and the previous
+        implementation computed ``str(None).lower() == "true"`` → ``False`` for
+        an absent key. The default is now stated explicitly rather than relying
+        on that ``None`` coincidence, so an absent key does not flip packaging
+        mode for existing consumers.
+        """
+        if self.__config and isinstance(self.__config, dict):
+            value = self.__config.get("dependencies_to_layer")
+            if value is None:
+                return False
+            return str(value).lower() == "true"
+
+        return False
+
+    @property
+    def exclude_packages(self) -> List[str] | None:
+        """Runtime-provided packages to exclude from the Lambda bundle.
+
+        Packages listed here are pruned from the pip install target after
+        install (the AWS Lambda runtime already provides them). When the key is
+        absent, ``None`` is returned so the packaging utility applies its
+        generic default (boto3/botocore). An explicit empty list opts out of all
+        pruning (e.g. when a caller pins a specific boto3/botocore version).
+        """
+        if self.__config and isinstance(self.__config, dict):
+            value = self.__config.get("exclude_packages")
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return value
+            raise ValueError(
+                "'exclude_packages' must be a list of package names when set."
+            )
+
+        return None
 
     @property
     def insights_version(self) -> aws_lambda.LambdaInsightsVersion | None:
