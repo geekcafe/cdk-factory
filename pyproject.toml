@@ -29,6 +29,7 @@ dependencies = [
 
 [project.scripts]
 cdk-factory = "cdk_factory.cli:main"
+cdk-factory-nodejs-version = "cdk_factory.versioning.nodejs_version_cli:main"
 
 [build-system]
 requires = ["hatchling"]
