@@ -170,11 +170,20 @@ class CodeBuildPolicy:
         # `enable_appsync_key_seeder: true`. Default OFF, so pipelines that do
         # not run the seeder get no additional AppSync/Secrets Manager
         # permissions on the shared CodeBuild role — a consumer opts into its
-        # own grant. Scope is unchanged from the design: list/create/get the
-        # realtime AppSync Events publish key (api-id only known at deploy time,
-        # so scoped to `apis/*` in the devops account/region) and read/write the
-        # single realtime api-key secret the publisher reads (trailing `*`
-        # covers the Secrets Manager random-suffix).
+        # own grant. Scope: list/create/get the realtime AppSync Events publish
+        # key, and read/write the single realtime api-key secret the publisher
+        # reads (trailing `*` covers the Secrets Manager random-suffix).
+        #
+        # NOTE on the AppSync Resource being "*": appsync:ListApiKeys /
+        # CreateApiKey / GetApiKey do NOT support resource-level scoping — their
+        # resource-type column is empty in the AWS Service Authorization
+        # Reference for AppSync, so the only Resource value that matches them is
+        # "*". A scoped ARN like `apis/*` (or the Events `/v1/apis/<id>/apikeys`
+        # shape IAM evaluates against) never matches these actions and yields a
+        # misleading "no identity-based policy allows the action" denial even
+        # when the statement is present. The grant is kept safe by pairing the
+        # unavoidable "*" resource with this narrow, single-purpose key-mgmt
+        # action set on an opt-in post-deploy seeder role.
         if pipeline.enable_appsync_key_seeder:
             appsync_key_seeder_policy = iam.PolicyStatement(
                 sid="AppSyncEventsApiKeySeeder",
@@ -184,13 +193,9 @@ class CodeBuildPolicy:
                     "appsync:CreateApiKey",
                     "appsync:GetApiKey",
                 ],
-                resources=[
-                    (
-                        "arn:aws:appsync:"
-                        f"{workload.devops.region}:"
-                        f"{workload.devops.account}:apis/*"
-                    )
-                ],
+                # These actions are not resource-scopable (see NOTE above); "*"
+                # is the only Resource that matches them.
+                resources=["*"],
             )
             code_build_policy.append(appsync_key_seeder_policy)
 

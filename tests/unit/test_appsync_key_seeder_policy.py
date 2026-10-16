@@ -66,15 +66,18 @@ class TestAppSyncKeySeederPolicyGating:
 
     def test_default_absent(self):
         """Flag absent -> neither seeder statement is on the shared role."""
-        assert PipelineConfig(
-            pipeline={"name": "p", "branch": "main", "npm_build_mode": "install"},
-            workload=_workload_dict(),
-        ).enable_appsync_key_seeder is False
+        assert (
+            PipelineConfig(
+                pipeline={"name": "p", "branch": "main", "npm_build_mode": "install"},
+                workload=_workload_dict(),
+            ).enable_appsync_key_seeder
+            is False
+        )
 
         sids = _collect_sids(_build_policies(enable_seeder=False))
-        assert not (SEEDER_SIDS & sids), (
-            f"seeder statements must be absent by default; found {SEEDER_SIDS & sids}"
-        )
+        assert not (
+            SEEDER_SIDS & sids
+        ), f"seeder statements must be absent by default; found {SEEDER_SIDS & sids}"
 
     def test_present_when_enabled(self):
         """Flag true -> both seeder statements are present with the design scope."""
@@ -94,9 +97,10 @@ class TestAppSyncKeySeederPolicyGating:
             "appsync:CreateApiKey",
             "appsync:GetApiKey",
         }
-        assert appsync["Resource"] == (
-            "arn:aws:appsync:us-east-1:123456789012:apis/*"
-        )
+        # appsync:ListApiKeys/CreateApiKey/GetApiKey are not resource-scopable
+        # (empty resource-type column in the AWS Service Authorization
+        # Reference), so the only Resource that matches them is "*".
+        assert appsync["Resource"] == "*"
 
         secret = by_sid["RealtimeApiKeySecretSeeder"]
         assert set(secret["Action"]) == {
