@@ -182,3 +182,20 @@ class PipelineConfig:
         Configured via pipeline.cross_account_role_arns in the config JSON.
         """
         return self.pipeline.get("cross_account_role_arns", [])
+
+    @property
+    def enable_appsync_key_seeder(self) -> bool:
+        """
+        Opt-in flag for the AppSync Events api-key seeder post-step
+        (`cdk_factory.utilities.appsync_key_seeder`).
+
+        When true, the pipeline's CodeBuild role is granted the two scoped
+        statements the seeder needs (appsync ListApiKeys/CreateApiKey/GetApiKey
+        on this account/region's apis, and secretsmanager Get/PutSecretValue on
+        the realtime api-key secret). Defaults to FALSE so pipelines that do not
+        run the seeder get no additional permissions on the shared build role —
+        a consumer opts into its own grant via
+        pipeline.enable_appsync_key_seeder in the config JSON.
+        """
+        value = self.pipeline.get("enable_appsync_key_seeder", False)
+        return str(value).lower() == "true" or value is True

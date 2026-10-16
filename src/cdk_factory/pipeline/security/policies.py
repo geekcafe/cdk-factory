@@ -164,4 +164,51 @@ class CodeBuildPolicy:
         )
         code_build_policy.append(cross_account_lambda_updater_policy)
 
+        # AppSync Events api-key seeder (post-deploy step
+        # `cdk_factory.utilities.appsync_key_seeder`). OPT-IN ONLY: these two
+        # statements are added only when the pipeline config sets
+        # `enable_appsync_key_seeder: true`. Default OFF, so pipelines that do
+        # not run the seeder get no additional AppSync/Secrets Manager
+        # permissions on the shared CodeBuild role — a consumer opts into its
+        # own grant. Scope is unchanged from the design: list/create/get the
+        # realtime AppSync Events publish key (api-id only known at deploy time,
+        # so scoped to `apis/*` in the devops account/region) and read/write the
+        # single realtime api-key secret the publisher reads (trailing `*`
+        # covers the Secrets Manager random-suffix).
+        if pipeline.enable_appsync_key_seeder:
+            appsync_key_seeder_policy = iam.PolicyStatement(
+                sid="AppSyncEventsApiKeySeeder",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "appsync:ListApiKeys",
+                    "appsync:CreateApiKey",
+                    "appsync:GetApiKey",
+                ],
+                resources=[
+                    (
+                        "arn:aws:appsync:"
+                        f"{workload.devops.region}:"
+                        f"{workload.devops.account}:apis/*"
+                    )
+                ],
+            )
+            code_build_policy.append(appsync_key_seeder_policy)
+
+            realtime_api_key_secret_policy = iam.PolicyStatement(
+                sid="RealtimeApiKeySecretSeeder",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:PutSecretValue",
+                ],
+                resources=[
+                    (
+                        "arn:aws:secretsmanager:"
+                        f"{workload.devops.region}:"
+                        f"{workload.devops.account}:secret:realtime/appsync-events/api-key*"
+                    )
+                ],
+            )
+            code_build_policy.append(realtime_api_key_secret_policy)
+
         return code_build_policy

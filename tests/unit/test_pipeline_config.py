@@ -40,3 +40,31 @@ class TestPipelineConfig:
         config = PipelineConfig(pipeline=pipeline_dict, workload=workload_dict)
 
         assert config.cross_account_role_arns == []
+
+    def test_enable_appsync_key_seeder_default_false(self):
+        """Verify enable_appsync_key_seeder defaults to False when absent."""
+        pipeline_dict = {
+            "name": "test-pipeline",
+            "branch": "main",
+            "enabled": True,
+            "npm_build_mode": "install",
+        }
+        workload_dict = {"name": "test-workload"}
+        config = PipelineConfig(pipeline=pipeline_dict, workload=workload_dict)
+
+        assert config.enable_appsync_key_seeder is False
+
+    def test_enable_appsync_key_seeder_true(self):
+        """Verify enable_appsync_key_seeder returns True when opted in."""
+        for value in (True, "true", "True"):
+            pipeline_dict = {
+                "name": "test-pipeline",
+                "branch": "main",
+                "enabled": True,
+                "npm_build_mode": "install",
+                "enable_appsync_key_seeder": value,
+            }
+            workload_dict = {"name": "test-workload"}
+            config = PipelineConfig(pipeline=pipeline_dict, workload=workload_dict)
+
+            assert config.enable_appsync_key_seeder is True
