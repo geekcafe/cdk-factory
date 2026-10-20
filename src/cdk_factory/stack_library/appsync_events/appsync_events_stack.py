@@ -30,6 +30,7 @@ from typing import Dict, List, Optional
 
 from aws_cdk import Stack
 from aws_cdk import aws_appsync as appsync
+from aws_cdk import aws_lambda as _lambda
 from aws_cdk import aws_ssm as ssm
 from aws_lambda_powertools import Logger
 from constructs import Construct
@@ -178,9 +179,13 @@ class AppSyncEventsStack(IStack):
         }
 
         # PROVIDERS: inherit today's exact set when `auth.providers` is absent,
-        # else emit exactly the configured providers in order.
+        # else emit exactly the configured providers in order. Track whether the
+        # AWS_LAMBDA authorizer provider is present so we know whether to grant
+        # AppSync permission to invoke the authorizer Lambda (below).
+        lambda_provider_configured = False
         if auth.providers is None:
             auth_providers = [_cognito_provider(), _lambda_provider()]
+            lambda_provider_configured = True
             if self.config.api_key_publish:
                 auth_providers.append(_api_key_provider())
         else:
@@ -192,6 +197,8 @@ class AppSyncEventsStack(IStack):
                 builder = _provider_builders.get(token)
                 if builder is None:
                     raise ValueError(f"unknown appsync_events auth token '{token}'")
+                if token == "lambda":
+                    lambda_provider_configured = True
                 auth_providers.append(builder())
 
         def _modes(
@@ -230,8 +237,48 @@ class AppSyncEventsStack(IStack):
             event_config=event_config,
         )
 
+        # The raw L1 CfnApi (unlike the L2 appsync.Api) does NOT auto-grant
+        # AppSync permission to invoke the Lambda authorizer. Without this grant
+        # the authorizer Lambda's resource policy is empty and AppSync rejects
+        # every connection_init with BadRequestException 400 (the authorizer is
+        # never invoked). Emit the grant only when an AWS_LAMBDA authorizer is
+        # actually configured.
+        if lambda_provider_configured:
+            self._grant_appsync_invoke_authorizer(base, authorizer_fn_arn)
+
         for ns in namespaces:
             self._build_namespace(base, ns)
+
+    def _grant_appsync_invoke_authorizer(
+        self, base: str, authorizer_fn_arn: str
+    ) -> None:
+        """Grant AppSync permission to invoke the Lambda authorizer function.
+
+        The authorizer is referenced ARN-only (a deploy-time SSM token), so there
+        is no ``IFunction`` to call ``add_permission`` on; use an L1
+        ``CfnPermission`` with the token ARN as ``function_name`` (mirrors the
+        api_gateway route-group precedent).
+
+        ``source_arn`` is the **bare** API ARN (``{attr_api_arn}``), NOT a
+        sub-resource glob. This was confirmed empirically: AppSync Events invokes
+        the Lambda authorizer with a ``SourceArn`` equal to the bare API ARN, so
+        a resource policy scoped to ``{attr_api_arn}/*`` does NOT match — AppSync
+        is then denied, the authorizer is never invoked, and the connection fails
+        with 400 ``BadRequestException``. Granting on the bare ARN lets AppSync
+        invoke the authorizer (the live console error moved 400 -> 401, i.e.
+        AppSync now invokes the authorizer, which then makes its own allow/deny
+        decision). Both the API ARN and the authorizer ARN are deploy-time
+        CloudFormation tokens, so nothing is resolved at synth and no
+        account/region/apiId is hardcoded.
+        """
+        _lambda.CfnPermission(
+            self,
+            f"{base}-authorizer-invoke-permission",
+            action="lambda:InvokeFunction",
+            function_name=authorizer_fn_arn,
+            principal="appsync.amazonaws.com",
+            source_arn=self.api.attr_api_arn,
+        )
 
     def _build_namespace(
         self, base: str, ns: AppSyncEventsChannelNamespaceConfig

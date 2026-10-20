@@ -266,3 +266,70 @@ def test_legacy_no_api_key_publish_defaults_publish_to_lambda():
 
     publish_modes = {m["AuthType"] for m in event_config["DefaultPublishAuthModes"]}
     assert publish_modes == {"AWS_LAMBDA"}
+
+
+def _single_lambda_permission(template: Template) -> dict:
+    """Return the single AWS::Lambda::Permission properties, asserting exactly one."""
+    template.resource_count_is("AWS::Lambda::Permission", 1)
+    perms = template.find_resources("AWS::Lambda::Permission")
+    return list(perms.values())[0]["Properties"]
+
+
+def test_lambda_invoke_permission_granted_in_legacy_path():
+    # Legacy fallback (no `auth` block) always includes AWS_LAMBDA, so the
+    # authorizer-invoke permission must be granted.
+    template = _build_sample_template()
+    props = _single_lambda_permission(template)
+
+    assert props["Action"] == "lambda:InvokeFunction"
+    assert props["Principal"] == "appsync.amazonaws.com"
+
+    # FunctionName is a Ref to the authorizer SSM CfnParameter (deploy-time token).
+    function_name = props["FunctionName"]
+    assert isinstance(function_name, dict) and "Ref" in function_name
+    cfn_params = template.find_parameters("*")
+    assert function_name["Ref"] in cfn_params
+    assert (
+        cfn_params[function_name["Ref"]]["Type"] == "AWS::SSM::Parameter::Value<String>"
+    )
+
+    # SourceArn must be the BARE API ARN (a GetAtt on the CfnApi's ApiArn), NOT
+    # scoped with a trailing /*. AppSync Events invokes the authorizer with a
+    # SourceArn equal to the bare API ARN; a /*-scoped policy would not match and
+    # the authorizer would never be invoked (400 BadRequestException).
+    source_arn = props["SourceArn"]
+    # Bare GetAtt token — no Fn::Join wrapping, no "/*" suffix.
+    assert isinstance(source_arn, dict)
+    assert "Fn::Join" not in source_arn
+    assert source_arn.get("Fn::GetAtt", [None, None])[1] == "ApiArn"
+
+
+def test_lambda_invoke_permission_granted_with_lambda_provider():
+    # Config-driven providers including "lambda" => permission granted.
+    stack_cfg = _auth_stack_cfg(
+        {
+            "providers": ["lambda", "api_key"],
+            "connection_auth_modes": ["lambda"],
+            "subscribe_auth_modes": ["lambda"],
+            "publish_auth_modes": ["api_key"],
+        }
+    )
+    template = _build_template(stack_cfg)
+    props = _single_lambda_permission(template)
+
+    assert props["Action"] == "lambda:InvokeFunction"
+    assert props["Principal"] == "appsync.amazonaws.com"
+
+
+def test_no_lambda_invoke_permission_when_no_lambda_provider():
+    # providers omit "lambda" => no AuthorizerUri wired => no invoke permission.
+    stack_cfg = _auth_stack_cfg(
+        {
+            "providers": ["api_key"],
+            "connection_auth_modes": ["api_key"],
+            "subscribe_auth_modes": ["api_key"],
+            "publish_auth_modes": ["api_key"],
+        }
+    )
+    template = _build_template(stack_cfg)
+    template.resource_count_is("AWS::Lambda::Permission", 0)
