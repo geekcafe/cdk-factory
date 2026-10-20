@@ -90,9 +90,7 @@ def test_event_config_auth_providers_and_modes():
     assert "API_KEY" in provider_types
 
     connection_modes = {m["AuthType"] for m in event_config["ConnectionAuthModes"]}
-    subscribe_modes = {
-        m["AuthType"] for m in event_config["DefaultSubscribeAuthModes"]
-    }
+    subscribe_modes = {m["AuthType"] for m in event_config["DefaultSubscribeAuthModes"]}
     assert connection_modes == {"AWS_LAMBDA"}
     assert subscribe_modes == {"AWS_LAMBDA"}
 
@@ -123,9 +121,7 @@ def test_cross_stack_ids_are_ssm_tokens_not_literals():
     api = list(apis.values())[0]
     providers = api["Properties"]["EventConfig"]["AuthProviders"]
 
-    cognito = next(
-        p for p in providers if p["AuthType"] == "AMAZON_COGNITO_USER_POOLS"
-    )
+    cognito = next(p for p in providers if p["AuthType"] == "AMAZON_COGNITO_USER_POOLS")
     user_pool_id = cognito["CognitoConfig"]["UserPoolId"]
     assert isinstance(user_pool_id, dict) and "Ref" in user_pool_id
 
@@ -194,3 +190,79 @@ def test_duplicate_namespace_names_raises():
     }
     with pytest.raises(ValueError, match="Duplicate channel namespace"):
         _build_template(stack_cfg)
+
+
+def _auth_stack_cfg(auth: dict, api_key_publish: bool = True) -> dict:
+    """Build a minimal appsync_events stack cfg carrying an `auth` block."""
+    appsync_events = {
+        "name": "realtime",
+        "user_pool_id_ssm_path": "/x/y/user-pool/id",
+        "authorizer_lambda_arn_ssm_path": "/x/y/authorizer/arn",
+        "authorizer_result_ttl_seconds": 300,
+        "api_key_publish": api_key_publish,
+        "channel_namespaces": ["inboxes"],
+    }
+    if auth is not None:
+        appsync_events["auth"] = auth
+    return {
+        "name": APPSYNC_EVENTS_STACK_NAME,
+        "module": "appsync_events_stack",
+        "appsync_events": appsync_events,
+    }
+
+
+def test_auth_block_drops_cognito_provider_and_sets_modes():
+    # (b) providers ['lambda','api_key'] + all three mode lists.
+    stack_cfg = _auth_stack_cfg(
+        {
+            "providers": ["lambda", "api_key"],
+            "connection_auth_modes": ["lambda"],
+            "subscribe_auth_modes": ["lambda"],
+            "publish_auth_modes": ["api_key"],
+        }
+    )
+    template = _build_template(stack_cfg)
+    apis = template.find_resources("AWS::AppSync::Api")
+    api = list(apis.values())[0]
+    event_config = api["Properties"]["EventConfig"]
+
+    provider_types = {p["AuthType"] for p in event_config["AuthProviders"]}
+    assert provider_types == {"AWS_LAMBDA", "API_KEY"}
+    assert "AMAZON_COGNITO_USER_POOLS" not in provider_types
+
+    connection_modes = {m["AuthType"] for m in event_config["ConnectionAuthModes"]}
+    subscribe_modes = {m["AuthType"] for m in event_config["DefaultSubscribeAuthModes"]}
+    publish_modes = {m["AuthType"] for m in event_config["DefaultPublishAuthModes"]}
+    assert connection_modes == {"AWS_LAMBDA"}
+    assert subscribe_modes == {"AWS_LAMBDA"}
+    assert publish_modes == {"API_KEY"}
+
+    # The AWS_LAMBDA provider still carries a LambdaAuthorizerConfig.AuthorizerUri Ref.
+    lambda_provider = next(
+        p for p in event_config["AuthProviders"] if p["AuthType"] == "AWS_LAMBDA"
+    )
+    authorizer_uri = lambda_provider["LambdaAuthorizerConfig"]["AuthorizerUri"]
+    assert isinstance(authorizer_uri, dict) and "Ref" in authorizer_uri
+
+
+def test_unknown_auth_token_raises():
+    # (c) an unmapped friendly token fails synth.
+    stack_cfg = _auth_stack_cfg({"providers": ["bogus"]})
+    with pytest.raises(ValueError, match="bogus"):
+        _build_template(stack_cfg)
+
+
+def test_legacy_no_api_key_publish_defaults_publish_to_lambda():
+    # (d) legacy api_key_publish:false + no auth => publish AWS_LAMBDA, no API_KEY.
+    stack_cfg = _auth_stack_cfg(None, api_key_publish=False)
+    template = _build_template(stack_cfg)
+    apis = template.find_resources("AWS::AppSync::Api")
+    api = list(apis.values())[0]
+    event_config = api["Properties"]["EventConfig"]
+
+    provider_types = {p["AuthType"] for p in event_config["AuthProviders"]}
+    assert "API_KEY" not in provider_types
+    assert provider_types == {"AMAZON_COGNITO_USER_POOLS", "AWS_LAMBDA"}
+
+    publish_modes = {m["AuthType"] for m in event_config["DefaultPublishAuthModes"]}
+    assert publish_modes == {"AWS_LAMBDA"}

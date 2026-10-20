@@ -47,6 +47,23 @@ from cdk_factory.workload.workload_factory import WorkloadConfig
 logger = Logger(service="AppSyncEventsStack")
 
 
+# Friendly config tokens -> AWS AppSync auth-type identifiers. Config-level auth
+# blocks speak the friendly tokens; the construct maps them here.
+_FRIENDLY_TO_AUTH_TYPE: Dict[str, str] = {
+    "lambda": "AWS_LAMBDA",
+    "cognito": "AMAZON_COGNITO_USER_POOLS",
+    "api_key": "API_KEY",
+}
+
+
+def _resolve_auth_type(token: str) -> str:
+    """Map a friendly auth token to its AppSync auth-type, failing synth on typos."""
+    auth_type = _FRIENDLY_TO_AUTH_TYPE.get(token)
+    if auth_type is None:
+        raise ValueError(f"unknown appsync_events auth token '{token}'")
+    return auth_type
+
+
 @register_stack("appsync_events_library_module")
 @register_stack("appsync_events_stack")
 class AppSyncEventsStack(IStack):
@@ -85,9 +102,7 @@ class AppSyncEventsStack(IStack):
 
         # Required cross-stack SSM paths (fatal if missing — fail synth).
         if not self.config.user_pool_id_ssm_path:
-            raise ValueError(
-                "appsync_events config requires 'user_pool_id_ssm_path'"
-            )
+            raise ValueError("appsync_events config requires 'user_pool_id_ssm_path'")
         if not self.config.authorizer_lambda_arn_ssm_path:
             raise ValueError(
                 "appsync_events config requires 'authorizer_lambda_arn_ssm_path'"
@@ -117,9 +132,7 @@ class AppSyncEventsStack(IStack):
                 )
             seen.add(ns.name)
 
-    def _build_api(
-        self, namespaces: List[AppSyncEventsChannelNamespaceConfig]
-    ) -> None:
+    def _build_api(self, namespaces: List[AppSyncEventsChannelNamespaceConfig]) -> None:
         """Create the ``CfnApi`` and its channel namespaces."""
         workload = self.deployment.workload_name
         env = self.deployment.environment
@@ -135,45 +148,79 @@ class AppSyncEventsStack(IStack):
             self, self.config.authorizer_lambda_arn_ssm_path
         )
 
-        auth_providers = [
-            appsync.CfnApi.AuthProviderProperty(
+        auth = self.config.auth
+
+        def _cognito_provider() -> appsync.CfnApi.AuthProviderProperty:
+            return appsync.CfnApi.AuthProviderProperty(
                 auth_type="AMAZON_COGNITO_USER_POOLS",
                 cognito_config=appsync.CfnApi.CognitoConfigProperty(
                     aws_region=region,
                     user_pool_id=user_pool_id,
                 ),
-            ),
-            appsync.CfnApi.AuthProviderProperty(
+            )
+
+        def _lambda_provider() -> appsync.CfnApi.AuthProviderProperty:
+            return appsync.CfnApi.AuthProviderProperty(
                 auth_type="AWS_LAMBDA",
                 lambda_authorizer_config=appsync.CfnApi.LambdaAuthorizerConfigProperty(
                     authorizer_uri=authorizer_fn_arn,
                     authorizer_result_ttl_in_seconds=self.config.authorizer_result_ttl_seconds,
                 ),
-            ),
-        ]
-        if self.config.api_key_publish:
-            auth_providers.append(
-                appsync.CfnApi.AuthProviderProperty(auth_type="API_KEY")
             )
 
-        if self.config.api_key_publish:
-            default_publish_auth_modes = [
-                appsync.CfnApi.AuthModeProperty(auth_type="API_KEY")
-            ]
+        def _api_key_provider() -> appsync.CfnApi.AuthProviderProperty:
+            return appsync.CfnApi.AuthProviderProperty(auth_type="API_KEY")
+
+        _provider_builders = {
+            "cognito": _cognito_provider,
+            "lambda": _lambda_provider,
+            "api_key": _api_key_provider,
+        }
+
+        # PROVIDERS: inherit today's exact set when `auth.providers` is absent,
+        # else emit exactly the configured providers in order.
+        if auth.providers is None:
+            auth_providers = [_cognito_provider(), _lambda_provider()]
+            if self.config.api_key_publish:
+                auth_providers.append(_api_key_provider())
         else:
-            default_publish_auth_modes = [
-                appsync.CfnApi.AuthModeProperty(auth_type="AWS_LAMBDA")
+            auth_providers = []
+            for token in auth.providers:
+                # Validate the token maps to a known auth-type (fail synth on typos)
+                # even though the provider builder is keyed on the friendly token.
+                _resolve_auth_type(token)
+                builder = _provider_builders.get(token)
+                if builder is None:
+                    raise ValueError(f"unknown appsync_events auth token '{token}'")
+                auth_providers.append(builder())
+
+        def _modes(
+            configured: Optional[List[str]],
+            default_auth_types: List[str],
+        ) -> List[appsync.CfnApi.AuthModeProperty]:
+            auth_types = (
+                default_auth_types
+                if configured is None
+                else [_resolve_auth_type(token) for token in configured]
+            )
+            return [
+                appsync.CfnApi.AuthModeProperty(auth_type=auth_type)
+                for auth_type in auth_types
             ]
+
+        default_publish_auth_type = (
+            "API_KEY" if self.config.api_key_publish else "AWS_LAMBDA"
+        )
 
         event_config = appsync.CfnApi.EventConfigProperty(
             auth_providers=auth_providers,
-            connection_auth_modes=[
-                appsync.CfnApi.AuthModeProperty(auth_type="AWS_LAMBDA")
-            ],
-            default_subscribe_auth_modes=[
-                appsync.CfnApi.AuthModeProperty(auth_type="AWS_LAMBDA")
-            ],
-            default_publish_auth_modes=default_publish_auth_modes,
+            connection_auth_modes=_modes(auth.connection_auth_modes, ["AWS_LAMBDA"]),
+            default_subscribe_auth_modes=_modes(
+                auth.subscribe_auth_modes, ["AWS_LAMBDA"]
+            ),
+            default_publish_auth_modes=_modes(
+                auth.publish_auth_modes, [default_publish_auth_type]
+            ),
         )
 
         self.api = appsync.CfnApi(

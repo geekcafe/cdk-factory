@@ -69,6 +69,55 @@ class AppSyncEventsChannelNamespaceConfig:
         return None
 
 
+class AppSyncEventsAuthConfig:
+    """Optional API-level auth override block.
+
+    Parses the ``auth`` sub-block of ``appsync_events``::
+
+        "auth": {
+            "providers": ["lambda", "api_key"],
+            "connection_auth_modes": ["lambda"],
+            "subscribe_auth_modes": ["lambda"],
+            "publish_auth_modes": ["api_key"]
+        }
+
+    Each accessor returns ``Optional[List[str]]`` of friendly tokens
+    (``lambda`` / ``cognito`` / ``api_key``), and ``None`` when the corresponding
+    JSON key is absent — the established 'inherit/legacy' convention (mirrors
+    ``AppSyncEventsChannelNamespaceConfig.publish_auth_modes``). When every
+    accessor is ``None`` the stack falls back to today's exact provider/mode set.
+    """
+
+    def __init__(self, config: Any) -> None:
+        self._config: Dict[str, Any] = config if isinstance(config, dict) else {}
+
+    def _str_list(self, key: str) -> Optional[List[str]]:
+        value = self._config.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        return None
+
+    @property
+    def providers(self) -> Optional[List[str]]:
+        """Ordered friendly auth-provider tokens, or ``None`` to inherit legacy."""
+        return self._str_list("providers")
+
+    @property
+    def connection_auth_modes(self) -> Optional[List[str]]:
+        """Friendly connection auth-mode tokens, or ``None`` to inherit legacy."""
+        return self._str_list("connection_auth_modes")
+
+    @property
+    def subscribe_auth_modes(self) -> Optional[List[str]]:
+        """Friendly default-subscribe auth-mode tokens, or ``None`` to inherit."""
+        return self._str_list("subscribe_auth_modes")
+
+    @property
+    def publish_auth_modes(self) -> Optional[List[str]]:
+        """Friendly default-publish auth-mode tokens, or ``None`` to inherit."""
+        return self._str_list("publish_auth_modes")
+
+
 class AppSyncEventsConfig:
     """AppSync Events stack configuration (parses the ``appsync_events`` block)."""
 
@@ -123,6 +172,11 @@ class AppSyncEventsConfig:
         if isinstance(value, bool):
             return value
         return str(value).lower() == "true"
+
+    @property
+    def auth(self) -> AppSyncEventsAuthConfig:
+        """Optional API-level auth override block (``None`` accessors == legacy)."""
+        return AppSyncEventsAuthConfig(self._config.get("auth", {}))
 
     @property
     def ssm(self) -> Dict[str, Any]:
