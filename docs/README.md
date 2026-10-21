@@ -133,5 +133,6 @@ Reference it in config (name is the literal CloudFormation stack name):
 - [Stack Modules](stack-modules.md) — Per-module config reference (lambda defaults, auto_name, SQS auto-discovery)
 - [Pipeline Commands](pipeline-commands.md) — CI/CD CLI modules: unified orchestrator, Docker build/tag/push, unit tests, SSM publish, Lambda updates, CodeArtifact publishing
 - [Naming & SSM](naming-and-ssm.md) — Declarative stack naming, SSM parameter conventions
+- [Realtime Push Infrastructure](realtime-push-infrastructure.md) — AppSync Events API + Lambda authorizer + EventBridge→SQS routing for realtime push notifications
 - [Cross-Account](cross-account.md) — Multi-account setup and DNS delegation
 - [Deployment Guide](deployment-guide.md) — How to deploy, add tenants, parameter resolution
