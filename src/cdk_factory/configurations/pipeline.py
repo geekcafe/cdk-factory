@@ -199,3 +199,28 @@ class PipelineConfig:
         """
         value = self.pipeline.get("enable_appsync_key_seeder", False)
         return str(value).lower() == "true" or value is True
+
+    @property
+    def shared_secret_seeder_secrets(self) -> List[str]:
+        """
+        Opt-in list of Secrets Manager secret name/ARN patterns the generic
+        shared-secret seeder post-step
+        (`cdk_factory.utilities.shared_secret_seeder`) is allowed to read and
+        write.
+
+        Each entry is a secret name (or name pattern) relative to this
+        account/region — e.g. `event-bus/ingress/shared-secret*` — which the
+        CodeBuild policy expands into the correctly-scoped full ARN
+        `arn:aws:secretsmanager:{region}:{account}:secret:{pattern}`. A trailing
+        `*` covers the Secrets Manager random suffix.
+
+        The PRESENCE of one or more patterns IS the opt-in (mirroring how
+        `enable_appsync_key_seeder` gates its block, but generic and
+        multi-secret): when non-empty, the shared CodeBuild role is granted a
+        single Get/PutSecretValue statement scoped to exactly these patterns.
+        Defaults to an empty list = OFF, so pipelines that do not run the seeder
+        get no additional Secrets Manager permission on the shared build role —
+        a consumer opts into its own scoped grant via
+        pipeline.shared_secret_seeder_secrets in the config JSON.
+        """
+        return self.pipeline.get("shared_secret_seeder_secrets", [])

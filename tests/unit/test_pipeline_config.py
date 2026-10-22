@@ -68,3 +68,34 @@ class TestPipelineConfig:
             config = PipelineConfig(pipeline=pipeline_dict, workload=workload_dict)
 
             assert config.enable_appsync_key_seeder is True
+
+    def test_shared_secret_seeder_secrets_default_empty(self):
+        """Verify shared_secret_seeder_secrets defaults to [] when absent."""
+        pipeline_dict = {
+            "name": "test-pipeline",
+            "branch": "main",
+            "enabled": True,
+            "npm_build_mode": "install",
+        }
+        workload_dict = {"name": "test-workload"}
+        config = PipelineConfig(pipeline=pipeline_dict, workload=workload_dict)
+
+        assert config.shared_secret_seeder_secrets == []
+
+    def test_shared_secret_seeder_secrets_configured(self):
+        """Verify shared_secret_seeder_secrets returns the configured list."""
+        pipeline_dict = {
+            "name": "test-pipeline",
+            "branch": "main",
+            "enabled": True,
+            "npm_build_mode": "install",
+            "shared_secret_seeder_secrets": [
+                "event-bus/ingress/shared-secret*",
+            ],
+        }
+        workload_dict = {"name": "test-workload"}
+        config = PipelineConfig(pipeline=pipeline_dict, workload=workload_dict)
+
+        assert config.shared_secret_seeder_secrets == [
+            "event-bus/ingress/shared-secret*",
+        ]

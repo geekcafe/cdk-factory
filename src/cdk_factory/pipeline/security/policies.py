@@ -216,4 +216,42 @@ class CodeBuildPolicy:
             )
             code_build_policy.append(realtime_api_key_secret_policy)
 
+        # Generic shared-secret seeder (post-deploy step
+        # `cdk_factory.utilities.shared_secret_seeder`). OPT-IN ONLY: this
+        # single statement is added only when the pipeline config declares one
+        # or more secret patterns in `shared_secret_seeder_secrets`. The
+        # presence of patterns IS the opt-in (mirroring how
+        # `enable_appsync_key_seeder` gates its block, but generic and
+        # multi-secret). Default OFF: when the list is empty/absent NO statement
+        # is appended, so pipelines that do not run the seeder get no additional
+        # Secrets Manager permission on the shared CodeBuild role — a consumer
+        # opts into its own scoped grant.
+        #
+        # Scope: the seeder only does get_secret_value + put_secret_value on
+        # SECRET_ID, so this grants ONLY secretsmanager Get/PutSecretValue.
+        # Unlike the AppSync key-management actions above, Secrets Manager
+        # actions ARE resource-scopable, so the Resource is restricted to the
+        # configured pattern ARNs (NEVER "*") — each configured pattern is
+        # expanded into a full account/region-scoped ARN. A trailing `*` in a
+        # pattern (e.g. `event-bus/ingress/shared-secret*`) covers the Secrets
+        # Manager random suffix, exactly like the realtime api-key statement.
+        if pipeline.shared_secret_seeder_secrets:
+            shared_secret_seeder_policy = iam.PolicyStatement(
+                sid="SharedSecretSeeder",
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:PutSecretValue",
+                ],
+                resources=[
+                    (
+                        "arn:aws:secretsmanager:"
+                        f"{workload.devops.region}:"
+                        f"{workload.devops.account}:secret:{pattern}"
+                    )
+                    for pattern in pipeline.shared_secret_seeder_secrets
+                ],
+            )
+            code_build_policy.append(shared_secret_seeder_policy)
+
         return code_build_policy
