@@ -192,6 +192,59 @@ def test_duplicate_namespace_names_raises():
         _build_template(stack_cfg)
 
 
+def _ns_stack_cfg(namespace_name: str) -> dict:
+    return {
+        "name": APPSYNC_EVENTS_STACK_NAME,
+        "module": "appsync_events_stack",
+        "appsync_events": {
+            "name": "realtime",
+            "user_pool_id_ssm_path": "/x/y/user-pool/id",
+            "authorizer_lambda_arn_ssm_path": "/x/y/authorizer/arn",
+            "channel_namespaces": [namespace_name],
+        },
+    }
+
+
+def test_underscore_namespace_name_raises():
+    # The real-world failure: "event_bus" passes a naive check but AppSync rejects
+    # the underscore at CREATE time. Must fail fast at synth instead.
+    with pytest.raises(ValueError, match="Invalid channel namespace name 'event_bus'"):
+        _build_template(_ns_stack_cfg("event_bus"))
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "event_bus",  # underscore (the motivating case)
+        "-channels",  # leading hyphen
+        "channels-",  # trailing hyphen
+        "chan nels",  # space
+        "channels!",  # punctuation
+        "",  # empty
+        "a" * 51,  # too long (>50)
+    ],
+)
+def test_invalid_namespace_names_raise(bad_name):
+    with pytest.raises(ValueError, match="Invalid channel namespace name"):
+        _build_template(_ns_stack_cfg(bad_name))
+
+
+@pytest.mark.parametrize(
+    "good_name",
+    [
+        "channels",  # the chosen event-platform namespace
+        "inboxes",  # the ChatOps namespace
+        "a",  # single alphanumeric
+        "my-channel-1",  # internal hyphens + digit end
+        "a" * 50,  # max length
+    ],
+)
+def test_valid_namespace_names_accepted(good_name):
+    # Should synth without raising and produce exactly one ChannelNamespace.
+    template = _build_template(_ns_stack_cfg(good_name))
+    template.resource_count_is("AWS::AppSync::ChannelNamespace", 1)
+
+
 def _auth_stack_cfg(auth: dict, api_key_publish: bool = True) -> dict:
     """Build a minimal appsync_events stack cfg carrying an `auth` block."""
     appsync_events = {

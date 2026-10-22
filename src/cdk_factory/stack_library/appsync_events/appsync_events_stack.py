@@ -26,6 +26,7 @@ Maintainers: Eric Wilson
 MIT License. See Project Root for the license information.
 """
 
+import re
 from typing import Dict, List, Optional
 
 from aws_cdk import Stack
@@ -46,6 +47,17 @@ from cdk_factory.stack.stack_module_registry import register_stack
 from cdk_factory.workload.workload_factory import WorkloadConfig
 
 logger = Logger(service="AppSyncEventsStack")
+
+
+# AWS::AppSync::ChannelNamespace `Name` constraint (per the CloudFormation
+# resource spec): 1–50 chars, alphanumeric + hyphen, MUST start and end with an
+# alphanumeric — NO underscore. Validating here fails synth with a clear message
+# instead of letting CloudFormation reject it at CREATE time (which, in a prod
+# pipeline, surfaces as a CREATE_FAILED + stack rollback — e.g. a name like
+# "event_bus" passes a naive check but is rejected by AppSync at deploy).
+_CHANNEL_NAMESPACE_NAME_PATTERN = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,48}[A-Za-z0-9])?$"
+)
 
 
 # Friendly config tokens -> AWS AppSync auth-type identifiers. Config-level auth
@@ -123,9 +135,24 @@ class AppSyncEventsStack(IStack):
     def _validate_namespace_names(
         self, namespaces: List[AppSyncEventsChannelNamespaceConfig]
     ) -> None:
-        """Reject duplicate namespace names (would collide on construct id)."""
+        """Reject invalid or duplicate namespace names.
+
+        Each name must satisfy the AWS::AppSync::ChannelNamespace ``Name``
+        constraint (alphanumeric + hyphen, 1–50 chars, start/end alphanumeric,
+        no underscore) so an invalid name fails fast at synth rather than at
+        CloudFormation CREATE time. Duplicates are also rejected (they would
+        collide on construct id).
+        """
         seen: set[str] = set()
         for ns in namespaces:
+            if not _CHANNEL_NAMESPACE_NAME_PATTERN.match(ns.name or ""):
+                raise ValueError(
+                    f"Invalid channel namespace name '{ns.name}' in appsync_events "
+                    "config: AppSync channel namespace names must be 1–50 characters, "
+                    "contain only letters, digits, and hyphens, and start and end "
+                    "with a letter or digit (no underscores). "
+                    "Pattern: [A-Za-z0-9](?:[A-Za-z0-9-]{0,48}[A-Za-z0-9])?"
+                )
             if ns.name in seen:
                 raise ValueError(
                     f"Duplicate channel namespace name '{ns.name}' in "
