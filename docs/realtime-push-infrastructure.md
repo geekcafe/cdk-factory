@@ -9,6 +9,14 @@ grammar, the Vue client, the authorizer business logic) lives in the `geek-cafe-
 The feature was first proven end-to-end in the geek-cafe Message Center (contact-thread triage). Those
 identifiers are used below as concrete examples; nothing in cdk-factory is app-specific.
 
+> **➡️ This realtime MVP has been generalized into a full event platform.** For a from-scratch
+> stand-up of **event ingress → EventBridge spine → multi-lane fan-out** (AppSync realtime for ALL
+> events + Slack/SNS for CRITICAL), the ingress Lambda + public API Gateway route, the DynamoDB event
+> table, and the shared-secret seeder — including a numbered **"Implementing in a new project"**
+> runbook — see **[Event Bus Infrastructure](event-bus-infrastructure.md)**. This doc remains the
+> reference for the AppSync Events stack, the Lambda authorizer invoke grant, the EventBridge→SQS
+> routing, and the api-key seeder, all of which the platform reuses.
+
 ---
 
 ## Overview
