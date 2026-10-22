@@ -116,6 +116,12 @@ Example — all lambda stacks use the same namespace:
 
 Do NOT use per-stack namespace suffixes (e.g., `lambda/tenants`, `lambda/users`) for lambda stacks that serve API Gateway routes — the API gateway cannot resolve paths across different namespaces.
 
+> **If this is violated, the API Gateway stack fails at its `prepare`/synth phase** with
+> `Unable to fetch parameters [/…/<lambda>/arn] from parameter store …` — the Lambda deployed and
+> its ARN is in SSM, just under a path the importer never looks at. See
+> `naming-and-ssm.md` → "Export/import path agreement — the #1 cross-stack deployment footgun" for
+> the full failure mode, the fix-the-exporter-vs-escape-hatch guidance, and the rename/replace behavior.
+
 ### SQS (`sqs_stack`)
 
 SQS exports per-queue parameters under `/{namespace}/{queue-name}/`:
