@@ -46,6 +46,10 @@ from cdk_factory.utilities.route53_delegation import Route53Delegation
 from cdk_factory.utilities.docker_version_locker import DockerVersionLocker
 from cdk_factory.version import __version__
 
+# Menu label for the interactive "add a new environment" flow. Appended as the
+# LAST option of the environment-selection menu, and only when stdin is a TTY.
+ADD_ENV_LABEL = "[+] Add a new environment (deployment)"
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -1720,10 +1724,229 @@ class CdkDeploymentCommand:
                 print("Invalid choice.")
                 sys.exit(1)
 
+    def discover_env_file_environments(
+        self,
+        git_branch: str = "main",
+        pattern: str = ".env.*",
+        exclude: tuple = (".env.example",),
+    ) -> Dict[str, EnvironmentConfig]:
+        """Discover ``.env.*`` files in ``script_dir`` as selectable environments.
+
+        Pure filesystem read — no AWS, no prompting. Each matching file whose
+        basename is not excluded and does not end in ``.example`` becomes an
+        env-file-mode :class:`EnvironmentConfig` keyed by the suffix after the
+        first ``.env.`` prefix (e.g. ``.env.prod`` -> ``prod``).
+
+        Returns ``{}`` on an empty result (never raises). Intended to be called
+        from a subclass's ``environments`` property so a freshly written
+        ``.env.<name>`` becomes immediately selectable on the next access.
+
+        Args:
+            git_branch: Git branch to record on each EnvironmentConfig.
+            pattern: Glob pattern for env files (default ``.env.*``).
+            exclude: Basenames to skip (default ``(".env.example",)``).
+
+        Returns:
+            Mapping of environment name -> EnvironmentConfig, sorted by name.
+        """
+        envs: Dict[str, EnvironmentConfig] = {}
+        for path in self.script_dir.glob(pattern):
+            if not path.is_file():
+                continue
+            basename = path.name
+            if basename in exclude or basename.endswith(".example"):
+                continue
+            # Name is the suffix after the first ".env." prefix.
+            prefix = ".env."
+            if not basename.startswith(prefix):
+                continue
+            name = basename[len(prefix) :]
+            if not name:
+                continue
+            envs[name] = EnvironmentConfig(
+                name=name,
+                env_file=basename,
+                git_branch=git_branch,
+            )
+        return {name: envs[name] for name in sorted(envs)}
+
+    def prompt_and_write_env_file(
+        self,
+        env_name: str,
+        parameters: List[dict],
+        *,
+        input_func=input,
+        overwrite: Optional[bool] = None,
+    ) -> Optional[Path]:
+        """Prompt for each parameter and write ``script_dir/.env.<env_name>``.
+
+        Pure / directly testable: no AWS calls, no ``os.environ`` mutation. Reads
+        only the passed-in ``parameters`` (verbatim from ``config.json``
+        ``cdk.parameters[]``), prompts via ``input_func``, and writes a file.
+
+        Shown-default precedence for each parameter is
+        ``os.environ[env_var_name]`` (if set) then ``value`` then
+        ``default_value`` (first non-empty). A blank shown default makes the
+        parameter *required* (re-prompt until non-empty); otherwise Enter accepts
+        the shown default. Parameters without an ``env_var_name`` are skipped.
+
+        The overwrite confirmation (when ``overwrite is None`` and the target
+        file already exists) is read through the SAME ``input_func`` and is
+        prompted AFTER all parameter values are collected (consuming the final
+        ``input_func`` call). When ``overwrite`` is ``True``/``False`` the prompt
+        is skipped and the value honored.
+
+        Args:
+            env_name: Chosen environment name; target is ``script_dir/.env.<env_name>``.
+            parameters: ``config.json`` ``cdk.parameters[]`` list of dicts.
+            input_func: Injectable input callable (defaults to builtin ``input``).
+            overwrite: ``None`` -> prompt if file exists; ``True``/``False`` -> honor.
+
+        Returns:
+            ``Path`` to the written file, or ``None`` on abort/skip/write error.
+        """
+        collected: List[Tuple[str, str]] = []
+        for param in parameters:
+            env_var = param.get("env_var_name", "")
+            if not env_var:
+                # No env_var_name (e.g. CDK_SYNTH_COMMAND_FILE) -> skip entirely.
+                continue
+
+            shown_default = self._shown_default_for_parameter(param)
+            if shown_default:
+                raw = input_func(f"  {env_var} [{shown_default}]: ")
+                value = raw.strip() if raw else ""
+                if not value:
+                    value = shown_default
+            else:
+                # Required: blank shown default -> loop until non-empty.
+                while True:
+                    raw = input_func(f"  {env_var} (required): ")
+                    value = raw.strip() if raw else ""
+                    if value:
+                        break
+                    self._print(f"  {env_var} is required.", "yellow")
+            collected.append((env_var, value))
+
+        target = self.script_dir / f".env.{env_name}"
+
+        # Resolve the overwrite decision AFTER collecting all parameter values.
+        if target.exists():
+            if overwrite is None:
+                raw = input_func(f"  Overwrite .env.{env_name}? (y/N): ")
+                decision = (raw or "").strip().lower()
+                do_overwrite = decision in ("y", "yes")
+            else:
+                do_overwrite = overwrite
+            if not do_overwrite:
+                self._print(f"Skipped — .env.{env_name} not written.", "yellow")
+                return None
+
+        try:
+            with open(target, "w", encoding="utf-8") as fh:
+                for key, value in collected:
+                    fh.write(f"{key}={value}\n")
+        except OSError as e:
+            self._print(f"Could not write .env.{env_name}: {e}", "yellow")
+            return None
+
+        self._print(
+            f"Created {target.name} (gitignored — not checked in).",
+            "green",
+        )
+        return target
+
+    @staticmethod
+    def _shown_default_for_parameter(param: dict) -> str:
+        """Return the shown default for a parameter prompt.
+
+        Precedence: ``os.environ[env_var_name]`` (if set and non-empty), then
+        ``value``, then ``default_value`` (first non-empty). Blank => required.
+        """
+        env_var = param.get("env_var_name", "")
+        if env_var:
+            env_value = os.environ.get(env_var)
+            if env_value:
+                return env_value
+        value = param.get("value")
+        if value:
+            return str(value)
+        default_value = param.get("default_value")
+        if default_value:
+            return str(default_value)
+        return ""
+
+    def _add_environment_interactive(self) -> None:
+        """Interactive sub-flow to author a new ``.env.<name>`` file.
+
+        Prompts for the environment name, loads ``config.json`` ``cdk.parameters``,
+        delegates to :meth:`prompt_and_write_env_file`, and returns so the caller
+        can recurse into a refreshed environment menu. Performs no AWS calls.
+        """
+        # 1. Prompt for a clean environment name.
+        while True:
+            raw = input("  New environment / deployment name (e.g. prod, sandbox): ")
+            env_name = (raw or "").strip()
+            if not env_name:
+                self._print("  Name cannot be empty.", "yellow")
+                continue
+            if (
+                "/" in env_name
+                or any(ch.isspace() for ch in env_name)
+                or env_name.startswith(".")
+            ):
+                self._print(
+                    "  Name must not contain '/', whitespace, or a leading '.'.",
+                    "yellow",
+                )
+                continue
+            break
+
+        # 2. Load config.json cdk.parameters.
+        config_path = self.script_dir / "config.json"
+        if not config_path.exists():
+            self._print(
+                f"config.json not found in {self.script_dir}; cannot add environment.",
+                "red",
+            )
+            return
+        try:
+            with open(config_path, "r", encoding="utf-8") as fh:
+                main_config = json.load(fh)
+        except (OSError, json.JSONDecodeError) as e:
+            self._print(f"Could not read config.json: {e}", "red")
+            return
+        parameters = main_config.get("cdk", {}).get("parameters", [])
+        if not parameters:
+            self._print(
+                "config.json has no cdk.parameters; nothing to prompt for.",
+                "red",
+            )
+            return
+
+        # 3. Prompt and write. Pass ``input`` explicitly (resolved at call time)
+        # so the sub-flow and the helper share the same input source.
+        result = self.prompt_and_write_env_file(env_name, parameters, input_func=input)
+
+        # 4. Report; caller recurses into the refreshed menu either way.
+        if result is not None:
+            self._print(
+                f"Created .env.{env_name} — select it below to continue.",
+                "blue",
+            )
+        else:
+            self._print(
+                f"No environment file written for '{env_name}'.",
+                "white",
+            )
+
     def select_environment(self) -> EnvironmentConfig:
         """Prompt the user to select an environment (arrow-key menu).
 
         Shows descriptions alongside names when available from deployment configs.
+        On an interactive TTY, appends an "[+] Add a new environment" entry as the
+        last option; selecting it authors a ``.env.<name>`` file and re-enters
+        selection against a refreshed environment list.
         """
         envs = self.environments
         keys = list(envs.keys())
@@ -1735,7 +1958,20 @@ class CdkDeploymentCommand:
                 options.append(f"{key}: {description}")
             else:
                 options.append(key)
+
+        # TTY GUARD: only offer the add-environment entry when interactive.
+        add_entry_offered = sys.stdin.isatty()
+        if add_entry_offered:
+            options.append(ADD_ENV_LABEL)
+
         idx = self._interactive_select("Select deployment environment:", options)
+
+        if add_entry_offered and idx == len(options) - 1:
+            # Add-environment entry selected: author a new env, then re-enter
+            # selection (recursion re-evaluates self.environments -> refreshed).
+            self._add_environment_interactive()
+            return self.select_environment()
+
         name = keys[idx]
         self._print(f"Using {name.upper()} environment...", "blue")
         return envs[name]
