@@ -290,6 +290,30 @@ in [Naming & SSM](naming-and-ssm.md)).
 
 ---
 
+## 5a. Event sources → CodePipeline monitor
+
+Everything above stands up the spine and its delivery lanes for events arriving through the
+authenticated HTTP ingress. The spine is equally happy to receive events from an **event source
+adapter** — a producer that turns some existing AWS signal into `EventEnvelope`s and publishes them
+onto the same `default` bus with `Source=geekcafe.event_bus` / `DetailType=Event`, so the **existing**
+per-lane rules fan it out with no new delivery code.
+
+The first such adapter is the **CodePipeline monitor**: it turns AWS **CodePipeline** (and optional
+**CodeBuild**) execution state changes into `EventEnvelope`s on this spine. A failed pipeline maps to a
+`critical` event, which fans out to the existing `realtime` + `slack` + `sns` lanes — delivery is
+entirely the lanes documented above; the adapter only produces events. Pipeline selection is
+config-driven (`none` / `all` / `selected`), per-pipeline Slack routing rides
+`metadata.slack_targets`, and the rule → adapter-Lambda wiring (plus the scoped invoke permission) is a
+new `codepipeline_monitor_stack` module.
+
+Full stand-up runbook, config, the two usage modes (centralized DevOps project vs. drop-into-an-
+individual-pipeline), and the gotchas (SSM export/import agreement, no builtin `hash()`, no live boto3
+at synth, scoped IAM):
+
+➡️ **[Enable CodePipeline Monitoring](enable-codepipeline-monitoring.md)**
+
+---
+
 ## 6. Verification
 
 What was spot-checked this documentation pass (every concrete identifier below was grepped/read in
@@ -347,6 +371,7 @@ as the realtime-transport/authorizer reference it reuses.
 
 ## Related cdk-factory docs
 
+- [Enable CodePipeline Monitoring](enable-codepipeline-monitoring.md) — the spine's first event source adapter: CodePipeline/CodeBuild state changes → `EventEnvelope`s on this spine, delivered by the existing lanes (§5a).
 - [Realtime Push Infrastructure](realtime-push-infrastructure.md) — the ChatOps realtime MVP infra this platform reuses (AppSync Events stack, authorizer invoke grant, EventBridge→SQS, api-key seeder). Full channel-namespace guard + provider-collision write-ups live here.
 - [Naming & SSM](naming-and-ssm.md) — the export/import path-agreement rule (§3) and the `__imports__` rename guardrail.
 - [SSM Parameter Naming Convention](ssm-parameter-naming-convention.md) — parameter path structure + the API Gateway constraint.

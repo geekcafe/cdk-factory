@@ -7,6 +7,7 @@ MIT License.  See Project Root for the license information.
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Mapping, Sequence, List, cast
 
@@ -104,31 +105,50 @@ class LambdaFunctionUtilities:
         if not os.path.exists(temp_dir):
             temp_dir = "/tmp"
 
-        output_dir = os.path.join(
-            temp_dir, "cdk-factory", "lambda-builds", lambda_config.name
+        # Per-invocation unique build dir (hermetic). The old fixed path keyed
+        # only on lambda_config.name was shared across every synth of that name,
+        # so concurrent/consecutive builds (or a stale/half-cleaned dir, or
+        # leftover __pycache__) collided at the rmtree/copytree step and raised a
+        # non-deterministic OSError. mkdtemp atomically creates a guaranteed-
+        # unique, empty dir at the OS level (no randomized builtin-hash suffix,
+        # no path races). The stable parent is kept for discoverability and so
+        # leftovers have one sweep point.
+        builds_parent = os.path.join(temp_dir, "cdk-factory", "lambda-builds")
+        os.makedirs(builds_parent, exist_ok=True)
+        output_dir = tempfile.mkdtemp(
+            prefix=f"{lambda_config.name}-", dir=builds_parent
         )
 
-        self.__validate_directories(
-            output_dir=output_dir, lambda_directory=lambda_directory
-        )
+        # Build + zip the asset into the per-invocation dir, then best-effort
+        # clean up the build dir so repeated runs don't accumulate temp dirs.
+        # The zip is a SIBLING of output_dir (f"{output_dir}.zip"), not inside
+        # it, so removing output_dir does not remove the asset zip that
+        # from_asset(zip_file) consumes below. Cleanup is best-effort
+        # (ignore_errors=True) and must never break the build.
+        try:
+            self.__validate_directories(
+                output_dir=output_dir, lambda_directory=lambda_directory
+            )
 
-        self.__requirements(
-            scope=scope,
-            id=id,
-            layers=layers,
-            include_power_tools_layer=lambda_config.include_power_tools_layer,
-            requirements_files=requirements_files,
-            dependencies_to_layer=lambda_config.dependencies_to_layer,
-            lambda_directory=lambda_directory,
-            handler=lambda_config.handler,
-            output_dir=output_dir,
-            runtime=lambda_config.runtime,
-            architecture=lambda_config.architecture,
-            exclude_packages=lambda_config.exclude_packages,
-        )
-        zip_file = FileOperations.zip_directory(
-            output_dir, exclude_list=["__pycache__"]
-        )
+            self.__requirements(
+                scope=scope,
+                id=id,
+                layers=layers,
+                include_power_tools_layer=lambda_config.include_power_tools_layer,
+                requirements_files=requirements_files,
+                dependencies_to_layer=lambda_config.dependencies_to_layer,
+                lambda_directory=lambda_directory,
+                handler=lambda_config.handler,
+                output_dir=output_dir,
+                runtime=lambda_config.runtime,
+                architecture=lambda_config.architecture,
+                exclude_packages=lambda_config.exclude_packages,
+            )
+            zip_file = FileOperations.zip_directory(
+                output_dir, exclude_list=["__pycache__"]
+            )
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
 
         function_name = None
         description = lambda_config.description
@@ -356,6 +376,13 @@ class LambdaFunctionUtilities:
                     if os.path.isdir(meta_path):
                         shutil.rmtree(meta_path, ignore_errors=True)
 
+    # NOTE: This layer build dir is intentionally NOT made per-invocation unique
+    # like the asset build dir in create(). It lives under the project root at
+    # ".lambda_dependencies/<lambda_relative_directory>" (keyed on the lambda
+    # relative directory, not a shared TMPDIR name leaf), and is only reached
+    # when dependencies_to_layer=true (default is false). It is a separate code
+    # path from the asset build dir the hermeticity fix targets and is not
+    # exercised by the flaky notifier tests, so it is left unchanged here.
     def create_dependencies_layer(
         self,
         scope: Construct,
