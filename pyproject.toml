@@ -27,6 +27,9 @@ dependencies = [
   "jsonschema"
 ]
 
+[project.optional-dependencies]
+wizard = ["questionary>=2.0", "rich>=13.0"]
+
 [project.scripts]
 cdk-factory = "cdk_factory.cli:main"
 cdk-factory-nodejs-version = "cdk_factory.versioning.nodejs_version_cli:main"

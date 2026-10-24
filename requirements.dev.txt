@@ -24,3 +24,5 @@ pkginfo # occasionally we need to upgrade this or we can get upload errors when 
 
 pytest
 hatchling
+questionary>=2.0
+rich>=13.0

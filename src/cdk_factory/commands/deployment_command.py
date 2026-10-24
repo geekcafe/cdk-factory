@@ -1996,6 +1996,43 @@ class CdkDeploymentCommand:
         )
         return target
 
+    def write_env_scalars(self, env_name: str, scalars: Dict[str, str]) -> Path:
+        """Non-interactive sibling of :meth:`prompt_and_write_env_file`.
+
+        Writes ``script_dir/.env.<env_name>`` from a pre-resolved ``scalars``
+        dict — no prompts, no AWS calls, no ``os.environ`` mutation. Keeps the
+        same gitignore note behavior. Keys whose value is ``None`` are omitted.
+
+        Args:
+            env_name: Chosen environment name; target is ``.env.<env_name>``.
+            scalars: Mapping of env-var name -> value to write verbatim.
+
+        Returns:
+            ``Path`` to the written file.
+        """
+        target = self.script_dir / f".env.{env_name}"
+        with open(target, "w", encoding="utf-8") as fh:
+            for key, value in scalars.items():
+                if value is None:
+                    continue
+                fh.write(f"{key}={value}\n")
+        self._print(
+            f"Created {target.name} (gitignored — not checked in).",
+            "green",
+        )
+        return target
+
+    def run_wizard(self, subcommand: str, ns: argparse.Namespace) -> None:
+        """Dispatch a ``monitor`` subcommand to the wizard toolkit.
+
+        Lazy-imports the toolkit so ``questionary``/``rich``/boto3-inspection
+        stay off the synth/Lambda path (NFR-2). A project wiring the wizard in
+        provides a ``wizard_definition()`` factory consumed by the dispatcher.
+        """
+        from cdk_factory.wizard.cli import dispatch  # lazy import
+
+        dispatch(self, subcommand, ns)
+
     @staticmethod
     def _shown_default_for_parameter(param: dict) -> str:
         """Return the shown default for a parameter prompt.
@@ -2356,6 +2393,19 @@ class CdkDeploymentCommand:
 
         print(f"✨ CDK Factory v{__version__}")
         instance = cls(script_dir=script_dir)
+
+        # Optional leading 'monitor' subcommand (additive). Detected BEFORE the
+        # legacy parser ever parses, so the flat legacy parser never sees the
+        # 'monitor' token. When argv[0] != 'monitor', everything below is
+        # byte-for-byte unchanged and today's legacy behavior is preserved.
+        argv = sys.argv[1:]
+        if argv and argv[0] == "monitor":
+            from cdk_factory.wizard.cli import build_monitor_subparser  # lazy
+
+            sub_ns = build_monitor_subparser(prog="monitor").parse_args(argv[1:])
+            instance.run_wizard(sub_ns.subcommand, sub_ns)
+            return
+
         env_choices = list(instance.environments.keys())
 
         parser = argparse.ArgumentParser(
