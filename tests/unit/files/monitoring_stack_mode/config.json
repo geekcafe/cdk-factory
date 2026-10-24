@@ -1,0 +1,83 @@
+{
+    "cdk": {
+        "parameters": [
+            {
+                "placeholder": "{{WORKLOAD_NAME}}",
+                "env_var_name": "WORKLOAD_NAME",
+                "default_value": "geekcafe-devops-monitoring"
+            },
+            {
+                "placeholder": "{{ENVIRONMENT}}",
+                "env_var_name": "ENVIRONMENT",
+                "default_value": "prod"
+            },
+            {
+                "placeholder": "{{DEPLOYMENT_MODE}}",
+                "env_var_name": "DEPLOYMENT_MODE",
+                "default_value": "pipeline"
+            },
+            {
+                "placeholder": "{{PIPELINE_ENABLED}}",
+                "env_var_name": "PIPELINE_ENABLED",
+                "default_value": "true"
+            },
+            {
+                "placeholder": "{{STACK_ENABLED}}",
+                "env_var_name": "STACK_ENABLED",
+                "default_value": "false"
+            }
+        ]
+    },
+    "workload": {
+        "name": "{{WORKLOAD_NAME}}",
+        "description": "Stack-mode shape fixture (representative of monitoring config)",
+        "devops": {
+            "account": "123456789012",
+            "region": "us-east-1"
+        },
+        "deployments": [
+            {
+                "name": "{{WORKLOAD_NAME}}-pipeline",
+                "enabled": "{{PIPELINE_ENABLED}}",
+                "account": "123456789012",
+                "region": "us-east-1",
+                "environment": "{{ENVIRONMENT}}",
+                "pipeline": {
+                    "name": "{{WORKLOAD_NAME}}-pipeline",
+                    "stages": [
+                        {
+                            "name": "deploy-stacks",
+                            "stacks": [
+                                {
+                                    "__inherits__": "./stacks/secrets.json"
+                                },
+                                {
+                                    "__inherits__": "./stacks/notifier.json"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "{{WORKLOAD_NAME}}-stack",
+                "mode": "stack",
+                "enabled": "{{STACK_ENABLED}}",
+                "account": "123456789012",
+                "region": "us-east-1",
+                "environment": "{{ENVIRONMENT}}",
+                "stacks": [
+                    {
+                        "__inherits__": "./stacks/secrets.json"
+                    },
+                    {
+                        "__inherits__": "./stacks/notifier.json",
+                        "depends_on": [
+                            "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-codepipeline-notifier-secrets"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

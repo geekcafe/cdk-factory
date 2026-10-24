@@ -117,6 +117,9 @@ class WorkloadFactory:
         stack: StackConfig
         factory: StackFactory = StackFactory()
 
+        # Build all enabled stacks first, tracking them so a second pass can
+        # wire depends_on. Mirrors the pipeline path's cf_stacks shape.
+        cf_stacks: List[dict] = []
         for stack in deployment.stacks:
             if stack.enabled:
                 kwargs = {}
@@ -136,6 +139,24 @@ class WorkloadFactory:
                 module.build(
                     stack_config=stack, deployment=deployment, workload=self.workload
                 )
+                cf_stacks.append(
+                    {
+                        "stack": module,
+                        "stack_config": stack,
+                        "stack_name": stack.name,
+                    }
+                )
+
+        # Second pass: wire depends_on. StackConfig.dependencies already reads
+        # the canonical depends_on list once (do NOT also read dictionary
+        # ["depends_on"] — that double-read is the pipeline path's quirk).
+        # A dep name that matches no built sibling is skipped silently.
+        for cf_stack in cf_stacks:
+            for dependency in cf_stack["stack_config"].dependencies:
+                for sibling in cf_stacks:
+                    if sibling["stack_config"].name == dependency:
+                        cf_stack["stack"].add_dependency(sibling["stack"])
+                        break
 
         if VERBOSE:
             print(

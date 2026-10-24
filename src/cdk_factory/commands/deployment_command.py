@@ -669,6 +669,146 @@ class CdkDeploymentCommand:
         self._run(cmd)
         self._print("CDK destroy completed successfully", "green")
 
+    @staticmethod
+    def _step_enabled(obj: dict) -> bool:
+        """Return True when a build/post_step is enabled.
+
+        Absence of the ``enabled`` key means enabled. A value of ``False`` (or
+        the string ``"false"``) disables it. Mirrors the truthiness convention
+        used by ``StackConfig.enabled``/``DeploymentConfig.enabled`` while
+        treating absence as enabled.
+        """
+        value = obj.get("enabled", True)
+        return value is not False and str(value).lower() != "false"
+
+    def run_post_deploy_steps(self, config_file: str = "config.json") -> None:
+        """Replay pipeline-defined ``post_steps`` locally after a stack deploy.
+
+        Reads ``workload.deployments[].pipeline.stages[].builds[].post_steps[]``
+        from *config_file* (resolved as ``self.script_dir / config_file``) and
+        executes each enabled step's inline ``commands`` as a single
+        ``bash -euo pipefail -c`` script, in stage order, under the operator's
+        environment (``os.environ``). ``{{PLACEHOLDER}}`` references in each
+        command are resolved from ``os.environ`` via
+        :meth:`_resolve_placeholders_in_name`.
+
+        Stack mode builds no CodePipeline, so these steps (which normally run as
+        CodeBuild jobs inside the pipeline) never run otherwise. This runner
+        replays them locally.
+
+        Behavior:
+            * Fail-fast: a non-zero step exit calls ``sys.exit(returncode)`` and
+              later steps do not run (mirrors CodeBuild stage failure).
+            * A step with no inline ``commands`` (a source/buildspec
+              CodeBuildStep) is skipped with a yellow warning — it cannot be
+              replayed locally.
+            * A missing or malformed ``config_file``, or no pipeline deployment,
+              prints an informational note and returns cleanly (non-fatal).
+
+        Local-credential requirement:
+            Stack mode creates no pipeline CodeBuild role, so the pipeline-level
+            Secrets Manager grants do not apply. The **local operator's**
+            credentials / ``AWS_PROFILE`` must themselves permit whatever actions
+            each post_step performs (e.g. ``secretsmanager:GetSecretValue``).
+            This runner makes no boto3 call and never echoes secret values.
+        """
+        config_path = self.script_dir / config_file
+
+        # Tolerant read (mirrors _load_pipeline_stage_map): a missing/malformed
+        # config, or a config with no pipeline stages, is legitimate for a
+        # stack-mode deploy with no post_steps — note it and return cleanly.
+        try:
+            with open(config_path, "r", encoding="utf-8") as fh:
+                config = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            self._print(
+                "No post_steps found (config unavailable) — nothing to run.",
+                "blue",
+            )
+            return
+
+        # post_steps live in the pipeline deployment even in stack mode: select
+        # the first deployment that defines pipeline stages.
+        deployments = config.get("workload", {}).get("deployments", [])
+        stages = []
+        for deployment in deployments:
+            pipeline = deployment.get("pipeline", {})
+            if pipeline.get("stages"):
+                stages = pipeline["stages"]
+                break
+
+        if not stages:
+            self._print(
+                "No post_steps found (no pipeline stages) — nothing to run.",
+                "blue",
+            )
+            return
+
+        for stage in stages:
+            for build in stage.get("builds", []):
+                if not self._step_enabled(build):
+                    continue
+                for step in build.get("post_steps", []):
+                    if not self._step_enabled(step):
+                        continue
+                    self._run_post_deploy_step(step)
+
+    def _run_post_deploy_step(self, step: dict) -> None:
+        """Execute a single enabled post_step (hand-rolled subprocess.run).
+
+        Deliberately does NOT call :meth:`_run`: the runner needs per-step red
+        messaging that names the failing step's ``id``/``name``, so it invokes
+        ``subprocess.run`` directly (exactly one call site per enabled step) and
+        re-implements ``_run``'s two guards inline.
+        """
+        step_id = step.get("id") or step.get("name") or "<unnamed>"
+        step_label = step.get("name") or step.get("id") or "<unnamed>"
+
+        commands = step.get("commands", [])
+        if not commands:
+            # Source/buildspec CodeBuildStep — no inline commands to replay.
+            self._print(
+                f"post_step '{step_id}' has no inline commands "
+                "(CodeBuildStep/buildspec) — cannot replay locally; run it manually.",
+                "yellow",
+            )
+            return
+
+        self._print(
+            f"Running post-deploy step '{step_id}' ({step_label})...",
+            "blue",
+        )
+
+        resolved = [self._resolve_placeholders_in_name(cmd) for cmd in commands]
+        script = "\n".join(resolved)
+
+        try:
+            result = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                cwd=self.script_dir,
+                env=os.environ.copy(),
+            )
+        except FileNotFoundError:
+            self._print(
+                f"post-deploy step '{step_id}' ({step_label}): "
+                "bash interpreter not found.",
+                "red",
+            )
+            sys.exit(1)
+
+        if result.returncode != 0:
+            self._print(
+                f"post-deploy step '{step_id}' ({step_label}) failed "
+                f"(exit {result.returncode}).",
+                "red",
+            )
+            sys.exit(result.returncode)
+
+        self._print(
+            f"post-deploy step '{step_id}' ({step_label}) completed.",
+            "green",
+        )
+
     def run_target_destroy(
         self,
         env_config: EnvironmentConfig,
@@ -2001,6 +2141,14 @@ class CdkDeploymentCommand:
             self._print("Using TARGET RESOURCES destroy...", "blue")
             return "destroy-target"
 
+    def select_deployment_mode(self) -> str:
+        """Prompt pipeline vs stack (arrow-key menu). Returns 'pipeline' or 'stack'."""
+        modes = ["pipeline", "stack"]
+        idx = self._interactive_select("Select deployment mode:", modes)
+        mode = modes[idx]
+        self._print(f"Using {mode.upper()} deployment mode...", "blue")
+        return mode
+
     def select_config_file(self, config_files: Optional[Dict[str, Dict]] = None) -> str:
         """Prompt the user to select a config file.
 
@@ -2029,6 +2177,7 @@ class CdkDeploymentCommand:
         environment_name: Optional[str] = None,
         operation: Optional[str] = None,
         dry_run: bool = False,
+        mode: Optional[str] = None,
     ) -> None:
         """Execute the full deployment flow.
 
@@ -2038,6 +2187,9 @@ class CdkDeploymentCommand:
             operation: ``"synth"``, ``"deploy"``, ``"diff"``, ``"destroy"``,
                 or ``"destroy-target"``.  Prompts if None.
             dry_run: Validate and display config without running CDK.
+            mode: ``"pipeline"`` or ``"stack"``.  Resolved once at the top of
+                run() (before any env application). On a TTY, prompts when None;
+                non-TTY defaults to ``"pipeline"``. Never resolved for destroy.
         """
         # Select environment
         if environment_name:
@@ -2052,14 +2204,35 @@ class CdkDeploymentCommand:
         # Store for mode-aware methods (load_env_file, required_vars, etc.)
         self._current_env_config = env_config
 
+        # Resolve deployment mode ONCE, at the top of run(), before any env
+        # application. Mode is meaningless for destroy, so skip it there. This
+        # ordering is load-bearing: os.environ["DEPLOYMENT_MODE"] must predate
+        # set_environment_variables() and validate_required_variables() so a
+        # mode-aware subclass override / required_vars sees the resolved mode.
+        if not getattr(self, "_destroy_target", False) and operation not in (
+            "destroy",
+            "destroy-target",
+        ):
+            if mode is not None:
+                selected_mode = mode  # --mode / explicit arg wins
+            elif sys.stdin.isatty():
+                selected_mode = self.select_deployment_mode()  # THE PROMPT, at top
+            else:
+                selected_mode = "pipeline"  # non-TTY / CI default == today
+            os.environ["DEPLOYMENT_MODE"] = selected_mode
+        else:
+            selected_mode = None  # destroy: never resolved, never gates
+
         # Load and apply env file
         env_vars = self.load_env_file(env_config.env_file)
         self.set_environment_variables(env_config, env_vars)
 
-        # Wizard for missing pipeline config (skip for destroy operations)
-        if not getattr(self, "_destroy_target", False) and operation not in (
-            "destroy",
-            "destroy-target",
+        # Wizard for missing pipeline config (skip for destroy operations and
+        # for stack mode, which has no pipeline source to configure).
+        if (
+            not getattr(self, "_destroy_target", False)
+            and operation not in ("destroy", "destroy-target")
+            and selected_mode != "stack"
         ):
             self._prompt_devops_config(env_config)
 
@@ -2090,6 +2263,25 @@ class CdkDeploymentCommand:
                 )
             elif selected_op == "deploy":
                 self.run_cdk_deploy(selected_config)
+                if selected_mode == "stack":
+                    self._print(
+                        "Stack mode does NOT auto-run post_steps (e.g. the "
+                        "Slack-token assertion). They run only inside the "
+                        "CodePipeline.",
+                        "yellow",
+                    )
+                    if sys.stdin.isatty():
+                        response = input(
+                            "Run local post-deploy steps now? (y/N): "
+                        ).strip()
+                        if response.lower() in ("y", "yes"):
+                            self.run_post_deploy_steps(selected_config)
+                    else:
+                        self._print(
+                            "Non-interactive: skipping local post-deploy steps. "
+                            "Run them manually with run_post_deploy_steps() if needed.",
+                            "yellow",
+                        )
             elif selected_op == "diff":
                 self.run_cdk_diff(selected_config)
                 self._print(
@@ -2187,6 +2379,12 @@ class CdkDeploymentCommand:
             choices=["synth", "deploy", "diff", "destroy"],
             help="Skip operation selection prompt",
         )
+        parser.add_argument(
+            "--mode",
+            "-m",
+            choices=["pipeline", "stack"],
+            help="Deployment shape: pipeline (CodePipeline) or stack (direct cdk deploy). Prompts if omitted.",
+        )
 
         # Cross-account destroy arguments
         parser.add_argument(
@@ -2238,6 +2436,7 @@ class CdkDeploymentCommand:
                 environment_name=args.environment,
                 operation=args.operation,
                 dry_run=args.dry_run,
+                mode=args.mode,
             )
         except KeyboardInterrupt:
             print()

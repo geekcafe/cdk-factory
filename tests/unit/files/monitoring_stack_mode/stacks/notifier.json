@@ -1,0 +1,5 @@
+{
+    "name": "{{WORKLOAD_NAME}}-{{ENVIRONMENT}}-codepipeline-notifier",
+    "module": "codepipeline_notifier_stack",
+    "enabled": true
+}
