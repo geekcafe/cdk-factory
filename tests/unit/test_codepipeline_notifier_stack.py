@@ -179,9 +179,7 @@ def test_mode_all_no_exclude_single_rule_no_pipeline_key():
 def test_mode_all_with_exclude_names_uses_anything_but_with_self_exclude():
     self_exclude = f"{WORKLOAD}-{ENV}-devops-monitoring-pipeline"
     template = _build_template(
-        _base_notifier(
-            pipelines={"mode": "all", "exclude_names": [self_exclude]}
-        )
+        _base_notifier(pipelines={"mode": "all", "exclude_names": [self_exclude]})
     )
     cp_rules = _codepipeline_rules(template)
     assert len(cp_rules) == 1
@@ -298,9 +296,7 @@ def test_function_role_scoped_for_get_secret_and_publish():
     statements = attached["Properties"]["PolicyDocument"]["Statement"]
 
     get_secret = [
-        s
-        for s in statements
-        if "secretsmanager:GetSecretValue" in _actions(s)
+        s for s in statements if "secretsmanager:GetSecretValue" in _actions(s)
     ]
     assert get_secret, "GetSecretValue statement missing from function role"
     for s in get_secret:
@@ -396,9 +392,7 @@ def test_dangling_central_reference_raises():
     with pytest.raises(ValueError, match="central"):
         _build_template(
             _base_notifier(
-                channels={
-                    "team": {"slack_channel_id": "C0TEAM0", "sns_emails": []}
-                },
+                channels={"team": {"slack_channel_id": "C0TEAM0", "sns_emails": []}},
                 central="nope",
             )
         )
@@ -446,8 +440,7 @@ def test_module_registered_under_both_aliases():
     from cdk_factory.stack.stack_module_registry import modules
 
     assert (
-        modules.registry.get("codepipeline_notifier_stack")
-        is CodePipelineNotifierStack
+        modules.registry.get("codepipeline_notifier_stack") is CodePipelineNotifierStack
     )
     assert (
         modules.registry.get("codepipeline_notifier_library_module")
@@ -468,6 +461,50 @@ def test_ssm_export_uses_notifier_fallback_literal():
         name.startswith(f"/{WORKLOAD}/{ENV}/codepipeline-notifier/") for name in names
     )
     # And never the monitor module's literal.
+    assert not any("/codepipeline-monitor/" in name for name in names)
+
+
+def _build_template_with_stack_ssm(namespace: str) -> Template:
+    """Build the notifier stack with a TOP-LEVEL ``ssm.namespace`` (a sibling of
+    ``name`` / ``codepipeline_notifier`` — the placement the monitor config uses).
+    """
+    wl = WorkloadConfig({"workload": {"name": WORKLOAD, "devops": {"name": "d"}}})
+    if _HAS_STANDALONE:
+        wl.paths = [_STANDALONE_ROOT]
+    stack_dict = _stack_cfg(_base_notifier())
+    stack_dict["ssm"] = {"namespace": namespace}
+    stack_config = StackConfig(stack_dict, workload=wl.dictionary)
+    deployment = DeploymentConfig(
+        workload=wl.dictionary,
+        deployment={
+            "name": ENV,
+            "environment": ENV,
+            "account": ACCOUNT,
+            "region": REGION,
+        },
+    )
+    app = App()
+    stack = CodePipelineNotifierStack(
+        app, "CodePipelineNotifier", env={"account": ACCOUNT, "region": REGION}
+    )
+    stack.build(stack_config=stack_config, deployment=deployment, workload=wl)
+    return Template.from_stack(stack)
+
+
+@requires_standalone
+def test_ssm_export_honors_top_level_namespace():
+    # A TOP-LEVEL ssm.namespace (sibling of codepipeline_notifier) MUST be used
+    # as the SSM prefix, not silently dropped to the workload/env fallback. This
+    # is the tenant-isolation seam: the monitor config places a tenant-segmented
+    # namespace here, and dropping it collapses two tenants' SSM parameters to
+    # identical names in a shared account.
+    namespace = f"{WORKLOAD}/geekcafe/{ENV}/codepipeline-notifier"
+    template = _build_template_with_stack_ssm(namespace)
+    params = template.find_resources("AWS::SSM::Parameter")
+    names = {p["Properties"]["Name"] for p in params.values()}
+    assert names, "expected at least one SSM parameter"
+    assert all(name.startswith(f"/{namespace}/") for name in names), names
+    # And NOT the workload/env fallback that omits the tenant segment.
     assert not any(
-        "/codepipeline-monitor/" in name for name in names
+        name.startswith(f"/{WORKLOAD}/{ENV}/codepipeline-notifier/") for name in names
     )

@@ -84,7 +84,9 @@ class WizardDefinition(ABC):
 class WizardRunner:
     """Drives the five guided steps against a command + definition."""
 
-    def run(self, command, definition: WizardDefinition, answers: dict) -> dict:
+    def run(
+        self, command, definition: WizardDefinition, answers: dict, *, file_key: str
+    ) -> dict:
         """Execute the full ``monitor init`` flow.
 
         Args:
@@ -92,13 +94,21 @@ class WizardRunner:
                 ``select_deployment_mode``/``run``/``write_env_scalars``).
             definition: The project's :class:`WizardDefinition`.
             answers: In-memory answers dict (prior answers merged by the caller).
+            file_key: The single discriminator for the two persisted artifacts
+                (``.monitor/<file_key>.answers.json`` and ``.env.<file_key>``).
+                Keyword-only with NO default so no caller can silently fall back
+                to the bare environment — the only caller is
+                ``cdk_factory.wizard.cli.dispatch``, which passes
+                ``f"{tenant}-{environment}"``. ``to_env_scalars`` still emits the
+                bare ``ENVIRONMENT`` scalar (the ``{{ENVIRONMENT}}`` naming
+                segment); ``file_key`` only names the two files.
 
         Returns:
             The final answers dict (also persisted when the operator confirms).
         """
         prompt: PromptPort = command_prompt(command)
         inspector = command_inspector(command, answers)
-        store = AnswersStore(command.script_dir, answers.get("environment", "default"))
+        store = AnswersStore(command.script_dir, file_key)
 
         # Steps 1-4: delegate the project-specific question set to the definition.
         answers = definition.collect_answers(command, prompt, inspector, answers)
@@ -133,7 +143,7 @@ class WizardRunner:
             return answers
 
         command.write_env_scalars(
-            answers.get("environment", "default"),
+            file_key,
             definition.to_env_scalars(answers),
         )
         definition.apply_to_notifier_json(answers)
@@ -141,13 +151,13 @@ class WizardRunner:
 
         if prompt.confirm("Run synth now?", default=False):
             command.run(
-                environment_name=answers.get("environment"),
+                environment_name=file_key,
                 operation="synth",
                 mode=answers.get("mode"),
             )
         if prompt.confirm("Deploy now?", default=False):
             command.run(
-                environment_name=answers.get("environment"),
+                environment_name=file_key,
                 operation="deploy",
                 mode=answers.get("mode"),
             )

@@ -32,9 +32,21 @@ def build_monitor_subparser(prog: str = "monitor") -> argparse.ArgumentParser:
             "--environment", "-e", type=str, help="Environment name (e.g. prod)"
         )
 
+    def _add_tenant(sp):
+        # FREE-FORM (not choices=), like -e. The organization / account this
+        # monitor deploys into; REQUIRED (resolved in dispatch, not by argparse,
+        # so the migration + interactive-prompt paths can run).
+        sp.add_argument(
+            "--tenant",
+            "-t",
+            type=str,
+            help="Tenant / organization name (e.g. geekcafe, aplos)",
+        )
+
     # init
     sp_init = subparsers.add_parser("init", help="Full guided setup + optional deploy")
     _add_env(sp_init)
+    _add_tenant(sp_init)
     sp_init.add_argument("--profile", type=str, help="AWS profile to inspect with")
     sp_init.add_argument("--region", type=str, help="AWS region")
     sp_init.add_argument("--answers", type=str, help="Path to a prepared answers file")
@@ -47,6 +59,7 @@ def build_monitor_subparser(prog: str = "monitor") -> argparse.ArgumentParser:
     # configure
     sp_cfg = subparsers.add_parser("configure", help="Re-run/edit answers; no deploy")
     _add_env(sp_cfg)
+    _add_tenant(sp_cfg)
     sp_cfg.add_argument("--profile", type=str, help="AWS profile to inspect with")
     sp_cfg.add_argument("--region", type=str, help="AWS region")
     sp_cfg.add_argument("--answers", type=str, help="Path to a prepared answers file")
@@ -59,6 +72,7 @@ def build_monitor_subparser(prog: str = "monitor") -> argparse.ArgumentParser:
     # deploy
     sp_deploy = subparsers.add_parser("deploy", help="Deploy using saved answers")
     _add_env(sp_deploy)
+    _add_tenant(sp_deploy)
     sp_deploy.add_argument(
         "--mode", "-m", choices=["pipeline", "stack"], help="Deployment shape"
     )
@@ -69,6 +83,7 @@ def build_monitor_subparser(prog: str = "monitor") -> argparse.ArgumentParser:
     # synth
     sp_synth = subparsers.add_parser("synth", help="Synth only, using saved answers")
     _add_env(sp_synth)
+    _add_tenant(sp_synth)
     sp_synth.add_argument(
         "--mode", "-m", choices=["pipeline", "stack"], help="Deployment shape"
     )
@@ -78,6 +93,7 @@ def build_monitor_subparser(prog: str = "monitor") -> argparse.ArgumentParser:
         "status", help="Show resolved config (no AWS calls)"
     )
     _add_env(sp_status)
+    _add_tenant(sp_status)
 
     return parser
 
@@ -94,7 +110,14 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
 
     definition = command.wizard_definition()
     environment = getattr(ns, "environment", None) or "default"
-    store = AnswersStore(command.script_dir, environment)
+
+    # TENANT is resolved FIRST, unconditionally, for every subcommand — so
+    # deploy/synth/status also require --tenant (or a migratable prior) and
+    # cannot silently fall back to a bare-env answers/.env file. The composed
+    # file_key is the single discriminator for both persisted artifacts.
+    tenant = _resolve_tenant(command, ns, environment)
+    file_key = f"{tenant}-{environment}"
+    store = AnswersStore(command.script_dir, file_key)
 
     if subcommand in ("init", "configure"):
         non_interactive = getattr(ns, "non_interactive", False)
@@ -108,7 +131,8 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
 
         prior = store.load()
         cli_overrides = {
-            "environment": environment,
+            "environment": environment,  # bare env -> ENVIRONMENT scalar
+            "tenant": tenant,  # org      -> TENANT_NAME scalar
             "aws": _aws_overrides(ns, prior),
         }
         merged = store.merge_defaults(prior, cli_overrides)
@@ -117,7 +141,7 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
 
             with open(answers_file, "r", encoding="utf-8") as fh:
                 merged = store.merge_defaults(merged, json.load(fh))
-        WizardRunner().run(command, definition, merged)
+        WizardRunner().run(command, definition, merged, file_key=file_key)
         return
 
     if subcommand in ("deploy", "synth"):
@@ -125,7 +149,7 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
         answers = store.load() or {}
         mode = getattr(ns, "mode", None) or answers.get("mode")
         command.run(
-            environment_name=getattr(ns, "environment", None),
+            environment_name=file_key,
             operation=operation,
             dry_run=getattr(ns, "dry_run", False),
             mode=mode,
@@ -133,11 +157,84 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
         return
 
     if subcommand == "status":
-        _print_status(command, store, environment)
+        _print_status(command, store, file_key)
         return
 
     command._print(f"Unknown monitor subcommand: {subcommand}", "red")
     sys.exit(2)
+
+
+def _resolve_tenant(command, ns: argparse.Namespace, environment: str) -> str:
+    """Resolve the required tenant: CLI ``--tenant`` -> legacy migration -> fail/prompt.
+
+    Order:
+      1. ``--tenant`` given → use it (stripped).
+      2. No ``--tenant`` → try the one-time legacy-answers migration (§5.5); if it
+         yields a tenant, use it.
+      3. Non-interactive (``--non-interactive`` OR not a TTY) → fail fast with the
+         self-documenting error, exit 2. NEVER invents a tenant.
+      4. TTY → prompt "Tenant / organization name" (re-prompt until non-empty).
+    """
+    tenant = getattr(ns, "tenant", None)
+    if tenant and tenant.strip():
+        return tenant.strip()
+
+    # Authoritative non-interactive signal on ALL five subcommands:
+    # --non-interactive exists only on init/configure (defaults False elsewhere);
+    # the TTY check is what catches a scripted deploy/synth/status with no tenant.
+    non_interactive = getattr(ns, "non_interactive", False) or not sys.stdin.isatty()
+
+    migrated = _migrate_legacy_answers(command, environment, non_interactive)
+    if migrated:
+        return migrated
+
+    if non_interactive:
+        command._print(
+            "--tenant is required: the organization / account name this monitor "
+            "is deployed into (e.g. --tenant geekcafe, --tenant aplos)",
+            "red",
+        )
+        sys.exit(2)
+
+    return _prompt_tenant(command)
+
+
+def _prompt_tenant(command) -> str:
+    """Prompt for a non-empty tenant on a TTY (re-prompt until non-empty)."""
+    from cdk_factory.wizard.wizard_base import command_prompt
+
+    prompt = command_prompt(command)
+    while True:
+        value = (prompt.text("Tenant / organization name", default="") or "").strip()
+        if value:
+            return value
+
+
+def _migrate_legacy_answers(command, environment: str, non_interactive: bool):
+    """One-time migration of a legacy bare-``<env>`` answers file to ``<tenant>-<env>``.
+
+    Returns the operator-supplied tenant when a legacy file was migrated, else
+    ``None``. NEVER fabricates a tenant — on no-TTY it returns ``None`` so the
+    caller fails fast.
+    """
+    from cdk_factory.wizard.answers_store import AnswersStore
+
+    legacy = AnswersStore(command.script_dir, environment)  # OLD bare-env key
+    if not legacy.path.exists():
+        return None
+    if non_interactive:
+        return None  # caller fails fast; do NOT invent a tenant
+
+    tenant = _prompt_tenant(command)
+    old = legacy.load() or {}
+    old["tenant"] = tenant
+    AnswersStore(command.script_dir, f"{tenant}-{environment}").save(old)  # NEW key
+    command._print(
+        f"Migrated answers {legacy.path.name} -> "
+        f"{tenant}-{environment}.answers.json (original left in place).",
+        "green",
+    )
+    return tenant
 
 
 def _aws_overrides(ns: argparse.Namespace, prior) -> dict:
@@ -152,16 +249,16 @@ def _aws_overrides(ns: argparse.Namespace, prior) -> dict:
     }
 
 
-def _print_status(command, store, environment: str) -> None:
+def _print_status(command, store, file_key: str) -> None:
     """Print the resolved answers (no AWS call, NIT-3)."""
     answers = store.load()
     if answers is None:
         command._print(
-            f"No saved answers for environment '{environment}'. Run 'monitor init' first.",
+            f"No saved answers for '{file_key}'. Run 'monitor init' first.",
             "yellow",
         )
         return
-    command._print(f"Resolved configuration for '{environment}':", "blue")
+    command._print(f"Resolved configuration for '{file_key}':", "blue")
     import json
 
     print(json.dumps(answers, indent=4))

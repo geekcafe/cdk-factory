@@ -459,8 +459,17 @@ class CodePipelineNotifierStack(IStack):
         ``_SSM_FALLBACK_SEGMENT`` literal (``codepipeline-notifier``) under
         ``/{workload}/{environment}/`` — the notifier's own distinct namespace.
         """
-        ssm_config = self.config.ssm
-        namespace = ssm_config.get("namespace")
+        # The ``ssm`` block may live either at the stack top level (a sibling of
+        # ``name`` / ``codepipeline_notifier`` — how the monitor config places it)
+        # or nested inside the ``codepipeline_notifier`` sub-block. Prefer the
+        # top-level placement, then fall back to the nested one, then to the
+        # workload/environment literal. Reading only the nested block silently
+        # drops a top-level ``ssm.namespace`` (e.g. the tenant-segmented prefix),
+        # which would collapse two tenants' SSM parameters to identical names in a
+        # shared account.
+        stack_ssm = self.stack_config.dictionary.get("ssm")
+        stack_ssm = stack_ssm if isinstance(stack_ssm, dict) else {}
+        namespace = stack_ssm.get("namespace") or self.config.ssm.get("namespace")
         if namespace:
             prefix = f"/{namespace}"
         else:
