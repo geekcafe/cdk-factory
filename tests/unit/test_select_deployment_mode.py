@@ -187,6 +187,37 @@ def test_non_tty_defaults_to_pipeline(tmp_path, monkeypatch):
     assert os.environ["DEPLOYMENT_MODE"] == "pipeline"
 
 
+def test_run_does_not_prompt_mode_on_tty_when_mode_is_none(tmp_path, monkeypatch):
+    """run() no longer prompts mode: the redundant second select_deployment_mode()
+    call was removed. Mode is decided at configure time (in the add-environment
+    sub-flow) and baked into .env.<name>; run() adopts it after env application.
+
+    This is safe ONLY because environment_name="test" is pre-selected, so
+    select_environment()/_add_environment_interactive() (which legitimately call
+    select_deployment_mode for a NEW env) is never entered — we assert only that
+    top-of-run() no longer prompts.
+    """
+    cmd = _make(tmp_path)
+    cmd.run_cdk_synth = _Spy()  # type: ignore[assignment]
+    # Fallback resolves to "pipeline", so run() reaches the pipeline-only
+    # _prompt_devops_config wizard — stub it so no interactive prompt fires.
+    cmd._prompt_devops_config = _Spy()  # type: ignore[assignment]
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def _raise(*a, **k):
+        raise AssertionError("run() must not prompt mode when mode is None")
+
+    monkeypatch.setattr(cmd, "select_deployment_mode", _raise)
+    monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+
+    # Must not raise; synth must run; stubbed set_environment_variables sets no
+    # DEPLOYMENT_MODE, so the fallback/recompute resolves to "pipeline".
+    cmd.run(environment_name="test", operation="synth", mode=None)
+
+    assert cmd.run_cdk_synth.called
+    assert os.environ["DEPLOYMENT_MODE"] == "pipeline"
+
+
 # ---------------------------------------------------------------------------
 # Destroy path never resolves mode
 # ---------------------------------------------------------------------------

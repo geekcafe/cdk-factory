@@ -68,9 +68,7 @@ def test_prompt_and_write_env_file_writes_expected_file(tmp_path, monkeypatch):
     # Enter for both defaulted params, then a value for the required one.
     scripted = ScriptedInput(["", "", "123456789012"])
 
-    result = cmd.prompt_and_write_env_file(
-        "prod", parameters, input_func=scripted
-    )
+    result = cmd.prompt_and_write_env_file("prod", parameters, input_func=scripted)
 
     assert result is not None
     assert result == tmp_path / ".env.prod"
@@ -132,7 +130,10 @@ def test_os_environ_prefill_precedence(tmp_path, monkeypatch):
     cmd = _command(tmp_path)
     parameters = [
         {"env_var_name": "AWS_REGION", "value": "us-east-1"},  # env overrides value
-        {"env_var_name": "ENVIRONMENT", "default_value": "prod"},  # falls back to config
+        {
+            "env_var_name": "ENVIRONMENT",
+            "default_value": "prod",
+        },  # falls back to config
     ]
     scripted = ScriptedInput(["", ""])
 
@@ -202,7 +203,10 @@ def test_parameter_without_env_var_name_is_skipped(tmp_path, monkeypatch):
     monkeypatch.delenv("WORKLOAD_NAME", raising=False)
     cmd = _command(tmp_path)
     parameters = [
-        {"value": "./commands/cdk_synth.sh", "cdk_parameter_name": "CdkSynthCommandFile"},
+        {
+            "value": "./commands/cdk_synth.sh",
+            "cdk_parameter_name": "CdkSynthCommandFile",
+        },
         {"env_var_name": "WORKLOAD_NAME", "value": "geekcafe-devops-monitoring"},
     ]
     scripted = ScriptedInput([""])  # only one prompt expected (WORKLOAD_NAME)
@@ -275,20 +279,24 @@ def test_menu_offers_add_entry_on_tty_and_refreshes(tmp_path, monkeypatch):
     # Interactive TTY so the add entry is offered.
     monkeypatch.setattr(dc_module.sys.stdin, "isatty", lambda: True)
 
-    # First _interactive_select call: options should include ADD_ENV_LABEL as
-    # the last entry (and no real envs yet). Select it.
-    # Second call (after recursion): "prod" now exists -> select index 0.
-    select_calls = {"n": 0}
-    captured_options = []
+    # Environment-selection menus. The add-environment sub-flow now also asks
+    # the deployment mode (via select_deployment_mode -> _interactive_select),
+    # so distinguish the menus by title rather than call order:
+    #   1) env menu (add entry offered, no real envs yet) -> choose add entry
+    #   2) mode menu ('pipeline'/'stack') -> choose stack
+    #   3) env menu refreshed ('prod' now exists) -> choose prod
+    env_menu_options = []
 
     def fake_select(title, options):
-        captured_options.append(list(options))
-        select_calls["n"] += 1
-        if select_calls["n"] == 1:
+        if title.startswith("Select deployment mode"):
+            assert list(options) == ["pipeline", "stack"]
+            return options.index("stack")
+        env_menu_options.append(list(options))
+        if len(env_menu_options) == 1:
             assert options[-1] == ADD_ENV_LABEL
             assert "prod" not in options
             return len(options) - 1  # choose add entry
-        # Second pass: prod present now.
+        # Refreshed env menu: prod present now.
         assert "prod" in options
         return options.index("prod")
 
@@ -305,9 +313,9 @@ def test_menu_offers_add_entry_on_tty_and_refreshes(tmp_path, monkeypatch):
     assert result.name == "prod"
     # .env.prod was written before the second (refreshed) selection pass.
     assert (tmp_path / ".env.prod").exists()
-    # The add entry appeared only after discovery refreshed on the 2nd pass.
-    assert ADD_ENV_LABEL in captured_options[0]
-    assert "prod" in captured_options[1]
+    # The add entry appeared only on the first env menu; prod on the refreshed one.
+    assert ADD_ENV_LABEL in env_menu_options[0]
+    assert "prod" in env_menu_options[1]
 
 
 def test_menu_not_offered_when_non_interactive(tmp_path, monkeypatch):
@@ -368,3 +376,207 @@ def test_import_and_construct_make_no_aws_calls(tmp_path, monkeypatch):
     importlib.reload(dc_module)
     # Constructing with a tmp_path script_dir must not call AWS.
     dc_module.CdkDeploymentCommand(script_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Mode-first prompting: mode_gated / mode_derived (prompt_and_write_env_file)
+# ---------------------------------------------------------------------------
+
+from cdk_factory.commands.deployment_command import DERIVED_MODE_VALUES
+
+
+def _mode_parameters():
+    """A monitor-shaped parameters list: two mode_gated repo vars + three
+    mode_derived gate vars, with plain vars interspersed."""
+    return [
+        {"env_var_name": "ENVIRONMENT", "default_value": "prod"},
+        {"env_var_name": "WORKLOAD_NAME", "value": "devops-monitoring"},
+        {"env_var_name": "AWS_REGION", "value": "us-east-1"},
+        {
+            "env_var_name": "CODE_REPOSITORY_NAME",
+            "value": "geekcafe/geek-cafe-devops-monitoring",
+            "mode_gated": True,
+        },
+        {
+            "env_var_name": "CODE_REPOSITORY_ARN",
+            "default_value": "arn:aws:codeconnections:...",
+            "mode_gated": True,
+        },
+        {"env_var_name": "GIT_BRANCH", "value": "main"},
+        {"env_var_name": "DEPLOYMENT_MODE", "value": "pipeline", "mode_derived": True},
+        {"env_var_name": "PIPELINE_ENABLED", "value": "false", "mode_derived": True},
+        {"env_var_name": "STACK_ENABLED", "value": "true", "mode_derived": True},
+    ]
+
+
+def _clear_mode_env(monkeypatch):
+    for var in (
+        "ENVIRONMENT",
+        "WORKLOAD_NAME",
+        "AWS_REGION",
+        "CODE_REPOSITORY_NAME",
+        "CODE_REPOSITORY_ARN",
+        "GIT_BRANCH",
+        "DEPLOYMENT_MODE",
+        "PIPELINE_ENABLED",
+        "STACK_ENABLED",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_pipeline_mode_prompts_repo_vars_and_writes_pipeline_triple(
+    tmp_path, monkeypatch
+):
+    _clear_mode_env(monkeypatch)
+    cmd = _command(tmp_path)
+    parameters = _mode_parameters()
+    # Prompted (in declaration order), skipping the three mode_derived gate vars:
+    # ENVIRONMENT, WORKLOAD_NAME, AWS_REGION, CODE_REPOSITORY_NAME,
+    # CODE_REPOSITORY_ARN, GIT_BRANCH -> six Enter-accept answers.
+    scripted = ScriptedInput(["", "", "", "", "", ""])
+
+    result = cmd.prompt_and_write_env_file(
+        "prod",
+        parameters,
+        input_func=scripted,
+        mode="pipeline",
+        derived_values=DERIVED_MODE_VALUES["pipeline"],
+    )
+
+    assert result is not None
+    loaded = cmd.load_env_file(".env.prod")
+    # Repo vars ARE present in pipeline mode.
+    assert loaded["CODE_REPOSITORY_NAME"] == "geekcafe/geek-cafe-devops-monitoring"
+    assert loaded["CODE_REPOSITORY_ARN"] == "arn:aws:codeconnections:..."
+    # Derived pipeline triple written verbatim.
+    assert loaded["DEPLOYMENT_MODE"] == "pipeline"
+    assert loaded["PIPELINE_ENABLED"] == "true"
+    assert loaded["STACK_ENABLED"] == "false"
+    # The three gate params were NEVER prompted.
+    joined = "".join(scripted.prompts)
+    assert "DEPLOYMENT_MODE" not in joined
+    assert "PIPELINE_ENABLED" not in joined
+    assert "STACK_ENABLED" not in joined
+    # Repo vars WERE prompted in pipeline mode.
+    assert "CODE_REPOSITORY_NAME" in joined
+    assert "CODE_REPOSITORY_ARN" in joined
+    # Derived triple is written at the END (declaration order preserved).
+    contents = result.read_text(encoding="utf-8").splitlines()
+    assert contents[-3:] == [
+        "DEPLOYMENT_MODE=pipeline",
+        "PIPELINE_ENABLED=true",
+        "STACK_ENABLED=false",
+    ]
+
+
+def test_stack_mode_skips_repo_vars_and_writes_stack_triple(tmp_path, monkeypatch):
+    _clear_mode_env(monkeypatch)
+    cmd = _command(tmp_path)
+    parameters = _mode_parameters()
+    # Repo vars skipped and gate vars derived -> only ENVIRONMENT, WORKLOAD_NAME,
+    # AWS_REGION, GIT_BRANCH prompted -> four Enter-accept answers.
+    scripted = ScriptedInput(["", "", "", ""])
+
+    result = cmd.prompt_and_write_env_file(
+        "prod",
+        parameters,
+        input_func=scripted,
+        mode="stack",
+        derived_values=DERIVED_MODE_VALUES["stack"],
+    )
+
+    assert result is not None
+    loaded = cmd.load_env_file(".env.prod")
+    # Repo vars ABSENT from the file in stack mode.
+    assert "CODE_REPOSITORY_NAME" not in loaded
+    assert "CODE_REPOSITORY_ARN" not in loaded
+    # Derived stack triple written verbatim.
+    assert loaded["DEPLOYMENT_MODE"] == "stack"
+    assert loaded["PIPELINE_ENABLED"] == "false"
+    assert loaded["STACK_ENABLED"] == "true"
+    # Repo vars and gate vars were NEVER prompted.
+    joined = "".join(scripted.prompts)
+    assert "CODE_REPOSITORY_NAME" not in joined
+    assert "CODE_REPOSITORY_ARN" not in joined
+    assert "DEPLOYMENT_MODE" not in joined
+    assert "PIPELINE_ENABLED" not in joined
+    assert "STACK_ENABLED" not in joined
+    # Exactly four prompts (the non-gated, non-derived params).
+    assert len(scripted.prompts) == 4
+
+
+def test_no_mode_still_prompts_gated_param_regression(tmp_path, monkeypatch):
+    """When mode is None (legacy caller), a mode_gated param is still prompted
+    and mode_derived params fall through to normal prompting — today's behavior."""
+    _clear_mode_env(monkeypatch)
+    cmd = _command(tmp_path)
+    parameters = [
+        {"env_var_name": "WORKLOAD_NAME", "value": "devops-monitoring"},
+        {
+            "env_var_name": "CODE_REPOSITORY_NAME",
+            "value": "geekcafe/geek-cafe-devops-monitoring",
+            "mode_gated": True,
+        },
+    ]
+    scripted = ScriptedInput(["", ""])
+
+    result = cmd.prompt_and_write_env_file("prod", parameters, input_func=scripted)
+
+    assert result is not None
+    loaded = cmd.load_env_file(".env.prod")
+    # mode_gated param IS prompted/written when mode is None.
+    assert loaded["CODE_REPOSITORY_NAME"] == "geekcafe/geek-cafe-devops-monitoring"
+    assert "CODE_REPOSITORY_NAME" in "".join(scripted.prompts)
+
+
+# ---------------------------------------------------------------------------
+# Mode-first prompting: _add_environment_interactive end-to-end (stubbed)
+# ---------------------------------------------------------------------------
+
+
+def _write_mode_config_json(tmp_path):
+    (tmp_path / "config.json").write_text(
+        json.dumps({"cdk": {"parameters": _mode_parameters()}}), encoding="utf-8"
+    )
+
+
+def test_add_environment_interactive_stack_mode(tmp_path, monkeypatch):
+    _clear_mode_env(monkeypatch)
+    _write_mode_config_json(tmp_path)
+    cmd = _command(tmp_path)
+
+    monkeypatch.setattr(dc_module.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cmd, "select_deployment_mode", lambda: "stack")
+    # env name, then Enter-accept for the four prompted (non-gated/derived) params.
+    answers = iter(["prod", "", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    cmd._add_environment_interactive()
+
+    loaded = cmd.load_env_file(".env.prod")
+    assert "CODE_REPOSITORY_NAME" not in loaded
+    assert "CODE_REPOSITORY_ARN" not in loaded
+    assert loaded["DEPLOYMENT_MODE"] == "stack"
+    assert loaded["PIPELINE_ENABLED"] == "false"
+    assert loaded["STACK_ENABLED"] == "true"
+
+
+def test_add_environment_interactive_pipeline_mode(tmp_path, monkeypatch):
+    _clear_mode_env(monkeypatch)
+    _write_mode_config_json(tmp_path)
+    cmd = _command(tmp_path)
+
+    monkeypatch.setattr(dc_module.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cmd, "select_deployment_mode", lambda: "pipeline")
+    # env name, then Enter-accept for six prompted params (includes two repo vars).
+    answers = iter(["prod", "", "", "", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    cmd._add_environment_interactive()
+
+    loaded = cmd.load_env_file(".env.prod")
+    assert loaded["CODE_REPOSITORY_NAME"] == "geekcafe/geek-cafe-devops-monitoring"
+    assert loaded["CODE_REPOSITORY_ARN"] == "arn:aws:codeconnections:..."
+    assert loaded["DEPLOYMENT_MODE"] == "pipeline"
+    assert loaded["PIPELINE_ENABLED"] == "true"
+    assert loaded["STACK_ENABLED"] == "false"

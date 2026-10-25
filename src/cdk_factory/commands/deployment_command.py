@@ -50,6 +50,30 @@ from cdk_factory.version import __version__
 # LAST option of the environment-selection menu, and only when stdin is a TTY.
 ADD_ENV_LABEL = "[+] Add a new environment (deployment)"
 
+# Single source of the deployment-mode -> gate-var derivation. Mirrors exactly
+# what a mode-aware subclass's set_environment_variables computes at runtime
+# (PIPELINE_ENABLED = "true" if mode == "pipeline" else "false", inverse for
+# STACK_ENABLED). Written verbatim into .env.<name> for parameters flagged
+# "mode_derived" so the on-disk file is self-describing and consistent with the
+# runtime derivation.
+#
+# Invariant: every env var a config.json parameter flags as "mode_derived" must
+# appear in this table, otherwise that parameter falls back to its config.json
+# default at synth (possibly contradicting the chosen mode). Consumers keep the
+# table and their "mode_derived" set in sync.
+DERIVED_MODE_VALUES: Dict[str, Dict[str, str]] = {
+    "pipeline": {
+        "DEPLOYMENT_MODE": "pipeline",
+        "PIPELINE_ENABLED": "true",
+        "STACK_ENABLED": "false",
+    },
+    "stack": {
+        "DEPLOYMENT_MODE": "stack",
+        "PIPELINE_ENABLED": "false",
+        "STACK_ENABLED": "true",
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -1917,6 +1941,8 @@ class CdkDeploymentCommand:
         *,
         input_func=input,
         overwrite: Optional[bool] = None,
+        mode: Optional[str] = None,
+        derived_values: Optional[Dict[str, str]] = None,
     ) -> Optional[Path]:
         """Prompt for each parameter and write ``script_dir/.env.<env_name>``.
 
@@ -1936,11 +1962,29 @@ class CdkDeploymentCommand:
         ``input_func`` call). When ``overwrite`` is ``True``/``False`` the prompt
         is skipped and the value honored.
 
+        Mode-aware prompting (both ``mode`` and ``derived_values`` default to
+        ``None`` → behavior is byte-for-byte identical to the legacy path; the
+        branches below are only reachable when ``mode is not None``):
+
+        * A parameter flagged ``"mode_gated": true`` is only prompted/written in
+          ``pipeline`` mode; in any other mode it is skipped entirely (not
+          prompted, not written). This is how ``CODE_REPOSITORY_*`` are dropped
+          in stack mode.
+        * A parameter flagged ``"mode_derived": true`` is never prompted; its
+          value comes from ``derived_values[env_var]`` (written verbatim). If no
+          such value is supplied, the parameter is skipped (its config.json
+          default still applies at synth).
+
         Args:
             env_name: Chosen environment name; target is ``script_dir/.env.<env_name>``.
             parameters: ``config.json`` ``cdk.parameters[]`` list of dicts.
             input_func: Injectable input callable (defaults to builtin ``input``).
             overwrite: ``None`` -> prompt if file exists; ``True``/``False`` -> honor.
+            mode: ``"pipeline"`` | ``"stack"`` | ``None``. Enables the
+                ``mode_gated``/``mode_derived`` handling when not ``None``.
+            derived_values: ``env_var -> value`` map (e.g.
+                ``DERIVED_MODE_VALUES[mode]``), written verbatim for
+                ``mode_derived`` params. Never prompted.
 
         Returns:
             ``Path`` to the written file, or ``None`` on abort/skip/write error.
@@ -1950,6 +1994,27 @@ class CdkDeploymentCommand:
             env_var = param.get("env_var_name", "")
             if not env_var:
                 # No env_var_name (e.g. CDK_SYNTH_COMMAND_FILE) -> skip entirely.
+                continue
+
+            # Mode gating: a mode_gated param is only prompted/written in
+            # pipeline mode; skipped entirely otherwise. Keyed on ``mode is not
+            # None`` so a legacy caller (no mode) still prompts it as today.
+            if (
+                mode is not None
+                and param.get("mode_gated") is True
+                and mode != "pipeline"
+            ):
+                continue
+
+            # Mode derivation: a mode_derived param is never prompted; its value
+            # comes from derived_values, written verbatim.
+            if param.get("mode_derived") is True:
+                if derived_values and env_var in derived_values:
+                    collected.append((env_var, derived_values[env_var]))
+                # else: no supplied value -> not written. The config.json default
+                # still applies at synth (invariant: a mode_derived param absent
+                # from the derivation table falls back to that default, which may
+                # contradict the chosen mode — keep the table in sync).
                 continue
 
             shown_default = self._shown_default_for_parameter(param)
@@ -2101,11 +2166,25 @@ class CdkDeploymentCommand:
             )
             return
 
-        # 3. Prompt and write. Pass ``input`` explicitly (resolved at call time)
-        # so the sub-flow and the helper share the same input source.
-        result = self.prompt_and_write_env_file(env_name, parameters, input_func=input)
+        # 3. Ask deployment mode FIRST (the first prompt after the env name),
+        # reusing the retained select_deployment_mode() helper. The chosen mode
+        # gates the CODE_REPOSITORY_* prompts (pipeline only) and derives the
+        # DEPLOYMENT_MODE/PIPELINE_ENABLED/STACK_ENABLED triple (never prompted).
+        # Only reachable interactively — select_environment() guards the add
+        # entry on sys.stdin.isatty().
+        chosen_mode = self.select_deployment_mode()
 
-        # 4. Report; caller recurses into the refreshed menu either way.
+        # 4. Prompt and write. Pass ``input`` explicitly (resolved at call time)
+        # so the sub-flow and the helper share the same input source.
+        result = self.prompt_and_write_env_file(
+            env_name,
+            parameters,
+            input_func=input,
+            mode=chosen_mode,
+            derived_values=DERIVED_MODE_VALUES[chosen_mode],
+        )
+
+        # 5. Report; caller recurses into the refreshed menu either way.
         if result is not None:
             self._print(
                 f"Created .env.{env_name} — select it below to continue.",
@@ -2224,9 +2303,12 @@ class CdkDeploymentCommand:
             operation: ``"synth"``, ``"deploy"``, ``"diff"``, ``"destroy"``,
                 or ``"destroy-target"``.  Prompts if None.
             dry_run: Validate and display config without running CDK.
-            mode: ``"pipeline"`` or ``"stack"``.  Resolved once at the top of
-                run() (before any env application). On a TTY, prompts when None;
-                non-TTY defaults to ``"pipeline"``. Never resolved for destroy.
+            mode: ``"pipeline"`` or ``"stack"``. When provided (e.g. via
+                ``--mode``) it wins. When ``None``, mode is NOT prompted here —
+                it is decided at configure time (baked into ``.env.<name>`` as
+                ``DEPLOYMENT_MODE`` by the add-environment flow) and adopted
+                after the env file is applied; absent any value it defaults to
+                ``"pipeline"``. Never resolved for destroy.
         """
         # Select environment
         if environment_name:
@@ -2251,11 +2333,13 @@ class CdkDeploymentCommand:
             "destroy-target",
         ):
             if mode is not None:
-                selected_mode = mode  # --mode / explicit arg wins
-            elif sys.stdin.isatty():
-                selected_mode = self.select_deployment_mode()  # THE PROMPT, at top
+                selected_mode = mode  # --mode / explicit arg STILL wins
             else:
-                selected_mode = "pipeline"  # non-TTY / CI default == today
+                # Mode is decided at configure time (baked into .env.<name> as
+                # DEPLOYMENT_MODE by the add-environment flow) and applied by
+                # set_environment_variables(). No second interactive prompt here;
+                # fall back to the env value, then the historical default.
+                selected_mode = os.environ.get("DEPLOYMENT_MODE", "pipeline")
             os.environ["DEPLOYMENT_MODE"] = selected_mode
         else:
             selected_mode = None  # destroy: never resolved, never gates
@@ -2263,6 +2347,17 @@ class CdkDeploymentCommand:
         # Load and apply env file
         env_vars = self.load_env_file(env_config.env_file)
         self.set_environment_variables(env_config, env_vars)
+
+        # After env application, the .env (and any subclass derivation) has set
+        # the authoritative DEPLOYMENT_MODE. When mode was not forced via --mode,
+        # adopt it so the stack/pipeline front-end branches below (the
+        # _prompt_devops_config guard and the selected_mode == "stack" post-deploy
+        # branch) match the configured mode. The ``selected_mode is not None``
+        # guard keeps the destroy path (selected_mode is None) untouched. This
+        # placement — after set_environment_variables(), before the
+        # _prompt_devops_config guard — is load-bearing.
+        if mode is None and selected_mode is not None:
+            selected_mode = os.environ.get("DEPLOYMENT_MODE", selected_mode)
 
         # Wizard for missing pipeline config (skip for destroy operations and
         # for stack mode, which has no pipeline source to configure).
