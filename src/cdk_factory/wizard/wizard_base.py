@@ -113,9 +113,13 @@ class WizardRunner:
         # Steps 1-4: delegate the project-specific question set to the definition.
         answers = definition.collect_answers(command, prompt, inspector, answers)
 
-        # Deploy mode (reuse existing selection semantics).
+        # Deploy mode (reuse existing selection semantics). The preselected
+        # default follows the project's configured DEPLOYMENT_MODE default so the
+        # prompt matches the config.json / non-interactive default.
         if not answers.get("mode"):
-            answers["mode"] = command.select_deployment_mode()
+            answers["mode"] = command.select_deployment_mode(
+                default=command._configured_default_mode()
+            )
 
         # Pipeline-mode connection resolution.
         if answers.get("mode") == "pipeline":

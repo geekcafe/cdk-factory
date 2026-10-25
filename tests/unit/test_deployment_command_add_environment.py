@@ -124,26 +124,45 @@ def test_required_blank_reprompts_until_nonempty(tmp_path, monkeypatch):
     assert len(required_prompts) == 3
 
 
-def test_os_environ_prefill_precedence(tmp_path, monkeypatch):
-    monkeypatch.setenv("AWS_REGION", "eu-west-1")
+def test_shown_default_ignores_os_environ(tmp_path, monkeypatch):
+    """The prompt's shown default comes ONLY from config.json, never os.environ.
+
+    Seeding a brand-new .env from the operator's ambient shell would bake stale
+    cross-session values (e.g. a leftover exported AWS_REGION/AWS_ACCOUNT) into
+    the written file. So a set env var must be IGNORED: the shown default is the
+    config.json ``value``/``default_value``, and a param with neither is required
+    (prompted until non-empty) even when an env var is present.
+    """
+    monkeypatch.setenv("AWS_REGION", "eu-west-1")  # must be IGNORED
+    monkeypatch.setenv(
+        "AWS_ACCOUNT", "999999999999"
+    )  # must be IGNORED (required field)
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     cmd = _command(tmp_path)
     parameters = [
-        {"env_var_name": "AWS_REGION", "value": "us-east-1"},  # env overrides value
         {
-            "env_var_name": "ENVIRONMENT",
-            "default_value": "prod",
-        },  # falls back to config
+            "env_var_name": "AWS_REGION",
+            "value": "us-east-1",
+        },  # config value wins over env
+        {"env_var_name": "ENVIRONMENT", "default_value": "prod"},  # config default
+        {"env_var_name": "AWS_ACCOUNT"},  # no default -> required despite the env var
     ]
-    scripted = ScriptedInput(["", ""])
+    # AWS_REGION + ENVIRONMENT Enter-accept their config defaults; AWS_ACCOUNT is
+    # required and must be typed (the env var does not satisfy it).
+    scripted = ScriptedInput(["", "", "123456789012"])
 
     result = cmd.prompt_and_write_env_file("prod", parameters, input_func=scripted)
 
     assert result is not None
     loaded = cmd.load_env_file(".env.prod")
-    assert loaded["AWS_REGION"] == "eu-west-1"  # from os.environ, not config value
-    assert loaded["ENVIRONMENT"] == "prod"  # from config default (not in env)
-    assert any("[eu-west-1]" in p for p in scripted.prompts)
+    assert loaded["AWS_REGION"] == "us-east-1"  # config value, NOT the eu-west-1 env
+    assert loaded["ENVIRONMENT"] == "prod"  # config default
+    assert loaded["AWS_ACCOUNT"] == "123456789012"  # typed, NOT the leaked env
+    # The shown default for AWS_REGION was the config value, not the env var.
+    assert any("[us-east-1]" in p for p in scripted.prompts)
+    assert not any("eu-west-1" in p for p in scripted.prompts)
+    # AWS_ACCOUNT was prompted as required (no bracketed default from the env).
+    assert any("AWS_ACCOUNT (required)" in p for p in scripted.prompts)
 
 
 def test_overwrite_confirm_no_keeps_file(tmp_path, monkeypatch):
@@ -269,7 +288,11 @@ def _write_config_json(tmp_path, parameters):
 
 
 def test_menu_offers_add_entry_on_tty_and_refreshes(tmp_path, monkeypatch):
-    monkeypatch.setenv("AWS_ACCOUNT", "123456789012")
+    # AWS_ACCOUNT has no config default -> it is a REQUIRED prompt. The shown
+    # default is NOT seeded from os.environ (that would bake stale shell state
+    # into a brand-new .env), so a leftover exported AWS_ACCOUNT must be ignored
+    # here and the value must come from the typed answer below.
+    monkeypatch.setenv("AWS_ACCOUNT", "999999999999")  # must be IGNORED by the prompt
     _write_config_json(
         tmp_path,
         [{"env_var_name": "AWS_ACCOUNT"}],
@@ -302,9 +325,10 @@ def test_menu_offers_add_entry_on_tty_and_refreshes(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cmd, "_interactive_select", fake_select)
 
-    # _add_environment_interactive uses builtin input() for the name; the
-    # parameter value comes from the AWS_ACCOUNT os.environ pre-fill (Enter).
-    answers = iter(["prod", ""])
+    # _add_environment_interactive uses builtin input() for the name; AWS_ACCOUNT
+    # is a required prompt (no config default, no os.environ seeding), so a real
+    # value must be typed.
+    answers = iter(["prod", "123456789012"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
     result = cmd.select_environment()
@@ -313,6 +337,9 @@ def test_menu_offers_add_entry_on_tty_and_refreshes(tmp_path, monkeypatch):
     assert result.name == "prod"
     # .env.prod was written before the second (refreshed) selection pass.
     assert (tmp_path / ".env.prod").exists()
+    # The typed value was written — NOT the leaked os.environ value.
+    assert "AWS_ACCOUNT=123456789012" in (tmp_path / ".env.prod").read_text()
+    assert "999999999999" not in (tmp_path / ".env.prod").read_text()
     # The add entry appeared only on the first env menu; prod on the refreshed one.
     assert ADD_ENV_LABEL in env_menu_options[0]
     assert "prod" in env_menu_options[1]
@@ -546,7 +573,7 @@ def test_add_environment_interactive_stack_mode(tmp_path, monkeypatch):
     cmd = _command(tmp_path)
 
     monkeypatch.setattr(dc_module.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(cmd, "select_deployment_mode", lambda: "stack")
+    monkeypatch.setattr(cmd, "select_deployment_mode", lambda default=None: "stack")
     # env name, then Enter-accept for the four prompted (non-gated/derived) params.
     answers = iter(["prod", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
@@ -567,7 +594,7 @@ def test_add_environment_interactive_pipeline_mode(tmp_path, monkeypatch):
     cmd = _command(tmp_path)
 
     monkeypatch.setattr(dc_module.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(cmd, "select_deployment_mode", lambda: "pipeline")
+    monkeypatch.setattr(cmd, "select_deployment_mode", lambda default=None: "pipeline")
     # env name, then Enter-accept for six prompted params (includes two repo vars).
     answers = iter(["prod", "", "", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))

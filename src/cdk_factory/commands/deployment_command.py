@@ -2102,14 +2102,17 @@ class CdkDeploymentCommand:
     def _shown_default_for_parameter(param: dict) -> str:
         """Return the shown default for a parameter prompt.
 
-        Precedence: ``os.environ[env_var_name]`` (if set and non-empty), then
-        ``value``, then ``default_value`` (first non-empty). Blank => required.
+        Precedence: the config.json param's ``value``, then ``default_value``
+        (first non-empty). Blank => required (prompted until non-empty).
+
+        The shown default is sourced ONLY from config.json — deliberately NOT
+        from ``os.environ``. When authoring a brand-new ``.env.<name>`` there is
+        no backing env file yet, and seeding the prompt from the operator's
+        ambient shell would bake stale/cross-session values (e.g. a leftover
+        exported ``AWS_ACCOUNT`` or ``TENANT_NAME`` from a prior synth) into the
+        written file — silently wrong, and especially dangerous for the
+        required-no-default fields which must prompt empty.
         """
-        env_var = param.get("env_var_name", "")
-        if env_var:
-            env_value = os.environ.get(env_var)
-            if env_value:
-                return env_value
         value = param.get("value")
         if value:
             return str(value)
@@ -2172,7 +2175,11 @@ class CdkDeploymentCommand:
         # DEPLOYMENT_MODE/PIPELINE_ENABLED/STACK_ENABLED triple (never prompted).
         # Only reachable interactively — select_environment() guards the add
         # entry on sys.stdin.isatty().
-        chosen_mode = self.select_deployment_mode()
+        # The preselected default tracks the project's DEPLOYMENT_MODE config
+        # default so the prompt and config.json stay in sync (no hardcoding).
+        chosen_mode = self.select_deployment_mode(
+            default=self._configured_default_mode()
+        )
 
         # 4. Prompt and write. Pass ``input`` explicitly (resolved at call time)
         # so the sub-flow and the helper share the same input source.
@@ -2257,9 +2264,42 @@ class CdkDeploymentCommand:
             self._print("Using TARGET RESOURCES destroy...", "blue")
             return "destroy-target"
 
-    def select_deployment_mode(self) -> str:
-        """Prompt pipeline vs stack (arrow-key menu). Returns 'pipeline' or 'stack'."""
+    def _configured_default_mode(self) -> Optional[str]:
+        """Return the project's ``DEPLOYMENT_MODE`` default from config.json.
+
+        Reads the ``cdk.parameters[]`` entry whose ``env_var_name`` is
+        ``DEPLOYMENT_MODE`` and returns its ``default_value`` (or ``value``), so
+        the interactive deployment-mode prompt can preselect the same default the
+        non-interactive/synth path resolves to. Returns ``None`` if config.json is
+        absent/unreadable or the parameter is not declared (callers then fall back
+        to the legacy ``pipeline`` default).
+        """
+        config_path = self.script_dir / "config.json"
+        if not config_path.exists():
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return None
+        for p in cfg.get("cdk", {}).get("parameters", []):
+            if p.get("env_var_name") == "DEPLOYMENT_MODE":
+                return p.get("default_value") or p.get("value")
+        return None
+
+    def select_deployment_mode(self, default: Optional[str] = None) -> str:
+        """Prompt pipeline vs stack (arrow-key menu). Returns 'pipeline' or 'stack'.
+
+        The preselected default follows the project's configured ``DEPLOYMENT_MODE``
+        default (see ``_add_environment_interactive``) so the prompt and the
+        config.json default stay in sync; callers that pass no default fall back
+        to ``pipeline`` for backward-compatible behavior.
+        """
         modes = ["pipeline", "stack"]
+        # Order the list so the project's configured default is option 1 / the
+        # menu default, without changing the returned values.
+        if default in modes:
+            modes = [default] + [m for m in modes if m != default]
         idx = self._interactive_select("Select deployment mode:", modes)
         mode = modes[idx]
         self._print(f"Using {mode.upper()} deployment mode...", "blue")

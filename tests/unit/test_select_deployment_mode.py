@@ -105,6 +105,59 @@ def test_tty_prompt_path_returns_pipeline(tmp_path, monkeypatch):
     assert cmd.select_deployment_mode() == "pipeline"
 
 
+def test_default_reorders_so_default_is_option_one(tmp_path, monkeypatch):
+    """A supplied default is placed first (option 1 / menu default).
+
+    The operator always picks index 0 (the default); asserting the returned mode
+    equals the supplied default proves the reorder put it first. With no default,
+    the legacy order (pipeline first) is preserved.
+    """
+    captured = {}
+
+    def _spy_select(title, opts):
+        captured["opts"] = list(opts)
+        return 0  # operator accepts the default (first option)
+
+    monkeypatch.setattr(
+        CdkDeploymentCommand, "_interactive_select", staticmethod(_spy_select)
+    )
+    cmd = _make(tmp_path)
+
+    # default="stack" -> stack is option 1 and is what index 0 returns.
+    assert cmd.select_deployment_mode(default="stack") == "stack"
+    assert captured["opts"] == ["stack", "pipeline"]
+
+    # No default -> legacy order preserved (pipeline first).
+    assert cmd.select_deployment_mode() == "pipeline"
+    assert captured["opts"] == ["pipeline", "stack"]
+
+    # Unknown/None default -> legacy order (defensive).
+    assert cmd.select_deployment_mode(default="bogus") == "pipeline"
+    assert captured["opts"] == ["pipeline", "stack"]
+
+
+def test_configured_default_mode_reads_config_json(tmp_path):
+    """_configured_default_mode reads DEPLOYMENT_MODE's default from config.json."""
+    import json as _json
+
+    (tmp_path / "config.json").write_text(
+        _json.dumps(
+            {
+                "cdk": {
+                    "parameters": [
+                        {
+                            "env_var_name": "DEPLOYMENT_MODE",
+                            "default_value": "stack",
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    cmd = _make(tmp_path)
+    assert cmd._configured_default_mode() == "stack"
+
+
 # ---------------------------------------------------------------------------
 # --mode bypass
 # ---------------------------------------------------------------------------
