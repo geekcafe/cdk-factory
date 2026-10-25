@@ -1934,6 +1934,45 @@ class CdkDeploymentCommand:
             )
         return {name: envs[name] for name in sorted(envs)}
 
+    # ------------------------------------------------------------------
+    # Generic project seams (semantics-free hooks)
+    # ------------------------------------------------------------------
+
+    def derive_env_file_key(self, env_name: str, collected: Dict[str, str]) -> str:
+        """Return the ``.env`` filename discriminator for a new environment.
+
+        Generic default is IDENTITY: the discriminator is the environment name,
+        so the file is ``.env.<env_name>`` exactly as today. A project MAY
+        override this to compose a richer key (e.g. a tenant-qualified
+        ``<tenant>-<env>``) from the already-collected scalar values. The
+        returned value is ONLY the filename discriminator; it never changes the
+        scalars written into the file.
+
+        Args:
+            env_name: the raw environment name the operator entered (e.g. 'prod').
+            collected: the ``env_var -> value`` pairs collected for this file (the
+                same values ``prompt_and_write_env_file`` is about to write), so a
+                subclass can read e.g. ``collected['TENANT_NAME']``.
+
+        Returns:
+            The discriminator placed after ``.env.`` (default: ``env_name``).
+        """
+        return env_name
+
+    def post_add_environment_note(self, env_name: str, env_file_path: Path) -> None:
+        """Optional hook fired after a NEW ``.env`` file is successfully written.
+
+        No-op by default. A project MAY override this to print a project-specific
+        follow-up note (e.g. pointing the operator at a guided setup flow). It is
+        called only on a successful write — never on a declined overwrite or a
+        write error.
+
+        Args:
+            env_name: the raw environment name the operator entered (e.g. 'prod').
+            env_file_path: the ``Path`` to the file that was just written.
+        """
+        return None
+
     def prompt_and_write_env_file(
         self,
         env_name: str,
@@ -2033,18 +2072,23 @@ class CdkDeploymentCommand:
                     self._print(f"  {env_var} is required.", "yellow")
             collected.append((env_var, value))
 
-        target = self.script_dir / f".env.{env_name}"
+        # Route the filename discriminator through the generic project seam.
+        # The default (identity) keeps this byte-identical to today; a subclass
+        # may compose a richer key (e.g. <tenant>-<env>) from the collected
+        # scalars. Only the FILENAME changes — the scalars written are verbatim.
+        file_key = self.derive_env_file_key(env_name, dict(collected))
+        target = self.script_dir / f".env.{file_key}"
 
         # Resolve the overwrite decision AFTER collecting all parameter values.
         if target.exists():
             if overwrite is None:
-                raw = input_func(f"  Overwrite .env.{env_name}? (y/N): ")
+                raw = input_func(f"  Overwrite .env.{file_key}? (y/N): ")
                 decision = (raw or "").strip().lower()
                 do_overwrite = decision in ("y", "yes")
             else:
                 do_overwrite = overwrite
             if not do_overwrite:
-                self._print(f"Skipped — .env.{env_name} not written.", "yellow")
+                self._print(f"Skipped — .env.{file_key} not written.", "yellow")
                 return None
 
         try:
@@ -2052,7 +2096,7 @@ class CdkDeploymentCommand:
                 for key, value in collected:
                     fh.write(f"{key}={value}\n")
         except OSError as e:
-            self._print(f"Could not write .env.{env_name}: {e}", "yellow")
+            self._print(f"Could not write .env.{file_key}: {e}", "yellow")
             return None
 
         self._print(
@@ -2191,12 +2235,16 @@ class CdkDeploymentCommand:
             derived_values=DERIVED_MODE_VALUES[chosen_mode],
         )
 
-        # 5. Report; caller recurses into the refreshed menu either way.
+        # 5. Report; caller recurses into the refreshed menu either way. The
+        # success message and the project note hook BOTH run only on a
+        # successful write (result is not None) — never on a declined overwrite
+        # or a write error (both return None).
         if result is not None:
             self._print(
-                f"Created .env.{env_name} — select it below to continue.",
+                f"Created {result.name} — select it below to continue.",
                 "blue",
             )
+            self.post_add_environment_note(env_name, result)
         else:
             self._print(
                 f"No environment file written for '{env_name}'.",

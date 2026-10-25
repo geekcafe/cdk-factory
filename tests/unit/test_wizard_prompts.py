@@ -3,6 +3,7 @@
 import pytest
 
 from cdk_factory.wizard.prompts import (
+    USE_DEFAULT,
     NonInteractiveError,
     QuestionaryPrompter,
     ScriptedPrompter,
@@ -23,8 +24,25 @@ def test_scripted_prompter_drives_all_inputs():
     assert prompt.text("region?") == "us-east-1"
     assert prompt.password("token?") == "xoxb-secret"
     assert prompt.confirm("ok?") is True
-    kinds = [k for (k, _m) in prompt.calls]
+    # calls entries are now uniformly 3-wide: (kind, message, details).
+    kinds = [k for (k, _m, _d) in prompt.calls]
     assert kinds == ["select", "checkbox", "text", "password", "confirm"]
+    # select/checkbox record their choices; text records its default.
+    select_call = next(c for c in prompt.calls if c[0] == "select")
+    assert select_call[2]["choices"] == ["pipeline", "stack"]
+    checkbox_call = next(c for c in prompt.calls if c[0] == "checkbox")
+    assert checkbox_call[2]["choices"] == ["a", "b", "c"]
+    text_call = next(c for c in prompt.calls if c[0] == "text")
+    assert "default" in text_call[2]
+
+
+def test_scripted_prompter_use_default_returns_caller_default():
+    """A queued USE_DEFAULT sentinel returns the caller's default per method."""
+    prompt = ScriptedPrompter([USE_DEFAULT, USE_DEFAULT, USE_DEFAULT, USE_DEFAULT])
+    assert prompt.select("mode?", ["pipeline", "stack"], default="stack") == "stack"
+    assert prompt.text("name?", default="prod") == "prod"
+    assert prompt.confirm("ok?", default=True) is True
+    assert prompt.checkbox("pipes?", ["a", "b"], default=["a"]) == ["a"]
 
 
 def test_scripted_prompter_raises_when_exhausted():

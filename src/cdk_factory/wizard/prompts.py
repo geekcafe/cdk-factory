@@ -18,15 +18,26 @@ class NonInteractiveError(Exception):
     """Raised when an interactive prompt is attempted without a TTY."""
 
 
+#: Sentinel a scripted test may queue to mean "the operator pressed Enter" —
+#: the prompter returns the caller's ``default`` for that call instead of a
+#: literal queued value. Generic (no project semantics).
+USE_DEFAULT = object()
+
+
 @runtime_checkable
 class PromptPort(Protocol):
     """The interface the wizard drives; both prompters implement it."""
 
     # interactive inputs
-    def select(self, message: str, choices: Sequence[str], default: Optional[str] = None) -> str: ...
+    def select(
+        self, message: str, choices: Sequence[str], default: Optional[str] = None
+    ) -> str: ...
 
     def checkbox(
-        self, message: str, choices: Sequence[str], default: Optional[Sequence[str]] = None
+        self,
+        message: str,
+        choices: Sequence[str],
+        default: Optional[Sequence[str]] = None,
     ) -> List[str]: ...
 
     def text(self, message: str, default: str = "") -> str: ...
@@ -36,9 +47,13 @@ class PromptPort(Protocol):
     def confirm(self, message: str, default: bool = False) -> bool: ...
 
     # rich output
-    def panel(self, body: str, title: Optional[str] = None, style: str = "info") -> None: ...
+    def panel(
+        self, body: str, title: Optional[str] = None, style: str = "info"
+    ) -> None: ...
 
-    def table(self, title: str, columns: Sequence[str], rows: Sequence[Sequence[str]]) -> None: ...
+    def table(
+        self, title: str, columns: Sequence[str], rows: Sequence[Sequence[str]]
+    ) -> None: ...
 
     def note(self, message: str, style: str = "info") -> None: ...
 
@@ -76,17 +91,24 @@ class QuestionaryPrompter:
 
     # -- interactive inputs -------------------------------------------------
 
-    def select(self, message: str, choices: Sequence[str], default: Optional[str] = None) -> str:
+    def select(
+        self, message: str, choices: Sequence[str], default: Optional[str] = None
+    ) -> str:
         self._require_tty()
         return self._questionary.select(
             message, choices=list(choices), default=default
         ).ask()
 
     def checkbox(
-        self, message: str, choices: Sequence[str], default: Optional[Sequence[str]] = None
+        self,
+        message: str,
+        choices: Sequence[str],
+        default: Optional[Sequence[str]] = None,
     ) -> List[str]:
         self._require_tty()
-        result = self._questionary.checkbox(message, choices=list(choices)).ask()
+        result = self._questionary.checkbox(
+            message, choices=list(choices), default=default
+        ).ask()
         return list(result) if result else []
 
     def text(self, message: str, default: str = "") -> str:
@@ -110,11 +132,15 @@ class QuestionaryPrompter:
         "error": "red",
     }
 
-    def panel(self, body: str, title: Optional[str] = None, style: str = "info") -> None:
+    def panel(
+        self, body: str, title: Optional[str] = None, style: str = "info"
+    ) -> None:
         border = self._STYLE_MAP.get(style, style)
         self._console.print(self._Panel(body, title=title, border_style=border))
 
-    def table(self, title: str, columns: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
+    def table(
+        self, title: str, columns: Sequence[str], rows: Sequence[Sequence[str]]
+    ) -> None:
         table = self._Table(title=title)
         for col in columns:
             table.add_column(str(col))
@@ -144,8 +170,9 @@ class ScriptedPrompter:
         self.tables: List[tuple] = []
         self.notes: List[tuple] = []
 
-    def _next(self, kind: str, message: str):
-        self.calls.append((kind, message))
+    def _next(self, kind: str, message: str, extra: Optional[dict] = None):
+        # self.calls entries are uniformly 3-wide: (kind, message, details).
+        self.calls.append((kind, message, extra or {}))
         if not self.answers:
             raise IndexError(
                 f"ScriptedPrompter exhausted: no queued answer for {kind}({message!r})"
@@ -154,34 +181,61 @@ class ScriptedPrompter:
 
     # -- interactive inputs -------------------------------------------------
 
-    def select(self, message: str, choices: Sequence[str], default: Optional[str] = None) -> str:
-        return self._next("select", message)
+    def select(
+        self, message: str, choices: Sequence[str], default: Optional[str] = None
+    ) -> str:
+        value = self._next(
+            "select", message, {"choices": list(choices), "default": default}
+        )
+        if value is USE_DEFAULT:
+            return default
+        return value
 
     def checkbox(
-        self, message: str, choices: Sequence[str], default: Optional[Sequence[str]] = None
+        self,
+        message: str,
+        choices: Sequence[str],
+        default: Optional[Sequence[str]] = None,
     ) -> List[str]:
-        value = self._next("checkbox", message)
+        value = self._next(
+            "checkbox", message, {"choices": list(choices), "default": default}
+        )
+        if value is USE_DEFAULT:
+            return list(default) if default is not None else []
         return list(value) if value is not None else []
 
     def text(self, message: str, default: str = "") -> str:
-        return self._next("text", message)
+        value = self._next("text", message, {"default": default})
+        if value is USE_DEFAULT:
+            return default
+        return value
 
     def password(self, message: str) -> str:
-        return self._next("password", message)
+        value = self._next("password", message)
+        if value is USE_DEFAULT:
+            return ""
+        return value
 
     def confirm(self, message: str, default: bool = False) -> bool:
-        return bool(self._next("confirm", message))
+        value = self._next("confirm", message, {"default": default})
+        if value is USE_DEFAULT:
+            return bool(default)
+        return bool(value)
 
     # -- rich output (no-op recorders) --------------------------------------
 
-    def panel(self, body: str, title: Optional[str] = None, style: str = "info") -> None:
+    def panel(
+        self, body: str, title: Optional[str] = None, style: str = "info"
+    ) -> None:
         self.panels.append((title, body, style))
-        self.calls.append(("panel", title or ""))
+        self.calls.append(("panel", title or "", {}))
 
-    def table(self, title: str, columns: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
+    def table(
+        self, title: str, columns: Sequence[str], rows: Sequence[Sequence[str]]
+    ) -> None:
         self.tables.append((title, list(columns), [list(r) for r in rows]))
-        self.calls.append(("table", title))
+        self.calls.append(("table", title, {}))
 
     def note(self, message: str, style: str = "info") -> None:
         self.notes.append((message, style))
-        self.calls.append(("note", message))
+        self.calls.append(("note", message, {}))
