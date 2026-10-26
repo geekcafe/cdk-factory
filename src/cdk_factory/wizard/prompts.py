@@ -18,6 +18,18 @@ class NonInteractiveError(Exception):
     """Raised when an interactive prompt is attempted without a TTY."""
 
 
+class PromptCancelledError(Exception):
+    """Raised when the operator cancels an interactive prompt (Ctrl-C / ESC).
+
+    ``questionary``'s ``.ask()`` returns ``None`` when the operator aborts a
+    prompt (Ctrl-C or ESC) rather than raising. If that ``None`` is coerced to
+    ``False`` / ``""`` it gets silently swallowed by callers (e.g. a
+    "add another?" loop re-asks forever with no way out). The prompter instead
+    converts an aborted ``.ask()`` into this explicit, catchable cancellation so
+    the wizard can exit cleanly.
+    """
+
+
 #: Sentinel a scripted test may queue to mean "the operator pressed Enter" —
 #: the prompter returns the caller's ``default`` for that call instead of a
 #: literal queued value. Generic (no project semantics).
@@ -91,13 +103,28 @@ class QuestionaryPrompter:
 
     # -- interactive inputs -------------------------------------------------
 
+    @staticmethod
+    def _unwrap(result: object) -> object:
+        """Return ``.ask()``'s result, converting an abort (None) into a cancel.
+
+        ``questionary`` returns ``None`` from ``.ask()`` when the operator
+        presses Ctrl-C / ESC. Coercing that to ``False``/``""`` would let a
+        caller's loop swallow the cancellation; raise an explicit, catchable
+        error instead so the wizard exits cleanly.
+        """
+        if result is None:
+            raise PromptCancelledError("Cancelled by user")
+        return result
+
     def select(
         self, message: str, choices: Sequence[str], default: Optional[str] = None
     ) -> str:
         self._require_tty()
-        return self._questionary.select(
-            message, choices=list(choices), default=default
-        ).ask()
+        return self._unwrap(
+            self._questionary.select(
+                message, choices=list(choices), default=default
+            ).ask()
+        )
 
     def checkbox(
         self,
@@ -106,22 +133,28 @@ class QuestionaryPrompter:
         default: Optional[Sequence[str]] = None,
     ) -> List[str]:
         self._require_tty()
-        result = self._questionary.checkbox(
-            message, choices=list(choices), default=default
-        ).ask()
+        # checkbox returns [] for "nothing selected" (a valid answer) but None on
+        # abort (Ctrl-C / ESC) — _unwrap distinguishes the two.
+        result = self._unwrap(
+            self._questionary.checkbox(
+                message, choices=list(choices), default=default
+            ).ask()
+        )
         return list(result) if result else []
 
     def text(self, message: str, default: str = "") -> str:
         self._require_tty()
-        return self._questionary.text(message, default=default).ask()
+        return self._unwrap(self._questionary.text(message, default=default).ask())
 
     def password(self, message: str) -> str:
         self._require_tty()
-        return self._questionary.password(message).ask()
+        return self._unwrap(self._questionary.password(message).ask())
 
     def confirm(self, message: str, default: bool = False) -> bool:
         self._require_tty()
-        return bool(self._questionary.confirm(message, default=default).ask())
+        return bool(
+            self._unwrap(self._questionary.confirm(message, default=default).ask())
+        )
 
     # -- rich output --------------------------------------------------------
 

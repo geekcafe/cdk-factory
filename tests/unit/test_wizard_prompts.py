@@ -5,6 +5,7 @@ import pytest
 from cdk_factory.wizard.prompts import (
     USE_DEFAULT,
     NonInteractiveError,
+    PromptCancelledError,
     QuestionaryPrompter,
     ScriptedPrompter,
 )
@@ -79,3 +80,71 @@ def test_questionary_prompter_raises_when_not_tty(monkeypatch):
         prompter.password("token?")
     with pytest.raises(NonInteractiveError):
         prompter.checkbox("pipes?", ["a"])
+
+
+# ---------------------------------------------------------------------------
+# QuestionaryPrompter: an aborted .ask() (None) raises PromptCancelledError
+# ---------------------------------------------------------------------------
+
+
+class _AbortingQuestionary:
+    """Fake questionary whose every builder's .ask() returns None (Ctrl-C/ESC)."""
+
+    class _Q:
+        def ask(self):
+            return None
+
+    def select(self, *a, **k):
+        return self._Q()
+
+    def checkbox(self, *a, **k):
+        return self._Q()
+
+    def text(self, *a, **k):
+        return self._Q()
+
+    def password(self, *a, **k):
+        return self._Q()
+
+    def confirm(self, *a, **k):
+        return self._Q()
+
+
+def _tty_prompter(monkeypatch):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    prompter = QuestionaryPrompter()
+    prompter._questionary = _AbortingQuestionary()
+    return prompter
+
+
+def test_questionary_cancel_raises_on_select(monkeypatch):
+    prompter = _tty_prompter(monkeypatch)
+    with pytest.raises(PromptCancelledError):
+        prompter.select("mode?", ["pipeline", "stack"])
+
+
+def test_questionary_cancel_raises_on_text(monkeypatch):
+    prompter = _tty_prompter(monkeypatch)
+    with pytest.raises(PromptCancelledError):
+        prompter.text("name?")
+
+
+def test_questionary_cancel_raises_on_confirm(monkeypatch):
+    """The key bug: a cancelled confirm must NOT coerce to False (which the
+    channel loop would swallow and re-ask forever)."""
+    prompter = _tty_prompter(monkeypatch)
+    with pytest.raises(PromptCancelledError):
+        prompter.confirm("add a channel?", default=True)
+
+
+def test_questionary_cancel_raises_on_password(monkeypatch):
+    prompter = _tty_prompter(monkeypatch)
+    with pytest.raises(PromptCancelledError):
+        prompter.password("token?")
+
+
+def test_questionary_cancel_raises_on_checkbox(monkeypatch):
+    """checkbox returns [] for 'nothing selected' but None means abort -> cancel."""
+    prompter = _tty_prompter(monkeypatch)
+    with pytest.raises(PromptCancelledError):
+        prompter.checkbox("pipes?", ["a", "b"])

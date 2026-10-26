@@ -63,6 +63,22 @@ class WizardDefinition(ABC):
     def to_env_scalars(self, answers: dict) -> dict:
         """Return the flat ``.env.<env>`` scalars derived from *answers*."""
 
+    def load_prior_from_derived(self, file_key: str) -> Optional[dict]:
+        """Reconstruct prior answers from the project's DERIVED config, or None.
+
+        Optional fallback used by ``init``/``configure`` when no
+        ``.monitor/<file_key>.answers.json`` exists but the project's derived
+        config (which the wizard renders) DOES — e.g. a deployment made via a
+        non-wizard path, or before the answers file was persisted. Returning a
+        reconstructed answers dict lets the wizard seed its prompts with the
+        live config instead of starting blank.
+
+        Default: ``None`` (no reconstruction). A project overrides this to read
+        its rendered artifact (for the monitor, ``.monitor/<file_key>
+        .notifier.json``) back into answers-shaped defaults.
+        """
+        return None
+
     # Optional round-trip helpers; defaults are identity passthroughs so a
     # definition that already works in dict-space need not override them.
     def to_dict(self, answers: dict) -> dict:

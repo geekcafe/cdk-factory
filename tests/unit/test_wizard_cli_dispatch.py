@@ -333,3 +333,67 @@ def test_monitor_token_routes_to_run_wizard(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["prog", "monitor", "init", "-e", "prod"])
     _MonitorCommand.main(script_dir=tmp_path)
     assert wizard_calls == [("init", "prod")]
+
+
+# ---------------------------------------------------------------------------
+# Cancellation + derived-prior fallback
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_cancel_exits_cleanly(tmp_path):
+    """A PromptCancelledError raised mid-wizard is caught -> clean exit 130, no
+    traceback, no inescapable loop."""
+    from cdk_factory.wizard.prompts import PromptCancelledError
+
+    class _CancellingDefinition(_FakeDefinition):
+        def collect_answers(self, command, prompt, inspector, prior):
+            raise PromptCancelledError("Cancelled by user")
+
+    cmd = _FakeCommand(tmp_path)
+    cmd.wizard_definition = lambda: _CancellingDefinition()
+    ns = build_monitor_subparser().parse_args(
+        ["init", "--tenant", "aplos", "-e", "prod"]
+    )
+    with pytest.raises(SystemExit) as exc:
+        dispatch(cmd, "init", ns)
+    assert exc.value.code == 130
+    # A user-facing cancel message was printed.
+    assert any("Cancelled by user" in m for (_, m, _c) in cmd.calls if _ == "print")
+    # Nothing was written.
+    assert not (tmp_path / ".monitor" / "aplos-prod.answers.json").exists()
+
+
+def test_dispatch_seeds_from_derived_when_no_answers_file(tmp_path):
+    """When no <key>.answers.json exists, dispatch falls back to the definition's
+    load_prior_from_derived() so prompts seed from the live config."""
+    command_calls.clear()
+    seen_prior = {}
+
+    class _DerivedDefinition(_FakeDefinition):
+        def load_prior_from_derived(self, file_key):
+            return {
+                "environment": "prod",
+                "tenant": "aplos",
+                "central": "recovered-channel",
+            }
+
+        def collect_answers(self, command, prompt, inspector, prior):
+            # Capture what prior the wizard received.
+            seen_prior.update(prior or {})
+            data = dict(prior or {})
+            data["mode"] = "stack"
+            data["tenant"] = (prior or {}).get("tenant", "")
+            return data
+
+    cmd = _FakeCommand(tmp_path)
+    cmd.wizard_definition = lambda: _DerivedDefinition()
+    ns = build_monitor_subparser().parse_args(
+        ["init", "--tenant", "aplos", "-e", "prod"]
+    )
+    dispatch(cmd, "init", ns)
+    # The reconstructed prior reached collect_answers.
+    assert seen_prior.get("central") == "recovered-channel"
+    # A note about seeding from existing config was printed.
+    assert any(
+        "seeding from the existing" in m for (_, m, _c) in cmd.calls if _ == "print"
+    )

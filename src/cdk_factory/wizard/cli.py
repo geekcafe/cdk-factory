@@ -104,7 +104,23 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
     ``status`` is resolved-config-only (NO AWS call, NIT-3). ``init``/``configure``
     run the guided flow via :class:`WizardRunner`. ``deploy``/``synth`` reuse the
     command's existing ``run`` with saved answers.
+
+    A prompt cancellation (Ctrl-C / ESC) raised by the prompter as
+    :class:`PromptCancelledError` (or a bare ``KeyboardInterrupt``) exits
+    cleanly with a message and a non-zero code — never a traceback or an
+    inescapable re-prompt loop.
     """
+    from cdk_factory.wizard.prompts import PromptCancelledError
+
+    try:
+        _dispatch(command, subcommand, ns)
+    except (PromptCancelledError, KeyboardInterrupt):
+        command._print("\nCancelled by user — no changes written.", "yellow")
+        sys.exit(130)  # 128 + SIGINT, conventional for Ctrl-C
+
+
+def _dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
+    """Inner dispatch body (see :func:`dispatch` for the cancellation wrapper)."""
     from cdk_factory.wizard.answers_store import AnswersStore
     from cdk_factory.wizard.wizard_base import WizardRunner
 
@@ -130,6 +146,18 @@ def dispatch(command, subcommand: str, ns: argparse.Namespace) -> None:
             sys.exit(2)
 
         prior = store.load()
+        # Fallback: no saved answers file, but the project's derived config may
+        # already exist (e.g. a deployment rendered via a non-wizard path). Seed
+        # prompts from it so re-running is edit-in-place, not start-from-blank.
+        if not prior:
+            reconstructed = definition.load_prior_from_derived(file_key)
+            if reconstructed:
+                command._print(
+                    "No saved answers found; seeding from the existing "
+                    "configuration for this tenant/environment.",
+                    "blue",
+                )
+                prior = reconstructed
         cli_overrides = {
             "environment": environment,  # bare env -> ENVIRONMENT scalar
             "tenant": tenant,  # org      -> TENANT_NAME scalar
