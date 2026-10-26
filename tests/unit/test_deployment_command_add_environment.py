@@ -607,3 +607,70 @@ def test_add_environment_interactive_pipeline_mode(tmp_path, monkeypatch):
     assert loaded["DEPLOYMENT_MODE"] == "pipeline"
     assert loaded["PIPELINE_ENABLED"] == "true"
     assert loaded["STACK_ENABLED"] == "false"
+
+
+# ---------------------------------------------------------------------------
+# Mode-aware post_add_environment_note seam (generic, backward-compatible)
+# ---------------------------------------------------------------------------
+
+
+class _ModeRecordingCommand(CdkDeploymentCommand):
+    """Subclass whose override declares the keyword-only ``mode`` and records it.
+
+    This is exactly the shape a real consumer (e.g. the monitor CLI) uses: the
+    base passes ``mode=`` by keyword, and the override opts in by accepting
+    ``*, mode=None``. It records the mode it was handed so the test can assert
+    the base threaded the chosen deployment mode through the hook.
+    """
+
+    received = None
+
+    def post_add_environment_note(self, env_name, env_file_path, *, mode=None):
+        self.received = {"env_name": env_name, "path": env_file_path, "mode": mode}
+
+
+def _run_add_env_with_mode(tmp_path, monkeypatch, chosen_mode):
+    _clear_mode_env(monkeypatch)
+    _write_mode_config_json(tmp_path)
+    cmd = _ModeRecordingCommand(script_dir=tmp_path)
+
+    monkeypatch.setattr(dc_module.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cmd, "select_deployment_mode", lambda default=None: chosen_mode)
+    # env name + Enter-accept for the prompted params. Stack prompts 4 params,
+    # pipeline prompts 6 (adds the two repo vars); queue the max and let the
+    # iterator stop being consumed once the flow is done.
+    answers = iter(["prod", "", "", "", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+
+    cmd._add_environment_interactive()
+    return cmd
+
+
+def test_post_add_note_receives_stack_mode(tmp_path, monkeypatch):
+    cmd = _run_add_env_with_mode(tmp_path, monkeypatch, "stack")
+    assert cmd.received is not None
+    assert cmd.received["mode"] == "stack"
+    assert cmd.received["env_name"] == "prod"
+    assert cmd.received["path"] == tmp_path / ".env.prod"
+
+
+def test_post_add_note_receives_pipeline_mode(tmp_path, monkeypatch):
+    cmd = _run_add_env_with_mode(tmp_path, monkeypatch, "pipeline")
+    assert cmd.received is not None
+    assert cmd.received["mode"] == "pipeline"
+    assert cmd.received["env_name"] == "prod"
+
+
+def test_base_post_add_note_is_generic_noop(tmp_path):
+    """The DEFAULT base hook is a generic no-op and accepts ``mode=`` by keyword.
+
+    No monitor-specific behavior leaks into cdk-factory: calling the base hook
+    with any mode returns None and prints nothing.
+    """
+    cmd = _command(tmp_path)
+    path = tmp_path / ".env.prod"
+    assert cmd.post_add_environment_note("prod", path, mode="stack") is None
+    assert cmd.post_add_environment_note("prod", path, mode="pipeline") is None
+    assert cmd.post_add_environment_note("prod", path, mode=None) is None
+    # Backward compatibility: positional-only call (no mode) still works.
+    assert cmd.post_add_environment_note("prod", path) is None

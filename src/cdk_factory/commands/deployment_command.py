@@ -640,6 +640,113 @@ class CdkDeploymentCommand:
     # CDK operations
     # ------------------------------------------------------------------
 
+    def ensure_aws_credentials(self) -> None:
+        """Preflight the resolved AWS profile before a live AWS operation.
+
+        CDK fails opaquely ("no credentials have been configured") when a
+        detected ``AWS_PROFILE`` has an expired SSO session. This checks the
+        profile with ``aws sts get-caller-identity`` first, and, when the session
+        is unusable AND a profile is set AND stdin is a TTY, offers to run
+        ``aws sso login --profile <profile>`` and re-checks once before handing
+        off to the CDK command. Behaviour:
+
+        - No ``AWS_PROFILE`` set → no-op (default credential chain / env vars;
+          let the CDK command resolve/fail as before).
+        - Credentials already valid → silent no-op.
+        - Invalid + TTY → prompt (default Yes) to ``aws sso login``; on accept,
+          run it and re-check. If it still fails, print a clear message and let
+          the CDK command proceed (it will fail with its own error), rather than
+          hard-exiting here.
+        - Invalid + non-interactive (CI) → print the ``aws sso login`` hint and
+          return without prompting, so automation is never blocked on input.
+
+        Never raises; it is advisory preflight. ``aws`` not being on PATH is
+        treated as "cannot check" and is a silent no-op.
+        """
+        profile = os.environ.get("AWS_PROFILE")
+        if not profile:
+            return
+        if self._aws_credentials_valid(profile):
+            return
+
+        self._print(
+            f"AWS profile '{profile}' is set but has no usable credentials "
+            "(an expired SSO session is the usual cause).",
+            "yellow",
+        )
+
+        if not sys.stdin.isatty():
+            self._print(
+                f"Run: aws sso login --profile {profile}",
+                "yellow",
+            )
+            return
+
+        try:
+            response = input(
+                f"Run `aws sso login --profile {profile}` now? (Y/n): "
+            ).strip()
+        except EOFError:
+            response = ""
+        if response.lower() in ("", "y", "yes"):
+            self._print(f"Running aws sso login --profile {profile}...", "blue")
+            try:
+                subprocess.run(
+                    ["aws", "sso", "login", "--profile", profile],
+                    cwd=self.script_dir,
+                    env=os.environ.copy(),
+                )
+            except FileNotFoundError:
+                self._print(
+                    "The 'aws' CLI was not found on PATH; cannot sign in "
+                    "automatically.",
+                    "red",
+                )
+                return
+            if self._aws_credentials_valid(profile):
+                self._print("AWS credentials refreshed.", "green")
+            else:
+                self._print(
+                    f"Still no usable credentials for '{profile}' after login — "
+                    "the CDK command below will likely fail. Verify your SSO "
+                    "config and try `aws sso login` manually.",
+                    "yellow",
+                )
+        else:
+            self._print(
+                "Continuing without signing in — the CDK command below will "
+                "likely fail until you run "
+                f"`aws sso login --profile {profile}`.",
+                "yellow",
+            )
+
+    @staticmethod
+    def _aws_credentials_valid(profile: str) -> bool:
+        """Return True iff ``sts get-caller-identity`` succeeds for *profile*.
+
+        Any non-zero exit, timeout, or missing ``aws`` CLI is treated as "not
+        valid / cannot confirm" → False, so the caller can offer a login. Output
+        is suppressed; this is a quiet probe.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "aws",
+                    "sts",
+                    "get-caller-identity",
+                    "--profile",
+                    profile,
+                ],
+                cwd=None,
+                env=os.environ.copy(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+
     def run_cdk_synth(self, config_file: str) -> None:
         """Run ``python3 app.py --config <config_file>`` in script_dir."""
         self._print("Running CDK synthesis...", "blue")
@@ -648,6 +755,7 @@ class CdkDeploymentCommand:
 
     def run_cdk_deploy(self, config_file: str) -> None:
         """Synthesise then deploy all stacks."""
+        self.ensure_aws_credentials()
         self.run_cdk_synth(config_file)
         self._print("Running CDK deployment...", "blue")
         cmd = [
@@ -667,6 +775,7 @@ class CdkDeploymentCommand:
 
     def run_cdk_diff(self, config_file: str) -> None:
         """Synthesise then diff all stacks."""
+        self.ensure_aws_credentials()
         self.run_cdk_synth(config_file)
         self._print("Running CDK diff...", "blue")
         cmd = ["cdk", "diff", "--all"]
@@ -678,6 +787,7 @@ class CdkDeploymentCommand:
 
     def run_cdk_destroy(self, config_file: str) -> None:
         """Destroy all stacks."""
+        self.ensure_aws_credentials()
         self._print("Running CDK destroy...", "red")
         cmd = [
             "cdk",
@@ -1959,17 +2069,25 @@ class CdkDeploymentCommand:
         """
         return env_name
 
-    def post_add_environment_note(self, env_name: str, env_file_path: Path) -> None:
+    def post_add_environment_note(
+        self, env_name: str, env_file_path: Path, *, mode: Optional[str] = None
+    ) -> None:
         """Optional hook fired after a NEW ``.env`` file is successfully written.
 
         No-op by default. A project MAY override this to print a project-specific
-        follow-up note (e.g. pointing the operator at a guided setup flow). It is
-        called only on a successful write — never on a declined overwrite or a
-        write error.
+        follow-up note (e.g. pointing the operator at a guided setup flow), and
+        it MAY tailor that note to the deployment ``mode`` that was just chosen.
+        It is called only on a successful write — never on a declined overwrite
+        or a write error.
 
         Args:
             env_name: the raw environment name the operator entered (e.g. 'prod').
             env_file_path: the ``Path`` to the file that was just written.
+            mode: the deployment mode selected for this file
+                (``"pipeline"`` | ``"stack"`` | ``None``). Purely informational
+                to the subclass — the generic base never acts on it. The base
+                always passes it by keyword, so an override must accept
+                ``*, mode=None`` to remain callable.
         """
         return None
 
@@ -2244,7 +2362,7 @@ class CdkDeploymentCommand:
                 f"Created {result.name} — select it below to continue.",
                 "blue",
             )
-            self.post_add_environment_note(env_name, result)
+            self.post_add_environment_note(env_name, result, mode=chosen_mode)
         else:
             self._print(
                 f"No environment file written for '{env_name}'.",
