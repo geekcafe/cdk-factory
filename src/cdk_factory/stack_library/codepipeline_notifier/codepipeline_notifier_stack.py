@@ -336,10 +336,15 @@ class CodePipelineNotifierStack(IStack):
         """
         monitor_channels: Dict[str, Dict[str, str]] = {}
         for name, channel in self.config.channels.items():
-            monitor_channels[name] = {
+            entry = {
                 "slack_channel_id": channel.slack_channel_id,
                 "sns_topic_arn": channel_topic_arns.get(name, ""),
             }
+            # Only emit the optional per-channel broadcast mention when set, so
+            # channels without one keep today's exact 2-key shape.
+            if channel.mention:
+                entry["mention"] = channel.mention
+            monitor_channels[name] = entry
 
         env: Dict[str, str] = {
             "MONITOR_CENTRAL_CHANNEL": self.config.central,

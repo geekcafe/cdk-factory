@@ -158,6 +158,18 @@ class CodePipelineNotifierChannelConfig:
         return str(self._config.get("slack_channel_id", "") or "")
 
     @property
+    def mention(self) -> "str | None":
+        """Opt-in broadcast mention for critical-failure Slack posts.
+
+        ``"channel"`` (<!channel>), ``"here"`` (<!here>), or ``None`` (no
+        mention). Empty/absent normalizes to ``None``. The value is NOT
+        validated here — the SDK notifier cold-start parser is the fail-fast
+        authority for channel shape (mirroring how priorities are validated in
+        the stack but channel shape is passed through).
+        """
+        return str(self._config.get("mention") or "") or None
+
+    @property
     def sns_emails(self) -> List[str]:
         """Email addresses subscribed to this channel's SNS topic."""
         value = self._config.get("sns_emails")

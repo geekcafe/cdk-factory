@@ -385,6 +385,44 @@ def test_environment_monitor_channels_contains_topic_arns():
     assert "slack_channel_id" in rendered
 
 
+@requires_standalone
+def test_environment_monitor_channels_carries_mention():
+    template = _build_template(
+        _base_notifier(
+            channels={
+                "central": {
+                    "slack_channel_id": "C0CENTRAL000",
+                    "sns_emails": ["devops-oncall@example.com"],
+                    "mention": "channel",
+                },
+            },
+            central="central",
+        )
+    )
+    # MONITOR_CHANNELS is a CFN intrinsic (Fn::Join) because each channel's
+    # sns_topic_arn is a deploy-time topic-ARN token; the mention key is emitted
+    # as a literal JSON segment inside that join. Assert on the rendered form,
+    # same approach as test_environment_monitor_channels_contains_topic_arns.
+    functions = template.find_resources("AWS::Lambda::Function")
+    fn_props = list(functions.values())[0]["Properties"]
+    channels_raw = fn_props["Environment"]["Variables"]["MONITOR_CHANNELS"]
+    rendered = json.dumps(channels_raw)
+    # The join part is a JSON string, so quotes are escaped in the dumped form.
+    assert r"\"mention\": \"channel\"" in rendered
+
+
+@requires_standalone
+def test_environment_monitor_channels_omits_mention_when_absent():
+    # A channel without a mention keeps today's exact 2-key shape (no mention
+    # segment anywhere in the rendered MONITOR_CHANNELS).
+    template = _build_template(_base_notifier())
+    functions = template.find_resources("AWS::Lambda::Function")
+    fn_props = list(functions.values())[0]["Properties"]
+    channels_raw = fn_props["Environment"]["Variables"]["MONITOR_CHANNELS"]
+    rendered = json.dumps(channels_raw)
+    assert "mention" not in rendered
+
+
 # ---- (9) invalid config -> ValueError at synth ----------------------------
 
 
