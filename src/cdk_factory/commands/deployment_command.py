@@ -887,6 +887,26 @@ class CdkDeploymentCommand:
                         continue
                     self._run_post_deploy_step(step)
 
+    def before_post_deploy_step(self, step: dict) -> None:
+        """Optional hook fired just before each local post_step runs.
+
+        No-op by default. A project MAY override this to perform an interactive
+        preparatory action for a specific step before its (typically assert-only)
+        ``commands`` execute locally — e.g. offering to seed a secret the step is
+        about to assert on, so a human running ``run_post_deploy_steps`` locally
+        gets a guided fix instead of a bare assertion failure.
+
+        This runs ONLY on the local replay path, never inside the pipeline (the
+        pipeline executes the step's ``commands`` directly in CodeBuild), so an
+        override is free to prompt / read stdin. It must remain safe when stdin
+        is not a TTY (do nothing / skip prompting) so non-interactive local
+        replays behave exactly as before.
+
+        Args:
+            step: the raw post_step dict (``id`` / ``name`` / ``commands`` …).
+        """
+        return None
+
     def _run_post_deploy_step(self, step: dict) -> None:
         """Execute a single enabled post_step (hand-rolled subprocess.run).
 
@@ -897,6 +917,10 @@ class CdkDeploymentCommand:
         """
         step_id = step.get("id") or step.get("name") or "<unnamed>"
         step_label = step.get("name") or step.get("id") or "<unnamed>"
+
+        # Project hook: a guided, interactive prep (e.g. seed a secret) before the
+        # step's assert-only commands run locally. No-op by default.
+        self.before_post_deploy_step(step)
 
         commands = step.get("commands", [])
         if not commands:

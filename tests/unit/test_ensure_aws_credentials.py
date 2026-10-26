@@ -203,3 +203,33 @@ def test_cdk_ops_invoke_preflight(tmp_path, monkeypatch, op):
     getattr(cmd, op)("config.json")
 
     assert called["preflight"] == 1
+
+
+# -- before_post_deploy_step hook is invoked by the runner -------------------
+
+
+def test_run_post_deploy_step_invokes_before_hook(tmp_path, monkeypatch):
+    """_run_post_deploy_step calls before_post_deploy_step(step) before running
+    the step's commands."""
+    seen = {}
+
+    def _before(self, step):
+        seen["step_id"] = step.get("id")
+
+    monkeypatch.setattr(CdkDeploymentCommand, "before_post_deploy_step", _before)
+    monkeypatch.setattr(CdkDeploymentCommand, "_print", lambda self, m, c="white": None)
+    # Stub subprocess so the step's bash doesn't actually run.
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(0))
+    cmd = _command(tmp_path)
+
+    cmd._run_post_deploy_step(
+        {"id": "my-step", "name": "My Step", "commands": ["echo hi"]}
+    )
+
+    assert seen.get("step_id") == "my-step"
+
+
+def test_before_post_deploy_step_default_is_noop(tmp_path):
+    """The base hook does nothing and returns None."""
+    cmd = _command(tmp_path)
+    assert cmd.before_post_deploy_step({"id": "x"}) is None
