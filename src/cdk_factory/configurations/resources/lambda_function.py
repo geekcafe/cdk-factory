@@ -115,7 +115,7 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
 
     @name.setter
     def name(self, value: str) -> None:
-        self.__name = config
+        self.__name = value
 
     @property
     def resource_policies(self) -> List[dict]:
@@ -239,6 +239,52 @@ class LambdaFunctionConfig(EnhancedBaseConfig):
                 return int(size)
 
         return 128
+
+    # AWS Lambda ephemeral (/tmp) storage limits, in MB.
+    EPHEMERAL_STORAGE_MIN_MB: int = 512
+    EPHEMERAL_STORAGE_MAX_MB: int = 10240
+
+    @property
+    def ephemeral_storage_size(self) -> aws_cdk.Size | None:
+        """
+        Ephemeral (/tmp) storage size, configured in MB via ``ephemeral_storage_size``.
+
+        Returns None when not configured so the Lambda keeps the AWS default
+        (512 MB) and the synthesized template is unchanged for existing configs.
+
+        Raises:
+            ValueError: if the value is not an integer or is outside the AWS
+                range of 512-10240 MB.
+
+        Examples:
+            >>> # config: {"ephemeral_storage_size": 4096}
+            >>> lambda_config.ephemeral_storage_size  # Size.mebibytes(4096)
+        """
+        if not (self.__config and isinstance(self.__config, dict)):
+            return None
+
+        value = self.__config.get("ephemeral_storage_size")
+        if value is None or value == "":
+            return None
+
+        try:
+            size_mb = int(value)
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"Invalid ephemeral_storage_size {value!r} for lambda function "
+                f"{self.name}: must be an integer number of MB."
+            ) from e
+
+        if not (
+            self.EPHEMERAL_STORAGE_MIN_MB <= size_mb <= self.EPHEMERAL_STORAGE_MAX_MB
+        ):
+            raise ValueError(
+                f"Invalid ephemeral_storage_size {size_mb} MB for lambda function "
+                f"{self.name}: must be between {self.EPHEMERAL_STORAGE_MIN_MB} and "
+                f"{self.EPHEMERAL_STORAGE_MAX_MB} MB."
+            )
+
+        return aws_cdk.Size.mebibytes(size_mb)
 
     @property
     def reserved_concurrent_executions(self) -> int | None:

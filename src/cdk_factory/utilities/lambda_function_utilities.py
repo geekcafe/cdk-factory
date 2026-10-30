@@ -212,6 +212,7 @@ class LambdaFunctionUtilities:
             insights_version=lambda_config.insights_version,
             architecture=lambda_config.architecture,
             memory_size=lambda_config.memory_size,
+            ephemeral_storage_size=lambda_config.ephemeral_storage_size,
             timeout=lambda_config.timeout,
             tracing=lambda_config.tracing,
             log_group=log_group,
